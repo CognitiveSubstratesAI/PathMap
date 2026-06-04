@@ -49,6 +49,20 @@ function rzt_release!(t::ReadZipperTracked)
     _rzt_finalize!(t)
 end
 
+"""
+    with_read_zipper_tracked(f, t::ReadZipperTracked)
+
+Run `f(t)` and DETERMINISTICALLY release the read zipper's path lock at scope exit
+(`rzt_release!` in a `finally`) rather than at GC time. See `with_zipper_tracker` (ZT-1).
+"""
+function with_read_zipper_tracked(f, t::ReadZipperTracked)
+    try
+        f(t)
+    finally
+        rzt_release!(t)
+    end
+end
+
 # Delegate all read operations to the inner zipper
 @inline rzt_path_exists(t::ReadZipperTracked) = rz_path_exists(t.z)
 @inline rzt_is_val(t::ReadZipperTracked) = rz_is_val(t.z)
@@ -92,6 +106,20 @@ Release the write zipper's path lock explicitly.
 """
 function wzt_release!(t::WriteZipperTracked)
     _wzt_finalize!(t)
+end
+
+"""
+    with_write_zipper_tracked(f, t::WriteZipperTracked)
+
+Run `f(t)` and DETERMINISTICALLY release the write zipper's path lock at scope exit
+(`wzt_release!` in a `finally`) rather than at GC time. See `with_zipper_tracker` (ZT-1).
+"""
+function with_write_zipper_tracked(f, t::WriteZipperTracked)
+    try
+        f(t)
+    finally
+        wzt_release!(t)
+    end
 end
 
 # Delegate write operations to the inner WriteZipperCore
@@ -284,6 +312,7 @@ end
 # =====================================================================
 
 export ReadZipperTracked, WriteZipperTracked
+export with_read_zipper_tracked, with_write_zipper_tracked
 export rzt_release!, rzt_path_exists, rzt_is_val, rzt_get_val, rzt_path
 export rzt_child_count, rzt_child_mask, rzt_val_count
 export wzt_release!, wzt_set_val!, wzt_remove_val!, wzt_descend_to!, wzt_ascend!

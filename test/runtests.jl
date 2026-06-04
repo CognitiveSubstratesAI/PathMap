@@ -2,7 +2,14 @@ using Test
 using PathMap
 # Aqua is test-only [extras]: present under Pkg.test/CI but NOT in a plain
 # `julia --project=. test/runtests.jl` run (no sandbox). Load optionally.
-const _HAS_AQUA = try; @eval using Aqua; true; catch; false; end
+const _HAS_AQUA = try
+    ;
+    @eval using Aqua;
+    true;
+catch
+    ;
+    false;
+end
 const PM = PathMap.PathMap   # PathMap module and PathMap type share the same name
 
 @testset "PathMap" begin
@@ -439,6 +446,33 @@ const PM = PathMap.PathMap   # PathMap module and PathMap type share the same na
         wzt_release!(wzt1)
         wzt2 = zh_write_zipper_at_exclusive_path(zh, b"region:")
         @test wzt_path_exists(wzt2)
+        wzt_release!(wzt2)
+    end
+
+    # ZT-1 (audit 2026-06-04): tracked-zipper locks release via `finalizer` = GC time,
+    # not scope exit like Rust Drop, so a lingering lock can cause a spurious Conflict.
+    # `with_zipper_tracker` releases DETERMINISTICALLY at scope exit. This test asserts
+    # the lock is free immediately after the `with_` block WITHOUT any GC.gc() call.
+    @testset "ZT-1: with_zipper_tracker releases the lock at scope exit (no GC)" begin
+        stp = SharedTrackerPaths()
+        tr = ZipperTracker{TrackingWrite}(stp, b"x")
+        with_zipper_tracker(tr) do _t
+            @test stp_path_status(stp, b"x") == PATH_STATUS_UNAVAILABLE  # locked inside
+        end
+        # Released at scope exit — deterministic, NO GC.gc() invoked here.
+        @test stp_path_status(stp, b"x") == PATH_STATUS_AVAILABLE
+        @test stp_try_add_writer!(stp, b"x") === nothing  # fresh writer opens, no spurious Conflict
+
+        # Same deterministic release for the tracked-zipper wrappers.
+        m = PM{Int}()
+        zh = zipper_head(m)
+        wzt = zh_write_zipper_at_exclusive_path(zh, b"y:")
+        with_write_zipper_tracked(wzt) do z
+            @test wzt_path_exists(z) isa Bool
+        end
+        # Lock released at scope exit → a second writer at the same prefix opens cleanly.
+        wzt2 = zh_write_zipper_at_exclusive_path(zh, b"y:")
+        @test wzt_path_exists(wzt2) isa Bool
         wzt_release!(wzt2)
     end
 

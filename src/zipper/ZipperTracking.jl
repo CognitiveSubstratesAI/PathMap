@@ -311,6 +311,26 @@ function zt_release!(t::ZipperTracker)
 end
 
 """
+    with_zipper_tracker(f, tracker::ZipperTracker)
+
+Run `f(tracker)` and DETERMINISTICALLY release the path lock at scope exit (via
+`zt_release!` in a `finally`), instead of waiting for GC to run the finalizer.
+
+ZT-1 (audit 2026-06-04): Julia `finalizer`s run at GC time (non-deterministic), NOT at
+scope exit like Rust `Drop`. A lock can therefore linger after the zipper is logically
+done until GC collects the tracker, so a later `stp_try_add_writer!`/`reader!` may see a
+spurious `Conflict`. The `finalizer` remains as a backstop, but prefer this scoped wrapper
+(the deterministic-Drop equivalent) wherever a tracker's lifetime is lexically bounded.
+"""
+function with_zipper_tracker(f, tracker::ZipperTracker)
+    try
+        f(tracker)
+    finally
+        zt_release!(tracker)
+    end
+end
+
+"""
 Path being tracked.
 """
 zt_path(t::ZipperTracker) = t.this_path
@@ -385,6 +405,6 @@ export Conflict, conflict_path
 export SharedTrackerPaths
 export stp_try_add_writer!, stp_try_add_reader!, stp_add_reader_unchecked!
 export stp_remove_writer!, stp_remove_reader!, stp_path_status
-export ZipperTracker, zt_path, zt_release!, zt_into_reader
+export ZipperTracker, zt_path, zt_release!, zt_into_reader, with_zipper_tracker
 export PathStatus,
     PATH_STATUS_AVAILABLE, PATH_STATUS_AVAILABLE_FOR_READ, PATH_STATUS_UNAVAILABLE

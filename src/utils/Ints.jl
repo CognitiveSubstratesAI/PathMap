@@ -9,13 +9,17 @@ within paths.
   - `indices_to_bob!` / `bob_to_indices!` — Bits-of-Byte (bit-plane)
   - `indices_to_weave!` / `weave_to_indices!` — round-robin big-endian
 
-**Deferred section (requires `PathMap` — Phase 1c):**
+**Not-yet-ported (no consumer):**
   - `gen_int_range` / `gen_int_range_in`
   - `gen_child_level_in` / `gen_value_level_in` / `get_from_cache`
 
 These range generators construct a `PathMap` from a numeric range via
-`write_zipper_at_path` + `graft_map`. They will be ported once
-`trie_map.rs` + `write_zipper.rs` land.
+`write_zipper_at_path` + `graft_map`.
+
+IN-DOC1 (audit 2026-06-04): the old note said these "will be ported once trie_map.rs +
+write_zipper.rs land" — but PathMap + WriteZipper HAVE landed (the precondition is met).
+They remain unported only because no consumer needs them yet; the dependency is no longer
+the blocker. Port them when a numeric-range PathMap consumer appears.
 
 1:1 port: verbatim control flow, bit-endianness, and assertion set.
 """

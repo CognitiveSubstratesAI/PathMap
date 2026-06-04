@@ -19,7 +19,7 @@ const PM = PathMap.PathMap
 
 # ── Shortcuts ─────────────────────────────────────────────────────────────────
 
-t(path = joinpath(@__DIR__, "..", "test", "runtests.jl")) = include(path)
+t(path=joinpath(@__DIR__, "..", "test", "runtests.jl")) = include(path)
 
 # Quick map builder
 function mkmap(pairs::Pair...)
