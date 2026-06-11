@@ -30,14 +30,33 @@ BoundsError: attempt to access 15-element Vector{UInt8} at index [16]
 i.e. after `wz_prune_path!` collapses the now-empty branch, a read zipper iterating the same trie
 reconstructs an `origin_path` that is one byte short, so downstream expr decode indexes out of bounds.
 
-### Likely cause / where to look
-`wz_prune_path!` (`src/zipper/WriteZipper.jl:301`) node-collapse vs. the read zipper's path
-reconstruction (`origin_path` / prefix-buffer bookkeeping). Pruning a single-child or value-only node
-appears to leave a read zipper's cached path length inconsistent with the collapsed structure. Add a
-direct PathMap unit test: build a 2+ atom trie, `remove_val_at!(…, true)` one, then iterate the
-remaining values via a fresh read zipper and assert each reconstructed path round-trips.
+### Sharper diagnosis (2026-06-11)
+The crash needs **COW sharing**, not just prune. Isolated single-trie prune works fine — a plain
+`remove_val_at!(…, true)` then read-zipper iteration round-trips correctly (verified across flat
+siblings, pruned subtries, and counter-like shapes). It only breaks when the pruned node is
+**COW-shared** (refcount > 1), exactly MORK's metta-calculus case: `read_btm = pjoin(s.btm,
+singleton).value` is kept alive across the step, so the `-`-sink's prune must fork before collapsing.
 
-### Why it's not urgent
-No shipped call site passes `prune=true`; the default path is sound. Fixing this would let MORK adopt
-prune-on-remove for exact upstream parity and drop the query-layer value gate, but the gate is correct
-and cheap in the meantime.
+Decisive MORK experiment (re-enable `prune=true` at `RemoveSink`, **disable** MORK's query value-gate):
+the next-step **`ProductZipper`** yields a position where `pz_is_val(pz)` is **true** but `pz_path(pz)`
+is **one byte short** — a structurally truncated expr. `pz_to_next_val!` gates on `pz_is_val`
+(ProductZipper.jl:404/407/413), so the value-flag and the reconstructed path have gone **inconsistent**
+after the prune-on-COW-shared node. MORK's value gate masks it (a truncated path has no value via
+`get_val_at`), which is why MORK is sound with the gate + prune off — but the underlying
+prune↔COW↔ProductZipper bookkeeping is still wrong.
+
+### Where to look
+`wz_prune_path!` / `_wz_prune_path_internal!` node-collapse (`WriteZipper.jl:1139,1153`) **after a COW
+fork** vs. `ProductZipper` path/`factor_paths` reconstruction (`src/zipper/ProductZipper.jl`,
+`pz_path`/`pz_is_val`). Hypothesis: collapsing a single-child node shortens trie depth by a byte, but
+a COW-shared sibling's cached key/path length isn't updated, so the product traversal reports a value
+at a path that's a byte short. Repro to build at the PathMap level: pjoin-share a trie, `remove_val_at!
+(…, true)` a key on the shared spine, then drive a **`ProductZipper`** (not a single read zipper) over
+it and assert every `pz_is_val` position has a full-length, round-tripping `pz_path`.
+
+### Why it's not urgent / not needed
+No shipped call site passes `prune=true`; the default (`prune=false`) path is sound. MORK's bug is
+**fully fixed** by the query value-gate (`16981af`) with prune **off** — prune is *not* required for
+correctness, only for upstream parity + avoiding long-run dangling-node accumulation (a memory, not
+correctness, concern). Enabling prune is therefore gated on fixing this COW+ProductZipper bug first;
+until then keep `prune=false` at all call sites.
