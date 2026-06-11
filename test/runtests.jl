@@ -612,6 +612,13 @@ const PM = PathMap.PathMap   # PathMap module and PathMap type share the same na
             @test r !== nothing                      # did not throw; returned a result
             @test r isa PathMap.AlgResIdentity       # disjoint subtraction = self unchanged
         end
+
+        # node_is_empty(::Nothing): `nothing` is the EmptyNode sentinel inside a
+        # TrieNodeODRc (TrieNode.jl:360), so as_tagged(rc) legitimately yields nothing for
+        # an empty child. psubtract's child guard `!node_is_empty(as_tagged(cf.rec))`
+        # (DenseByteNode.jl:962) crashed with MethodError(node_is_empty(::Nothing)) without
+        # this method — surfaced end-to-end by MORK's `!=` comparison source.
+        @test PathMap.node_is_empty(nothing) == true
     end
 
     # ── COW property: join_k_path (MorkL OP_DROP_HEAD) on a SHARED subtrie must NOT

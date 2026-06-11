@@ -76,6 +76,12 @@ node_remove_unmasked_branches!(::EmptyNode, ::AbstractVector{UInt8}, ::ByteMask,
 
 node_is_empty(::EmptyNode) = true
 
+# `nothing` is the EmptyNode sentinel inside a TrieNodeODRc (see TrieNode.jl:360), so
+# `as_tagged(rc)` legitimately yields `nothing` for an empty child. Callers that guard with
+# `!node_is_empty(as_tagged(rc))` (e.g. DenseByteNode.jl:524, 962 in psubtract) need this
+# method; without it psubtract over a node with an empty child rc crashes (`node_is_empty(::Nothing)`).
+node_is_empty(::Nothing) = true
+
 new_iter_token(::EmptyNode) = UInt128(0)
 
 iter_token_for_path(::EmptyNode, ::AbstractVector{UInt8}) = UInt128(0)
