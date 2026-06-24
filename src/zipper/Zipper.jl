@@ -161,17 +161,22 @@ end
     r === nothing ? (0, nothing) : r
 end
 
-# Returns the byte OFFSET consumed from `path` (not a view) + the stalled node + value. Allocation-
-# free in the common path: no per-iteration view, no slice copy, no Union-Tuple box. The Phase-2
-# remaining slice is materialized as a `view` ONCE (terminal branch) when the value lookup needs it.
+# Returns the descent's stop node + the byte OFFSET consumed from `path` + `full` (true iff the
+# remaining matched a child edge in full ⇒ all path bytes were traversed). Returning a `Bool`
+# instead of the looked-up value keeps the return tuple `(TrieNodeODRc, Int, Bool)` isbits-
+# representable — no `Union{Nothing,V}` field ⇒ no heap box (the Cluster-2 alloc at this return +
+# the `indexed_iterate` destructure box are eliminated). Callers do the value lookup uniformly as
+# `node_get_val(inner(node), view(path, off+1:end))`; `full` is `path_exists_at`'s dangling-safe
+# "structurally exists" signal. In both the terminal-match and the stall case `node` is the node to
+# look the value up in (NOT advanced past the final edge), and `off` is the start of the remaining.
 function node_along_path_off(
-    root_rc::TrieNodeODRc{V, A}, path::AbstractVector{UInt8}, root_val::Union{Nothing, V}
+    root_rc::TrieNodeODRc{V, A}, path::AbstractVector{UInt8}
 ) where {V, A}
     node = root_rc
-    val = root_val
     inner = _fnode(_rc_inner(node), V, A)
     n = length(path)
     off = 0
+    full = n == 0
     while off < n
         consumed, next_rc = node_get_child_nb(inner, path, off)
         next_rc === nothing && break
@@ -179,14 +184,12 @@ function node_along_path_off(
             node = next_rc
             off += consumed
             inner = _fnode(_rc_inner(node), V, A)
-        else                                  # whole remaining consumed → value lookup at this node
-            val = node_get_val(inner, view(path, (off + 1):n))
-            node = next_rc
-            off = n
+        else                                  # remaining matched a child edge in full → fully traversed
+            full = true
             break
         end
     end
-    (node, off, val)
+    (node, off, full)
 end
 
 # =====================================================================

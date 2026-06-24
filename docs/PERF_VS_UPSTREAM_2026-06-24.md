@@ -144,8 +144,27 @@ other `node_get_child` callers are untouched.
 | median (40k map) | — | 1187 ns | **764 ns** (−36%) |
 
 Full PathMap suite green. **Two contained, tested changes roughly halved the gap to upstream Rust.**
-Residual 8 allocs / 256 B: the terminal `view` for the Phase-2 `node_get_val`, the `Union{Nothing,V}`
-val field of the descend return tuple, and `node_get_val`'s own internal slice — the next targets.
+
+## Optimization #3 — IMPLEMENTED (Cluster 2: de-box the descend return)
+
+`node_along_path_off` returned `(node, off, val::Union{Nothing,V})` — the `Union` field made the
+tuple non-isbits, so it heap-boxed (AllocCheck Zipper:189) and the `indexed_iterate` destructure
+boxed too. Fix: return `(node, off, full::Bool)` — `(ptr, Int, Bool)` is isbits-representable, no box.
+`full` (did the descent match the remaining as a child edge → all bytes traversed) carries the
+dangling-path signal `path_exists_at` needs; both callers do the value lookup uniformly via
+`node_get_val(inner, view(path, off+1:end))`. **AllocCheck 21 → 8 sites; dynamic 256→224 B / 8→7
+allocs; suite green** (incl. dangling-path semantics). Time barely moved (40k 764→728 ns; 200k
+2560→2588 ns) — confirming the cache-sweep finding that **we are now cache-bound**, so further
+allocation cuts have diminishing returns. The remaining 8 AllocCheck sites are `_ensure_root!`
+(not hit on populated reads) + `node_get_child_nb`'s tuple construction (a conservative static flag).
+
+### The real lever is now the node memory layout (see ADR-NODE-STORAGE)
+The cache sweep (constant depth, growing trie) measured get-latency **864 ns @1k → 8742 ns @1M** —
+a 10× swing purely from cache pressure on scattered GC mutable-struct nodes. At cache-resident scale
+Julia is **~4× Rust** (the compute floor); the rest of the gap *is* cache misses. The
+`Memory{T}` flat-index / isbits-`TrieNodeODRc` redesign (ADR) is what addresses it — and as a bonus
+makes the node tuples fully isbits (zero-alloc). Allocation micro-opts have taken us as far as they
+usefully can.
 
 *Methodology files (ephemeral, this session): `bench_dict*.jl`, `pmcmp/` (Rust), `profile_get.jl`,
 `alloccheck_get.jl`; committed: `benchmarks/profile_get_val.jl`.*

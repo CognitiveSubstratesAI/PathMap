@@ -84,10 +84,9 @@ function get_val_at(m::PathMap{V, A}, path) where {V, A}
     m.root === nothing && return m.root_val
     path_v = path isa AbstractVector{UInt8} ? path : collect(UInt8, path)
     isempty(path_v) && return m.root_val
-    last_rc, off, val = node_along_path_off(m.root::TrieNodeODRc{V, A}, path_v, m.root_val)
-    off >= length(path_v) && return val
-    # Phase 2: stalled because remaining matches a value slot, not a child slot.
-    # node_get_val on the stalled node, over a VIEW of the remaining bytes (no copy).
+    last_rc, off, _ = node_along_path_off(m.root::TrieNodeODRc{V, A}, path_v)
+    # Uniform value lookup at the stop node over a VIEW of the remaining bytes (no copy):
+    # terminal-match → value at the matched edge; stall → value-slot or nothing.
     inner = _fnode(_rc_inner(last_rc), V, A)
     node_get_val(inner, view(path_v, (off + 1):length(path_v)))
 end
@@ -108,10 +107,9 @@ function path_exists_at(m::PathMap{V, A}, path) where {V, A}
     path_v = path isa AbstractVector{UInt8} ? path : collect(UInt8, path)
     m.root === nothing && return isempty(path_v) && m.root_val !== nothing
     isempty(path_v) && return m.root_val !== nothing
-    last_rc, off, _ = node_along_path_off(m.root::TrieNodeODRc{V, A}, path_v, m.root_val)
-    # off == length: consumed all bytes → path structurally exists (val may be nothing for a
-    # dangling path — still a valid trie path).
-    off >= length(path_v) && return true
+    last_rc, off, full = node_along_path_off(m.root::TrieNodeODRc{V, A}, path_v)
+    # full match (remaining matched a child edge, incl. a dangling edge) → structurally exists.
+    full && return true
     # Stalled with bytes left → value-slot check (view of the remaining bytes — no copy).
     inner = _fnode(_rc_inner(last_rc), V, A)
     node_get_val(inner, view(path_v, (off + 1):length(path_v))) !== nothing
