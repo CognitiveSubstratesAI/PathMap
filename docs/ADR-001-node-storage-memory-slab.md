@@ -94,12 +94,26 @@ mutable trie's *cache-resident* (1k) latency. Then **DFS-pre-order locality comp
 | 200k | 3401 ns | 949 ns | **589 ns** | 129.7→62 MB |
 
 Compaction is 1.6-1.9× faster than raw at scale, **flattens the cache-swing 4.6×→3.2×**, and
-**halves memory** (drops the append-only leaks). Net: the compacted slab trie is **5.8× faster than
-the mutable `PathMap` at 200k** and **~2.9× Rust** (589 vs 205 ns) — *below* the ~4× compute-floor
-estimate, from the mutable trie's ~12-18×. **The ADR thesis is decisively confirmed: contiguous
-isbits-handle node storage + locality layout closes most of the Julia-vs-Rust gap.** Remaining for
-parity: LineList-node compaction (memory — dense-byte-only still uses ~1.6× the RAM after compaction),
-free-list reuse, COW/structural-sharing, then replacing `PathMap`.
+**halves memory** (drops the append-only leaks). Net: the compacted dense-byte slab trie is 5.8×
+faster than the mutable `PathMap` at 200k and **~2.9× Rust** (589 vs 205 ns), from the mutable trie's
+~12-18×.
+
+**Increment 2 — sparse LIST nodes (no 32-byte mask; O(count) scan)** replace the dense node on the
+same writable trie:
+
+| N | `PathMap` | SlabTrie (list, compacted) | slab mem | `PathMap` RAM |
+|---|---|---|---|---|
+| 1k | 663 ns | **100 ns** | 0.2 MB | 0.2 MB |
+| 30k | 2485 ns | **346 ns** | 3.8 MB | 5.8 MB |
+| 200k | 3781 ns | **449 ns** | 23 MB | 38 MB |
+
+On real (sparse) tries the linear scan is over 1-2 entries — *cheaper* than a 32-byte mask load — so
+list nodes beat dense (449 vs 589 ns at 200k) **and halve memory**. Net at 200k: **8.4× faster than
+the mutable `PathMap`, ~2.2× Rust, and 40% less RAM (23 vs 38 MB)** — **the redesign now beats the
+mutable trie on BOTH speed and memory.** **The ADR thesis is decisively confirmed: contiguous
+isbits-handle node storage + locality layout + a compact sparse node closes most of the Julia-vs-Rust
+gap on both axes.** Remaining for parity/production: a dense-node fallback for high-fan-out nodes
+(keep O(1) when `count` is large), free-list reuse, COW/structural-sharing, then replacing `PathMap`.
 
 ## Scope boundaries
 

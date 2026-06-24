@@ -116,3 +116,65 @@ end
     test_bit(mask, byte) || return 0
     return Int(index_of(mask, byte)) + 1
 end
+
+# ── increment 2: sparse LIST node (TAG_LINELIST) — no 32-byte mask, linear scan ──
+# Layout: [count: UInt16] [entries: count × (byte: UInt8, child: SlabHandle 8, val: V, has_val: UInt8)].
+# Halves per-node memory vs the dense node for the (many) sparse nodes; lookup is an O(count) scan.
+@inline _lln_estride(::Type{V}) where {V} = 1 + sizeof(SlabHandle) + sizeof(V) + 1
+@inline lln_count(s::NodeSlab, h::SlabHandle) = Int(slab_load(s, h.idx, UInt16))
+@inline _lln_ebase(h::SlabHandle, i::Int, ::Type{V}) where {V} = h.idx + UInt32(2 + (i - 1) * _lln_estride(V))
+@inline lln_byte(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} = slab_load(s, _lln_ebase(h, i, V), UInt8)
+@inline lln_child(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} = slab_load(s, _lln_ebase(h, i, V) + UInt32(1), SlabHandle)
+@inline lln_val(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} = slab_load(s, _lln_ebase(h, i, V) + UInt32(9), V)
+@inline lln_hasval(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} = slab_load(s, _lln_ebase(h, i, V) + UInt32(9 + sizeof(V)), UInt8) != 0x00
+@inline lln_child_off(h::SlabHandle, i::Int, ::Type{V}) where {V} = _lln_ebase(h, i, V) + UInt32(1)
+
+@inline function lln_find(s::NodeSlab, h::SlabHandle, byte::UInt8, ::Type{V})::Int where {V}
+    cnt = lln_count(s, h)
+    @inbounds for i in 1:cnt
+        slab_load(s, _lln_ebase(h, i, V), UInt8) == byte && return i
+    end
+    return 0
+end
+
+@inline function lln_new!(s::NodeSlab, ::Type{V}) where {V}
+    start = slab_reserve!(s, 2)
+    slab_store!(s, start, UInt16(0))
+    return SlabHandle(start, TAG_LINELIST)
+end
+
+"Pack a list node from `(byte, child, val, has_val)` items."
+function lln_pack!(s::NodeSlab, items::AbstractVector{Tuple{UInt8, SlabHandle, V, Bool}}) where {V}
+    n = length(items)
+    start = slab_reserve!(s, 2 + n * _lln_estride(V))
+    slab_store!(s, start, UInt16(n))
+    off = start + UInt32(2)
+    for (b, c, v, hv) in items
+        slab_store!(s, off, b)
+        slab_store!(s, off + UInt32(1), c)
+        slab_store!(s, off + UInt32(9), v)
+        slab_store!(s, off + UInt32(9 + sizeof(V)), hv ? 0x01 : 0x00)
+        off += UInt32(_lln_estride(V))
+    end
+    return SlabHandle(start, TAG_LINELIST)
+end
+
+# Append byte `b` (empty entry) to list node `h` (relocate); return (new_handle, new entry index).
+function lln_add_byte!(s::NodeSlab, h::SlabHandle, b::UInt8, ::Type{V}) where {V}
+    cnt = lln_count(s, h)
+    items = Vector{Tuple{UInt8, SlabHandle, V, Bool}}(undef, cnt + 1)
+    @inbounds for i in 1:cnt
+        items[i] = (lln_byte(s, h, i, V), lln_child(s, h, i, V), lln_val(s, h, i, V), lln_hasval(s, h, i, V))
+    end
+    items[cnt + 1] = (b, SLAB_NIL, zero(V), false)
+    return (lln_pack!(s, items), cnt + 1)
+end
+
+@inline function lln_set_val!(s::NodeSlab, h::SlabHandle, i::Int, val::V) where {V}
+    base = _lln_ebase(h, i, V)
+    slab_store!(s, base + UInt32(9), val)
+    slab_store!(s, base + UInt32(9 + sizeof(V)), 0x01)
+    return nothing
+end
+@inline lln_set_child!(s::NodeSlab, h::SlabHandle, i::Int, child::SlabHandle, ::Type{V}) where {V} =
+    slab_store!(s, _lln_ebase(h, i, V) + UInt32(1), child)

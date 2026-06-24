@@ -83,6 +83,7 @@ using Test, Random
             v = Int32(rand(Int16))
             PathMap.slabtrie_set!(t, k, v); d[k] = v
         end
+        @test t.root.tag == PathMap.TAG_LINELIST                     # increment 2: sparse list-backed
         @test all(((k, v),) -> PathMap.slabtrie_get(t, k) == v, d)   # every key ⇒ its last value
         @test PathMap.slabtrie_get(t, b"z") === nothing              # 'z' never inserted (not in cs)
         @test PathMap.slabtrie_get(t, UInt8[]) === nothing           # empty key
