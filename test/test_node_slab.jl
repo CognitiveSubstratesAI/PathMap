@@ -95,4 +95,19 @@ using Test, Random
         @test PathMap.slabtrie_get(t, Vector{UInt8}("ab"))  == Int32(333)
         @test PathMap.slabtrie_get(t, Vector{UInt8}("abc")) == Int32(222)   # sibling unaffected
     end
+
+    @testset "step 3c: compaction preserves ≡ Dict and shrinks the slab" begin
+        Random.seed!(13)
+        t = PathMap.SlabTrie{Int32}()
+        d = Dict{Vector{UInt8}, Int32}()
+        cs = collect(UInt8, "abcde")
+        for _ in 1:2000
+            k = UInt8[cs[rand(1:5)] for _ in 1:rand(1:6)]
+            v = Int32(rand(Int16)); PathMap.slabtrie_set!(t, k, v); d[k] = v
+        end
+        before = t.slab.len
+        PathMap.slabtrie_compact!(t)
+        @test t.slab.len < before                                       # append-only leaks dropped
+        @test all(((k, v),) -> PathMap.slabtrie_get(t, k) == v, d)       # still correct post-compaction
+    end
 end

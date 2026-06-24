@@ -96,3 +96,40 @@ function slabtrie_get(t::SlabTrie{V}, key) where {V}
     end
     return nothing
 end
+
+# Copy the subtrie rooted at `old_h` from `old`→`new` in DFS PRE-order: the node is written first,
+# then its children are placed immediately after (recursively), and the node's child handles are
+# backpatched to the new locations. Result: every root→leaf path is laid out near-contiguously
+# (forward) — the cache-friendly layout the read-only ACT gets from its sorted build.
+function _compact_node!(old::NodeSlab, new::NodeSlab, old_h::SlabHandle, ::Type{V}) where {V}
+    mask = dbn_mask(old, old_h)
+    ne = dbn_nentries(old, old_h)
+    entries = Vector{DBNEntry{V}}(undef, ne)
+    @inbounds for i in 1:ne
+        entries[i] = dbn_entry(old, old_h, i, V)
+    end
+    new_h = dbn_pack!(new, mask, entries)            # write parent first (placeholder child handles)
+    @inbounds for i in 1:ne
+        ch = entries[i].child
+        if !slab_is_nil(ch)
+            nc = _compact_node!(old, new, ch, V)     # place child after, recursively
+            slab_store!(new, _dbn_ebase(new_h, i, V), nc)   # backpatch parent's child handle
+        end
+    end
+    return new_h
+end
+
+"""
+    slabtrie_compact!(t) -> t
+
+Rebuild the slab in DFS pre-order (cache-friendly path layout) AND drop the append-only leaked
+records — only reachable nodes are copied, so the slab also shrinks. (Recursive on trie depth;
+no structural sharing in this minimal version, so each node is visited once.)
+"""
+function slabtrie_compact!(t::SlabTrie{V}) where {V}
+    slab_is_nil(t.root) && return t
+    new = NodeSlab(max(64, Int(t.slab.len)))         # old len is a safe upper bound (compaction shrinks)
+    t.root = _compact_node!(t.slab, new, t.root, V)
+    t.slab = new
+    return t
+end
