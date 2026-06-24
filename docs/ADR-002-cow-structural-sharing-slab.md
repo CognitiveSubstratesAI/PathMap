@@ -71,14 +71,34 @@ compaction (Q2). **Consequence (sequence): this GATES MORK integration and must 
 the start.** The PoC's single reallocatable `Memory{UInt8}` is NOT concurrency-viable; retrofitting
 concurrency onto it later is a rewrite, not a patch.
 
+## ⚠️ PREREQUISITE before ANY of the below: cross-check upstream Rust pathmap + MORK
+
+**This ADR's slab/COW/concurrency design was reasoned from the Julia code + first principles, NOT yet
+grounded in how upstream Rust `pathmap` actually does its allocator/arena.** PathMap is a 1:1 port of
+Rust `pathmap`; the slab is the Julia-idiomatic equivalent of what Rust gets "for free" from its
+`Allocator` trait + value-type node enums. Before writing a line of slab/concurrency code, READ upstream
+(local: `~/JuliaAGI/dev-zone/` — user downloaded upstream pathmap there):
+
+- **pathmap `Allocator` trait + how nodes are allocated/laid out** — does Rust already have an
+  arena/segment scheme we should mirror? (jemalloc is its arena strategy; bound requires `Send + Sync`.)
+- **`make_mut` / COW / refcount** (slim_ptrs `AtomicU32`) — confirm Q1/Q2 match Rust's COW semantics.
+- **How Rust handles the concurrency Q4 targets** — `ZipperHead` / write-zipper exclusivity in Rust.
+- **MORK's actual cross-Space + concurrency usage** — validate the per-Space + graft-copies decision.
+
+**Until this cross-check is done, the Q4 segmented-slab design (and the build order below) is PROVISIONAL
+— a reasonable proposal, not a confirmed faithful adaptation.** Deviating from upstream here risks
+forking the port. Adjust the design to match Rust's allocator semantics before step 0.
+
 ## Implied build order (what the next coding session starts from)
 
-0. **Define the segmented `SlabHandle` format + segment-array layout FIRST.** The PoC handle is a flat
+0. **Segmented `SlabHandle` format FIRST (~half-day, not an hour).** The PoC handle is a flat
    `(idx::UInt32, tag::UInt8)` into one contiguous `Memory`. A segmented slab needs
-   `(segment::UInt16, offset::UInt32, tag::UInt8)` (or equivalent). This is a **breaking change to every
-   handle-using function** — `lln_find`, `dbn_mask`, `node_find`, `_compact_node!`, all of them — so it
-   is the **foundation, not a late refactor**. The next coding session's first, bounded task is this
-   struct + the segment-array layout + their tests; everything else builds on it.
+   `(segment::UInt16, offset::UInt32, tag::UInt8)` (or equivalent). Scope is **"rewrite the existing slab
+   PoC to use segmented handles, suite green"** — a breaking change to EVERY handle-using function in
+   `NodeSlab.jl` (`lln_find`, `dbn_mask`, `node_find`, `_compact_node!`, all read helpers) AND all 38
+   tests in `test_node_slab.jl`. Foundation, not a late refactor. **Do NOT build the segment-array
+   *allocator* yet** — just the handle format + the existing PoC using it correctly, all 38 slab tests +
+   full suite green before committing.
 1. **Segmented, CAS-append, per-Space slab** (Q4) — the concurrency-safe foundation; nothing else is
    sound without it.
 2. **Refcounted records + DAG compaction with a seen-map** (Q2) — before any sharing write path.
@@ -86,24 +106,31 @@ concurrency onto it later is a rewrite, not a patch.
 4. **Zipper on stable handles** (Q3) — mostly free; add a compaction quiesce barrier.
 5. Read path (already characterized) can land independently/first as the additive, no-risk slice.
 
-## Open question (decide before the write path lands): cross-space structural sharing
+## Cross-space structural sharing — DECISION (resolved 2026-06-24 by reading the cross-space paths)
 
-Q4's **per-Space slab** has a consequence ADR-002 must flag: MORK space algebra (joins/meets/differences
-across spaces) works today because structural sharing is **global** — two Spaces can hold handles to the
-SAME physical node, with a refcount that **spans both**. Per-Space slabs break this: a node in Space A's
-slab is indexed relative to A's segment array and is **opaque to Space B**. Three options, each with a
-cost:
+The concern: MORK space algebra could rely on **global** structural sharing — two Spaces holding handles
+to the SAME physical node, refcount spanning both — which per-Space slabs (Q4) break. Resolved by reading
+the actual cross-space code:
 
-- **(a) Cross-space joins always COPY** (no sharing across space boundaries) — simplest; **loses the
-  structural-sharing win that makes joins cheap**.
-- **(b) A GLOBAL shared slab** for nodes that cross space boundaries — keeps sharing; **complicates the
-  per-Space ownership model**.
-- **(c) Cross-space handles encode the owning Space** (a space-id in the handle) — keeps sharing; **larger
-  handles, every dereference more complex**.
+- **Cross-space joins/products do NOT share nodes.** `ProductZipper` (`secondaries::Vector{TrieRefBorrowed}`
+  + primary `ReadZipperCore`) and `ProductZipperG` (`primary` + `secondary::Vector` of per-factor zippers)
+  traverse each factor (Space) via its OWN independent read-zipper and form the product by **concatenating
+  one path per factor** — there is no cross-space node-level sharing to lose.
+- **Graft is the only cross-space sharing path.** `wz_graft!` → `_wz_graft_internal!(z, copy(src_rc))`:
+  `copy()` shares the source node by reference (refcount bump). A cross-Space graft thus shares a physical
+  node across two PathMaps today.
 
-Not a blocker for starting implementation — the within-space case is the common path and Q4's segmented
-CAS-append design is correct for it — but it **affects the MeTTa space algebra's performance
-characteristics** and **needs a decision before the write path lands**.
+**Decision: Option (a) — cross-Space operations COPY at the slab level** (handles are relative to the
+owning Space's segment array; never shared across Space boundaries). Consequences:
+- **No regression for joins/products** — `ProductZipper`/`ProductZipperG` already read each Space
+  independently; per-Space slabs change nothing there.
+- **Within-Space sharing fully preserved** (the common case: COW path-copying, internal graft, joins).
+- **Cross-Space graft loses its O(1) by-reference share** → O(subtrie) copy into the destination Space's
+  slab. Acceptable: cross-Space access is dominated by `ProductZipper` reads, not by-reference graft.
+- **Escape hatch if measured hot:** option (c) (space-id in handle) re-enables cross-Space sharing without
+  a global slab — revisit ONLY if a workload shows cross-Space graft-copy as a bottleneck.
+
+This unblocks Q1 — cross-Space grafts materialise into the destination slab; no global slab needed.
 
 ## Other open items (deferred to implementation)
 
