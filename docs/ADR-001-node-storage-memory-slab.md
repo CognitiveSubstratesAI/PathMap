@@ -1,8 +1,29 @@
 # ADR-001: Flat-index node storage (`Memory{T}` slab) for isbits `TrieNodeODRc`
 
-**Status:** Proposed (successor to the `perf/index-based-descend` allocation work)
+**Status:** PoC complete + validated → **integration DEFERRED (not the bottleneck; see Decision)**
 **Date:** 2026-06-24
-**Context branch:** `perf/index-based-descend` · **Scope:** separate branch + review cycle
+**Context branch:** `feat/node-slab-adr-001` (PoC, kept) · `perf/index-based-descend` (read-path PR, banked)
+
+> ## Decision (2026-06-24): defer integration; ship nothing
+>
+> The PoC proved the thesis, identified the bottleneck (memory layout, not codegen), and banked the
+> read-path PR (24×→12.5×) — that was the recoverable value, and **none of it required shipping
+> `SlabTrie`.** The full integration is **not the right move now**, and a **parallel type is not
+> worth standing up**:
+> - **PathMap is not the MeTTa-eval bottleneck.** End-to-end MeTTa reasoning is dominated by term
+>   rewriting, MM2 dispatch (`space_metta_calculus!`), unification depth, and PLN chains — a 2.2×
+>   point-get win does not move end-to-end throughput. *Gate integration on profiling that shows
+>   PathMap dominates.*
+> - **No niche for a parallel type.** On flat lookups `Dict` (~156 ns) beats `SlabTrie`; on read-heavy
+>   prefix-sharing the read-only **ACT (`ArenaCompactTree`, 4× reads) already exists**; every live
+>   PathMap use (MORK spaces) needs zippers + structural sharing + COW that `SlabTrie` lacks.
+> - **Design debt to resolve first.** When integration is justified, do it with typed `Memory{T}` /
+>   two-level layout (not the `Memory{UInt8}` byte blob), gated on **ADR-002 (COW + structural
+>   sharing)**.
+>
+> **Resume trigger:** end-to-end profiling shows PathMap is the dominant bottleneck, or PRIMUS is
+> benchmarked vs other MeTTa impls on throughput and the gap is PathMap. Until then: keep the branch as
+> a validated design artefact, use PathMap as-is with the read-path opts, `Dict` for flat lookups.
 
 ## Context
 
