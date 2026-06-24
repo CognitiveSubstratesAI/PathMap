@@ -360,6 +360,11 @@ PathMap.jl is inspired by the Rust
 [`pathmap`](https://github.com/trueagi-io/PathMap) crate.
 The core algorithms and data structures follow the upstream design.
 
+> **Deferred upstream delta (as of 2026-06-24):** upstream `27d9b09` (PR #38) adds a
+> `val_at`/`graft_src_at`/`graft_masked_branches` read-API family + perf. It is **not yet ported** —
+> no current consumer (MORK) uses it. See [docs/UPSTREAM_DELTA_2026-06-24.md](docs/UPSTREAM_DELTA_2026-06-24.md)
+> for the exact commit range + port trigger.
+
 The following capabilities are implemented in PathMap.jl but are not
 yet present in the current Rust release:
 
