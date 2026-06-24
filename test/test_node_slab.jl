@@ -111,4 +111,23 @@ using Test, Random
         @test t.slab.len < before                                       # append-only leaks dropped
         @test all(((k, v),) -> PathMap.slabtrie_get(t, k) == v, d)       # still correct post-compaction
     end
+
+    @testset "increment 2 hybrid: high-fan-out node converts to dense" begin
+        t = PathMap.SlabTrie{Int32}()
+        d = Dict{Vector{UInt8}, Int32}()
+        for b in 0x01:0x28          # 40 distinct first bytes (> SLAB_MAXLIST=16) ⇒ root must go dense
+            for c in 0x01:0x05
+                k = UInt8[b, c]; v = Int32(b) * Int32(100) + Int32(c)
+                PathMap.slabtrie_set!(t, k, v); d[k] = v
+            end
+        end
+        @test t.root.tag == PathMap.TAG_DENSEBYTE                        # converted past the threshold
+        @test all(((k, v),) -> PathMap.slabtrie_get(t, k) == v, d)       # dense lookup correct
+        PathMap.slabtrie_compact!(t)
+        @test t.root.tag == PathMap.TAG_DENSEBYTE                        # type preserved by compaction
+        @test all(((k, v),) -> PathMap.slabtrie_get(t, k) == v, d)       # still correct after compaction
+        # a sparse child of the dense root stays a list node (hybrid coexistence)
+        ci = PathMap.node_find(t.slab, t.root, 0x01, Int32)
+        @test PathMap.node_child(t.slab, t.root, ci, Int32).tag == PathMap.TAG_LINELIST
+    end
 end

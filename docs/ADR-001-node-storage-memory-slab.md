@@ -112,8 +112,14 @@ list nodes beat dense (449 vs 589 ns at 200k) **and halve memory**. Net at 200k:
 the mutable `PathMap`, ~2.2× Rust, and 40% less RAM (23 vs 38 MB)** — **the redesign now beats the
 mutable trie on BOTH speed and memory.** **The ADR thesis is decisively confirmed: contiguous
 isbits-handle node storage + locality layout + a compact sparse node closes most of the Julia-vs-Rust
-gap on both axes.** Remaining for parity/production: a dense-node fallback for high-fan-out nodes
-(keep O(1) when `count` is large), free-list reuse, COW/structural-sharing, then replacing `PathMap`.
+gap on both axes.**
+
+The node-type story is then completed by a **HYBRID dispatch**: nodes start as compact LIST nodes and
+a node that exceeds `SLAB_MAXLIST` (16) children converts to a DENSE (mask, O(1)) node — so
+high-fan-out nodes don't degrade to a long scan, while the common sparse nodes keep the list win. The
+tag branch is predictable (most nodes are list) ⇒ **no hot-path regression** (200k still ~2.2× Rust,
+23 MB), now robust across any fan-out distribution. Remaining for parity/production: free-list reuse,
+COW/structural-sharing, then replacing `PathMap`.
 
 ## Scope boundaries
 
