@@ -56,4 +56,20 @@ using Test
         @test PathMap.dbn_mask(s, h) == mask                      # earlier record survived
         @test PathMap.dbn_entry(s, h, 1, Int32).val == Int32(7)
     end
+
+    @testset "step 3 (slab read lookup): byte→entry matches packing" begin
+        s = PathMap.NodeSlab(16)
+        mask = PathMap.set(PathMap.set(PathMap.ByteMask(), 0x41), 0x7a)        # 'A' < 'z'
+        DBN = PathMap.DBNEntry{Int32}
+        entries = [DBN(PathMap.SlabHandle(UInt32(100), PathMap.TAG_LINELIST), Int32(7), true),  # 'A'
+                   DBN(PathMap.SLAB_NIL, Int32(0), false)]                                       # 'z'
+        h = PathMap.dbn_pack!(s, mask, entries)
+        iA = PathMap.dbn_slab_index(s, h, 0x41); iz = PathMap.dbn_slab_index(s, h, 0x7a)
+        @test iA == 1 && iz == 2                                  # mask-ordered indexing
+        @test PathMap.dbn_slab_index(s, h, 0x42) == 0            # 'B' absent
+        @test PathMap.dbn_slab_index(s, h, 0x00) == 0
+        eA = PathMap.dbn_entry(s, h, iA, Int32)
+        @test eA.child == PathMap.SlabHandle(UInt32(100), PathMap.TAG_LINELIST) && eA.val == Int32(7)
+        @test PathMap.slab_is_nil(PathMap.dbn_entry(s, h, iz, Int32).child)   # 'z': edge, no child
+    end
 end

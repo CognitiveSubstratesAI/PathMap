@@ -105,3 +105,14 @@ function dbn_entry(s::NodeSlab, h::SlabHandle, i::Integer, ::Type{V}) where {V}
     hv = slab_load(s, base + UInt32(sizeof(SlabHandle) + sizeof(V)), UInt8)
     return DBNEntry{V}(child, val, hv != 0x00)
 end
+
+# Read lookup (step 3 prerequisite): the byte-keyed entry index a slab `DenseByteNode` resolves a
+# byte to — exactly the `test_bit` + `index_of` mask lookup `node_get_child`/`node_get_val` use on
+# the mutable byte node. Returns the 1-based entry index, or 0 if the byte is absent. With this, a
+# slab byte node can serve reads; wiring it into the live descent (dual-path dispatch) is the next
+# (riskier) sub-step.
+@inline function dbn_slab_index(s::NodeSlab, h::SlabHandle, byte::UInt8)::Int
+    mask = dbn_mask(s, h)
+    test_bit(mask, byte) || return 0
+    return Int(index_of(mask, byte)) + 1
+end
