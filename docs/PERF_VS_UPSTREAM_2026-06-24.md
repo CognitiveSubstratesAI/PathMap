@@ -85,4 +85,33 @@ none of which Rust pays. Eliminating per-lookup allocation (index-based descend,
 highest-leverage work, and an index/SoA node pool (the `.act` arena layout, already 4× faster for reads)
 is the write-path follow-on.
 
-*Methodology files (ephemeral, this session): `bench_dict*.jl`, `pmcmp/` (Rust), `profile_get.jl`.*
+## Optimization #1 — IMPLEMENTED (index-based, allocation-free descend)
+
+Branch `perf/index-based-descend`. Added `node_along_path_off` (Zipper.jl) — returns the byte
+**offset** consumed instead of a `SubArray` view of the remaining key — and switched `get_val_at`
+to it + a `view` instead of `collect(UInt8, remaining)`.
+
+| metric | before | after |
+|---|---|---|
+| allocation / lookup (hit) | 464 B | **224 B** (−52%) |
+| allocation / lookup (miss) | 352 B | **160 B** (−55%) |
+| **point-get (200k varied keys)** | **4903 ns** | **3998 ns** (−18%) |
+| Julia ÷ Rust PathMap | 24× | **19.5×** |
+| `@code_warntype` instability lines | 3 | 2 (the `Union{SubArray,Vector}` is gone) |
+
+Full PathMap test suite green. The `Union{SubArray,Vector}` remaining-key instability + the escaping
+view + the `collect` copy are eliminated.
+
+### Road to zero-alloc (AllocCheck.jl)
+`check_allocs(get_val_at, …)` reports the residual sites precisely:
+- **`_ensure_root!` (PathMap.jl:31)** — lazy root init; *not* hit on a populated map (static-only).
+- **`indexed_iterate` at the `last_rc, off, val = …` destructure (PathMap.jl:87)** — `val::Union{Nothing,V}`
+  tuple field → `jl_get_nth_field_checked` boxes. Fix: return node+offset and look up the value
+  separately, or annotate field access.
+- **`node_get_child` returning `(consumed, next_rc)` tuples** (DenseByteNode.jl:1083, LineListNode, …)
+  + the internal `view(path, off+1:n)` per descend step. Fix: pass `(path, offset)` into the node
+  accessors instead of a view, and return via out-params / a small isbits struct — a deeper,
+  cross-node refactor. This is what stands between −52% and zero.
+
+*Methodology files (ephemeral, this session): `bench_dict*.jl`, `pmcmp/` (Rust), `profile_get.jl`,
+`alloccheck_get.jl`.*

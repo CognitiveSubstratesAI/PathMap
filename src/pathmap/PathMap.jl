@@ -84,14 +84,12 @@ function get_val_at(m::PathMap{V, A}, path) where {V, A}
     m.root === nothing && return m.root_val
     path_v = path isa AbstractVector{UInt8} ? path : collect(UInt8, path)
     isempty(path_v) && return m.root_val
-    last_rc, remaining, val = node_along_path(
-        m.root::TrieNodeODRc{V, A}, path_v, m.root_val
-    )
-    isempty(remaining) && return val
-    # Phase 2: node_along_path stalled because remaining matches a value slot,
-    # not a child slot. Try node_get_val on the stalled node.
+    last_rc, off, val = node_along_path_off(m.root::TrieNodeODRc{V, A}, path_v, m.root_val)
+    off >= length(path_v) && return val
+    # Phase 2: stalled because remaining matches a value slot, not a child slot.
+    # node_get_val on the stalled node, over a VIEW of the remaining bytes (no copy).
     inner = _fnode(_rc_inner(last_rc), V, A)
-    node_get_val(inner, collect(UInt8, remaining))
+    node_get_val(inner, view(path_v, (off + 1):length(path_v)))
 end
 
 """

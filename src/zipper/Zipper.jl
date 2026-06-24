@@ -102,6 +102,39 @@ function node_along_path(
     (node, key, val)
 end
 
+# Allocation-free variant of `node_along_path` (stop_short=false) for the read hot path:
+# returns the byte OFFSET consumed from `path` instead of a `SubArray` view of the remaining
+# key. The view returned by `node_along_path` escapes the call → heap-allocates per lookup
+# (~the 352 B measured in docs/PERF_VS_UPSTREAM_2026-06-24.md); an Int offset is isbits, so the
+# return tuple `(TrieNodeODRc, Int, Union{Nothing,V})` stack-allocates. Callers reconstruct the
+# remaining slice as `view(path, off+1:end)` only when they actually need the bytes (Phase 2).
+function node_along_path_off(
+    root_rc::TrieNodeODRc{V, A}, path::AbstractVector{UInt8}, root_val::Union{Nothing, V}
+) where {V, A}
+    node = root_rc
+    val = root_val
+    inner = _fnode(_rc_inner(node), V, A)
+    n = length(path)
+    off = 0
+    while off < n
+        kv = view(path, (off + 1):n)
+        result = node_get_child(inner, kv)
+        result === nothing && break
+        consumed, next_rc = result
+        if consumed < length(kv)
+            node = next_rc
+            off += consumed
+            inner = _fnode(_rc_inner(node), V, A)
+        else                                  # whole remaining consumed → value lookup at this node
+            val = node_get_val(inner, kv)
+            node = next_rc
+            off = n
+            break
+        end
+    end
+    (node, off, val)
+end
+
 # =====================================================================
 # val_count_below_root
 # =====================================================================
