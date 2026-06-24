@@ -754,3 +754,6 @@ const PM = PathMap.PathMap   # PathMap module and PathMap type share the same na
         end
     end
 end
+
+# ADR-001 increment 1 — slab scaffold (additive; not wired into the live trie)
+include("test_node_slab.jl")

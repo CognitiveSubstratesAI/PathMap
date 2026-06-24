@@ -42,6 +42,9 @@ include("nodes/TinyRefNode.jl")
 include("nodes/DenseByteNode.jl")
 include("nodes/BridgeNode.jl")
 
+# ── ADR-001 node-slab scaffold (additive; NOT wired into the live trie yet) ────
+include("pathmap/NodeSlab.jl")
+
 # ── Zipper / cursor layer ─────────────────────────────────────────────────────
 
 # Read zipper. Ports pathmap/src/zipper.rs.
