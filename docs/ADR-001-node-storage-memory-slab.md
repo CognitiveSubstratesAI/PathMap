@@ -70,6 +70,26 @@ one." That materially de-risks the redesign.
 - Careful migration: the existing extensive test suite must stay green throughout; do it node-type by
   node-type behind the slab abstraction.
 
+## Validation (increment 1, 2026-06-24) — the premise is confirmed in code
+
+A minimal **writable** slab trie (`src/pathmap/SlabTrie.jl`, dense-byte-only, no compaction / no
+free-list / no COW yet) was built and proven `≡ Dict` over 3000 random inserts, then benchmarked
+against the mature mutable `PathMap` on identical keys:
+
+| N (constant 15B keys) | `PathMap.get_val_at` | `SlabTrie.get` | speedup |
+|---|---|---|---|
+| 1k | 779 ns | **229 ns** | 3.4× |
+| 30k | 2409 ns | **598 ns** | 4.0× |
+| 200k | 3803 ns | **983 ns** | 3.9× |
+| allocations / lookup | 4 / 140 B | **0 / 15 B** | zero-alloc |
+
+**Even unoptimized, the slab trie is 3.4-4× faster and zero-allocation** — at 200k it matches the
+mutable trie's *cache-resident* (1k) latency, i.e. **~4.8× Rust**, into the ~4× compute-floor the
+cache analysis identified (down from the mutable trie's ~12-18×). The isbits-handle zero-alloc thesis
+and the contiguous-layout speed win are both confirmed. Remaining for the full payoff: locality-aware
+compaction (the size-swing isn't fully flat — append-only scatter), LineList-node compaction for
+memory (the dense-byte-only minimal version uses ~2.7× the RAM), free-list reuse, and COW.
+
 ## Scope boundaries
 
 - **In a dedicated branch + review cycle.** NOT part of `perf/index-based-descend`.
