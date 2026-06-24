@@ -73,6 +73,12 @@ concurrency onto it later is a rewrite, not a patch.
 
 ## Implied build order (what the next coding session starts from)
 
+0. **Define the segmented `SlabHandle` format + segment-array layout FIRST.** The PoC handle is a flat
+   `(idx::UInt32, tag::UInt8)` into one contiguous `Memory`. A segmented slab needs
+   `(segment::UInt16, offset::UInt32, tag::UInt8)` (or equivalent). This is a **breaking change to every
+   handle-using function** — `lln_find`, `dbn_mask`, `node_find`, `_compact_node!`, all of them — so it
+   is the **foundation, not a late refactor**. The next coding session's first, bounded task is this
+   struct + the segment-array layout + their tests; everything else builds on it.
 1. **Segmented, CAS-append, per-Space slab** (Q4) — the concurrency-safe foundation; nothing else is
    sound without it.
 2. **Refcounted records + DAG compaction with a seen-map** (Q2) — before any sharing write path.
@@ -80,5 +86,26 @@ concurrency onto it later is a rewrite, not a patch.
 4. **Zipper on stable handles** (Q3) — mostly free; add a compaction quiesce barrier.
 5. Read path (already characterized) can land independently/first as the additive, no-risk slice.
 
-Open items deferred to implementation: free-list vs compaction-only reclamation; chunk size;
-compaction trigger policy; and the LineList varlen-key pool layout (from the typed-storage note).
+## Open question (decide before the write path lands): cross-space structural sharing
+
+Q4's **per-Space slab** has a consequence ADR-002 must flag: MORK space algebra (joins/meets/differences
+across spaces) works today because structural sharing is **global** — two Spaces can hold handles to the
+SAME physical node, with a refcount that **spans both**. Per-Space slabs break this: a node in Space A's
+slab is indexed relative to A's segment array and is **opaque to Space B**. Three options, each with a
+cost:
+
+- **(a) Cross-space joins always COPY** (no sharing across space boundaries) — simplest; **loses the
+  structural-sharing win that makes joins cheap**.
+- **(b) A GLOBAL shared slab** for nodes that cross space boundaries — keeps sharing; **complicates the
+  per-Space ownership model**.
+- **(c) Cross-space handles encode the owning Space** (a space-id in the handle) — keeps sharing; **larger
+  handles, every dereference more complex**.
+
+Not a blocker for starting implementation — the within-space case is the common path and Q4's segmented
+CAS-append design is correct for it — but it **affects the MeTTa space algebra's performance
+characteristics** and **needs a decision before the write path lands**.
+
+## Other open items (deferred to implementation)
+
+Free-list vs compaction-only reclamation; chunk size; compaction trigger policy; and the LineList
+varlen-key pool layout (from the typed-storage note).
