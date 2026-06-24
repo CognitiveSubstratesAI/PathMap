@@ -102,12 +102,68 @@ function node_along_path(
     (node, key, val)
 end
 
-# Allocation-free variant of `node_along_path` (stop_short=false) for the read hot path:
-# returns the byte OFFSET consumed from `path` instead of a `SubArray` view of the remaining
-# key. The view returned by `node_along_path` escapes the call → heap-allocates per lookup
-# (~the 352 B measured in docs/PERF_VS_UPSTREAM_2026-06-24.md); an Int offset is isbits, so the
-# return tuple `(TrieNodeODRc, Int, Union{Nothing,V})` stack-allocates. Callers reconstruct the
-# remaining slice as `view(path, off+1:end)` only when they actually need the bytes (Phase 2).
+# ─────────────────────────────────────────────────────────────────────────────
+# Allocation-free read hot path (docs/PERF_VS_UPSTREAM_2026-06-24.md, optimization #1).
+#
+# `node_get_child` returns `Union{Nothing, Tuple{Int, TrieNodeODRc}}` — and `TrieNodeODRc` is a
+# mutable struct (non-isbits), so the `Tuple` heap-BOXES inside the `Union` (the #1 self-time +
+# alloc site in the profile). It also slices `key[1:klen]` (a copy). The `_nb` ("no-box") variants
+# below fix both: they take `(path, off)` (no per-iteration `view`), compare the prefix in place
+# (no slice copy), and return `Tuple{Int, Union{Nothing, TrieNodeODRc}}` — whose 2nd field is a
+# nullable pointer, so the tuple is isbits-representable and stays in registers (no box).
+# Used ONLY by `node_along_path_off` — the 25 other `node_get_child` callers are untouched.
+
+@inline function _prefix_eq_off(path::AbstractVector{UInt8}, off::Int, klen::Int, nkey)::Bool
+    (length(path) - off) >= klen || return false
+    @inbounds for i in 1:klen
+        path[off + i] == nkey[i] || return false
+    end
+    true
+end
+
+@inline function node_get_child_nb(n::AbstractByteNode{V, A}, path::AbstractVector{UInt8}, off::Int)::Tuple{Int, Union{Nothing, TrieNodeODRc{V, A}}} where {V, A}
+    @inbounds cf = _bn_get(n, path[off + 1])
+    (cf === nothing || cf.rec === nothing) && return (0, nothing)
+    (1, cf.rec)
+end
+@inline function node_get_child_nb(n::LineListNode{V, A}, path::AbstractVector{UInt8}, off::Int)::Tuple{Int, Union{Nothing, TrieNodeODRc{V, A}}} where {V, A}
+    if is_child_0(n)
+        klen = key_len_0(n)
+        _prefix_eq_off(path, off, klen, n.key0) && return (klen, into_child(n.slot0))
+    end
+    if is_child_1(n)
+        klen = key_len_1(n)
+        _prefix_eq_off(path, off, klen, n.key1) && return (klen, into_child(n.slot1))
+    end
+    (0, nothing)
+end
+@inline function node_get_child_nb(n::BridgeNode{V, A}, path::AbstractVector{UInt8}, off::Int)::Tuple{Int, Union{Nothing, TrieNodeODRc{V, A}}} where {V, A}
+    (n.is_child && !node_is_empty(n)) || return (0, nothing)
+    klen = length(n.key)
+    _prefix_eq_off(path, off, klen, n.key) || return (0, nothing)
+    child_rc = into_child(_bn_pl(n))
+    is_empty_node(child_rc) && return (0, nothing)
+    (klen, child_rc)
+end
+@inline function node_get_child_nb(t::TinyRefNode{V, A}, path::AbstractVector{UInt8}, off::Int)::Tuple{Int, Union{Nothing, TrieNodeODRc{V, A}}} where {V, A}
+    if t.is_child && !node_is_empty(t)
+        klen = length(t.key)
+        if _prefix_eq_off(path, off, klen, t.key)
+            child_rc = into_child(t.payload)
+            is_empty_node(child_rc) || return (klen, child_rc)
+        end
+    end
+    (0, nothing)
+end
+# Fallback for any other AbstractTrieNode — delegates to node_get_child (correct, not optimized).
+@inline function node_get_child_nb(n::AbstractTrieNode{V, A}, path::AbstractVector{UInt8}, off::Int)::Tuple{Int, Union{Nothing, TrieNodeODRc{V, A}}} where {V, A}
+    r = node_get_child(n, view(path, (off + 1):length(path)))
+    r === nothing ? (0, nothing) : r
+end
+
+# Returns the byte OFFSET consumed from `path` (not a view) + the stalled node + value. Allocation-
+# free in the common path: no per-iteration view, no slice copy, no Union-Tuple box. The Phase-2
+# remaining slice is materialized as a `view` ONCE (terminal branch) when the value lookup needs it.
 function node_along_path_off(
     root_rc::TrieNodeODRc{V, A}, path::AbstractVector{UInt8}, root_val::Union{Nothing, V}
 ) where {V, A}
@@ -117,16 +173,14 @@ function node_along_path_off(
     n = length(path)
     off = 0
     while off < n
-        kv = view(path, (off + 1):n)
-        result = node_get_child(inner, kv)
-        result === nothing && break
-        consumed, next_rc = result
-        if consumed < length(kv)
+        consumed, next_rc = node_get_child_nb(inner, path, off)
+        next_rc === nothing && break
+        if consumed < n - off
             node = next_rc
             off += consumed
             inner = _fnode(_rc_inner(node), V, A)
         else                                  # whole remaining consumed → value lookup at this node
-            val = node_get_val(inner, kv)
+            val = node_get_val(inner, view(path, (off + 1):n))
             node = next_rc
             off = n
             break

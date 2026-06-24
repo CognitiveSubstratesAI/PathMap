@@ -127,5 +127,25 @@ self-time frames over 3e6 lookups:
 `node_get_child`'s union-tuple return (#1) is both the largest allocation *and* the largest self-time
 sink — the highest-leverage target for the deep refactor. Reproduce with `benchmarks/profile_get_val.jl`.
 
+## Optimization #2 — IMPLEMENTED (non-boxing `node_get_child_nb`)
+
+Attacked the data-ranked #1+#2+#3 targets in the read hot path with `node_get_child_nb` (Zipper.jl,
+one method per node type + a fallback): takes `(path, off)` (no per-iteration `view`), compares the
+prefix in place (no `key[1:klen]` slice copy), and returns `Tuple{Int, Union{Nothing,TrieNodeODRc}}`
+— a nullable-pointer 2nd field, so the tuple is isbits-representable and stays in registers (no box).
+`node_along_path_off` uses it; the Phase-2 remaining slice is materialized as a `view` once. The 25
+other `node_get_child` callers are untouched.
+
+| metric | `main` | after #1 | **after #2** |
+|---|---|---|---|
+| **point-get (200k keys)** | 4903 ns | 3998 ns | **2560 ns** (−48% from main) |
+| **Julia ÷ Rust PathMap** | 24× | 19.5× | **12.5×** |
+| alloc / lookup (BenchmarkTools, 40k map) | — | 320 B / 10 | **256 B / 8** |
+| median (40k map) | — | 1187 ns | **764 ns** (−36%) |
+
+Full PathMap suite green. **Two contained, tested changes roughly halved the gap to upstream Rust.**
+Residual 8 allocs / 256 B: the terminal `view` for the Phase-2 `node_get_val`, the `Union{Nothing,V}`
+val field of the descend return tuple, and `node_get_val`'s own internal slice — the next targets.
+
 *Methodology files (ephemeral, this session): `bench_dict*.jl`, `pmcmp/` (Rust), `profile_get.jl`,
 `alloccheck_get.jl`; committed: `benchmarks/profile_get_val.jl`.*
