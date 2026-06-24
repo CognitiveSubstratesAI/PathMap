@@ -108,13 +108,13 @@ function path_exists_at(m::PathMap{V, A}, path) where {V, A}
     path_v = path isa AbstractVector{UInt8} ? path : collect(UInt8, path)
     m.root === nothing && return isempty(path_v) && m.root_val !== nothing
     isempty(path_v) && return m.root_val !== nothing
-    last_rc, remaining, _ = node_along_path(m.root::TrieNodeODRc{V, A}, path_v, m.root_val)
-    # Empty remaining: node_along_path consumed all bytes → path structurally exists
-    # (val may be nothing for dangling paths — still a valid trie path)
-    isempty(remaining) && return true
-    # Non-empty remaining: node_along_path stalled at a value slot — check Phase 2
+    last_rc, off, _ = node_along_path_off(m.root::TrieNodeODRc{V, A}, path_v, m.root_val)
+    # off == length: consumed all bytes → path structurally exists (val may be nothing for a
+    # dangling path — still a valid trie path).
+    off >= length(path_v) && return true
+    # Stalled with bytes left → value-slot check (view of the remaining bytes — no copy).
     inner = _fnode(_rc_inner(last_rc), V, A)
-    node_get_val(inner, collect(UInt8, remaining)) !== nothing
+    node_get_val(inner, view(path_v, (off + 1):length(path_v))) !== nothing
 end
 
 function Base.isempty(m::PathMap)
