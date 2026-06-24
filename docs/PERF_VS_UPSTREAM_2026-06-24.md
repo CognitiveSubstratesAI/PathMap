@@ -113,5 +113,19 @@ view + the `collect` copy are eliminated.
   accessors instead of a view, and return via out-params / a small isbits struct — a deeper,
   cross-node refactor. This is what stands between −52% and zero.
 
+### Data-driven ranking of the remaining work (`benchmarks/profile_get_val.jl`)
+`BenchmarkTools` + `Profile` (statistical self-time) + `@code_typed` rank the residual cost, so the
+deep refactor is driven by measurement. Current state: **10 allocs / 320 B** per lookup. Top
+self-time frames over 3e6 lookups:
+
+| rank | hot spot (self-time samples) | cause | fix |
+|---|---|---|---|
+| **1** | `node_get_child` tuple return — DenseByteNode:1083 (893) + LineListNode:776 (357) | `(consumed,next_rc)` boxes in the `Union{Nothing,Tuple{Int,TrieNodeODRc}}` return (`TrieNodeODRc` mutable ⇒ non-isbits ⇒ the `Tuple` heap-boxes in the `Union`) | union-free sentinel return (26 sites × 4 node types) |
+| **2** | `indexed_iterate` (579) + `node_along_path_off` return Zipper:135 (272) | the `Union{Nothing,V}` val field of the descend return tuple | return node+offset; look up val separately |
+| **3** | `SubArray`/`Array` `similar`/`getindex` (≈150-180) | per-iteration `view(path, off+1:n)` feeding `node_get_child` | pass `(path, offset)` into the node accessors |
+
+`node_get_child`'s union-tuple return (#1) is both the largest allocation *and* the largest self-time
+sink — the highest-leverage target for the deep refactor. Reproduce with `benchmarks/profile_get_val.jl`.
+
 *Methodology files (ephemeral, this session): `bench_dict*.jl`, `pmcmp/` (Rust), `profile_get.jl`,
-`alloccheck_get.jl`.*
+`alloccheck_get.jl`; committed: `benchmarks/profile_get_val.jl`.*
