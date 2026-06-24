@@ -118,8 +118,40 @@ The node-type story is then completed by a **HYBRID dispatch**: nodes start as c
 a node that exceeds `SLAB_MAXLIST` (16) children converts to a DENSE (mask, O(1)) node — so
 high-fan-out nodes don't degrade to a long scan, while the common sparse nodes keep the list win. The
 tag branch is predictable (most nodes are list) ⇒ **no hot-path regression** (200k still ~2.2× Rust,
-23 MB), now robust across any fan-out distribution. Remaining for parity/production: free-list reuse,
-COW/structural-sharing, then replacing `PathMap`.
+23 MB), now robust across any fan-out distribution.
+
+## Critique / corrections — what this PoC does and does NOT establish (2026-06-24)
+
+Expert review after increment 2. The thesis, the additive `≡ Dict`-gated isolation, the hybrid
+list/dense design, and the DFS-compaction insight are all endorsed and carry forward unchanged. **Two
+corrections must be applied before any integration:**
+
+1. **`Memory{UInt8}` is a PoC shortcut, NOT the production primitive.** What landed is a raw byte
+   arena with manual `slab_store!`/`slab_load` + per-field byte-offset arithmetic — it bypasses the
+   type system in the hot path (loses SROA + compiler field reasoning) and is error-prone exactly at
+   the `parent_coff` relocation backpatch (one wrong `sizeof` silently corrupts the trie). It is the
+   **read-only ACT (`ArenaCompact.jl`) serialization format mirrored into a *writable* structure** —
+   right for immutable mmap, wrong for mutation+backpatch. Integration must instead use **typed
+   `Memory{T}` per node type**, or (preferred) a **two-level layout**: `Memory{NodeHeader}` (typed,
+   O(1) field access) + a `Memory{EntryRecord}` pool with a bump allocator (byte arithmetic confined
+   to one place). Decide this **before** integration, not after.
+
+2. **Integration has NOT started — the "remaining work" below is the MAJORITY of the work, not a
+   tail.** SlabTrie is a *simplified* node model: **single-byte edges only.** It does **not** have
+   PathMap's `LineListNode` (variable-length keys / path compression, `klen>1` — packing a varlen key
+   field into the slab is an *unsolved* design problem), nor `BridgeNode`/`TinyRefNode`, nor **COW**,
+   nor **structural sharing**. The 8.4× is on a **tree** with none of that machinery. Structural
+   sharing changes compaction *categorically* (a DAG needs shared-node dedup, not the PoC's tree DFS
+   relayout). **Validated:** storage substrate + node-layout principles + speed ceiling. **NOT
+   validated:** zippers, COW, structural sharing.
+   *(Naming caveat: the PoC's `TAG_LINELIST` is a sparse single-byte-branch node, NOT PathMap's
+   path-compressing `LineListNode` — a borrowed name to rename in integration.)*
+
+**Remaining = the integration endgame, GATED on a new ADR.** COW + structural sharing in a slab model
+is the genuinely hard design problem; it gets **ADR-002 (COW + structural sharing in the slab)** before
+a line of integration code. Then: typed/two-level storage, the full node set (LineList path
+compression, Bridge, TinyRef), zipper mutation model, and the swap-vs-parallel-map decision
+(replace `PathMap` internals, or ship `SlabTrie`/`SlabPathMap` as a standalone high-perf map first).
 
 ## Scope boundaries
 
