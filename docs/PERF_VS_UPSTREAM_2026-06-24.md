@@ -155,8 +155,21 @@ dangling-path signal `path_exists_at` needs; both callers do the value lookup un
 `node_get_val(inner, view(path, off+1:end))`. **AllocCheck 21 → 8 sites; dynamic 256→224 B / 8→7
 allocs; suite green** (incl. dangling-path semantics). Time barely moved (40k 764→728 ns; 200k
 2560→2588 ns) — confirming the cache-sweep finding that **we are now cache-bound**, so further
-allocation cuts have diminishing returns. The remaining 8 AllocCheck sites are `_ensure_root!`
-(not hit on populated reads) + `node_get_child_nb`'s tuple construction (a conservative static flag).
+allocation cuts have diminishing returns.
+
+**The remaining 8 AllocCheck sites (named, bounded, tracked to ADR-001):**
+- `_ensure_root!` (PathMap.jl:31) — lazy root init; never fires on a read of a populated map.
+- **`node_get_child_nb` tuple construction — Zipper.jl:127 `(1, cf.rec)` and :132
+  `(klen, into_child(n.slot0))`** — the `Tuple{Int, Union{Nothing,TrieNodeODRc}}` return. Opt #2
+  made it a nullable-pointer (no *outer* box) but the tuple itself still constructs for the non-byte
+  node path (`consumed>1`). **These are Cluster-3 remnants that CANNOT be eliminated while
+  `TrieNodeODRc` is mutable (non-isbits) — they go to zero only under ADR-001's isbits redesign.**
+
+### `(c-write)` — SUPERSEDED by ADR-001 (not deferred)
+The 3 write-path callers of `node_along_path` live in the **mutable-struct node ownership model that
+ADR-001 replaces entirely** — the write path is redesigned as part of the slab migration. Migrating
+those callers now would target an interface that disappears in the ADR branch. **`(c-write)` is
+closed as superseded**, *unless* a write-path benchmark surfaces a real problem before ADR-001 lands.
 
 ### The real lever is now the node memory layout (see ADR-NODE-STORAGE)
 The cache sweep (constant depth, growing trie) measured get-latency **864 ns @1k → 8742 ns @1M** —

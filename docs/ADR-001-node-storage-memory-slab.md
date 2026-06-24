@@ -52,6 +52,16 @@ per-`PathMap` `Memory{T}` node slab** (Julia ≥ 1.11):
 - Unlocks, on the same representation: **`arena_compact`** (the slab *is* the ACT layout — mmap to
   disk for out-of-core tries; already measured 4× faster than the in-RAM trie for reads),
   **structural sharing** via shared index ranges, and **lock-free snapshot reads**.
+- **AOT / StaticCompiler eligibility.** With `isbits` node handles, the inner descent loop becomes a
+  flat indexed loop over a `Memory{T}` slab with **no GC interaction** — exactly the profile
+  StaticCompiler.jl can lower to native code with zero Julia runtime. The path
+  current → `Memory{T}` → StaticCompiler is validated at each step by *existing* measurements (the
+  ACT slab already runs this layout), not theory.
+
+**Lower-risk than it looks:** this is **not** a green-field design. The contiguous-slab layout
+already exists and is measured — `src/pathmap/ArenaCompact.jl` (the read-only ACT, 4× faster reads).
+ADR-001 is "promote the existing working layout to the primary representation," not "invent a new
+one." That materially de-risks the redesign.
 
 **Costs / risks**
 - A full redesign of the **node ownership model** — every node type's storage, the COW/refcount
