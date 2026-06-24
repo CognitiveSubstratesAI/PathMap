@@ -1,4 +1,4 @@
-using Test
+using Test, Random
 
 # ADR-001 increment 1 — slab scaffold. Proves the redesign's central thesis (isbits handle ⇒
 # zero-box tuple) + the slab storage round-trip. The scaffold is NOT wired into the live trie.
@@ -71,5 +71,28 @@ using Test
         eA = PathMap.dbn_entry(s, h, iA, Int32)
         @test eA.child == PathMap.SlabHandle(UInt32(100), PathMap.TAG_LINELIST) && eA.val == Int32(7)
         @test PathMap.slab_is_nil(PathMap.dbn_entry(s, h, iz, Int32).child)   # 'z': edge, no child
+    end
+
+    @testset "step 3b: writable slab trie ≡ Dict" begin
+        Random.seed!(7)
+        t = PathMap.SlabTrie{Int32}()
+        d = Dict{Vector{UInt8}, Int32}()
+        cs = collect(UInt8, "abcde")                    # small alphabet ⇒ heavy prefix sharing
+        for _ in 1:3000
+            k = UInt8[cs[rand(1:length(cs))] for _ in 1:rand(1:6)]
+            v = Int32(rand(Int16))
+            PathMap.slabtrie_set!(t, k, v); d[k] = v
+        end
+        @test all(((k, v),) -> PathMap.slabtrie_get(t, k) == v, d)   # every key ⇒ its last value
+        @test PathMap.slabtrie_get(t, b"z") === nothing              # 'z' never inserted (not in cs)
+        @test PathMap.slabtrie_get(t, UInt8[]) === nothing           # empty key
+        # value at a byte that ALSO has a child (prefix + extension), plus overwrite/sibling isolation
+        PathMap.slabtrie_set!(t, Vector{UInt8}("ab"),  Int32(111))
+        PathMap.slabtrie_set!(t, Vector{UInt8}("abc"), Int32(222))
+        @test PathMap.slabtrie_get(t, Vector{UInt8}("ab"))  == Int32(111)
+        @test PathMap.slabtrie_get(t, Vector{UInt8}("abc")) == Int32(222)
+        PathMap.slabtrie_set!(t, Vector{UInt8}("ab"), Int32(333))    # overwrite ab
+        @test PathMap.slabtrie_get(t, Vector{UInt8}("ab"))  == Int32(333)
+        @test PathMap.slabtrie_get(t, Vector{UInt8}("abc")) == Int32(222)   # sibling unaffected
     end
 end

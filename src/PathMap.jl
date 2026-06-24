@@ -44,6 +44,7 @@ include("nodes/BridgeNode.jl")
 
 # ── ADR-001 node-slab scaffold (additive; NOT wired into the live trie yet) ────
 include("pathmap/NodeSlab.jl")
+include("pathmap/SlabTrie.jl")
 
 # ── Zipper / cursor layer ─────────────────────────────────────────────────────
 
