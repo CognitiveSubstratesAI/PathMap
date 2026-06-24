@@ -84,11 +84,22 @@ against the mature mutable `PathMap` on identical keys:
 | allocations / lookup | 4 / 140 B | **0 / 15 B** | zero-alloc |
 
 **Even unoptimized, the slab trie is 3.4-4× faster and zero-allocation** — at 200k it matches the
-mutable trie's *cache-resident* (1k) latency, i.e. **~4.8× Rust**, into the ~4× compute-floor the
-cache analysis identified (down from the mutable trie's ~12-18×). The isbits-handle zero-alloc thesis
-and the contiguous-layout speed win are both confirmed. Remaining for the full payoff: locality-aware
-compaction (the size-swing isn't fully flat — append-only scatter), LineList-node compaction for
-memory (the dense-byte-only minimal version uses ~2.7× the RAM), free-list reuse, and COW.
+mutable trie's *cache-resident* (1k) latency. Then **DFS-pre-order locality compaction**
+(`slabtrie_compact!`) was added and measured:
+
+| N | `PathMap` | SlabTrie raw | **SlabTrie compacted** | slab mem (→) |
+|---|---|---|---|---|
+| 1k | 667 ns | 206 ns | **183 ns** | 0.9→0.4 MB |
+| 30k | 2303 ns | 833 ns | **433 ns** | 20.4→10.2 MB |
+| 200k | 3401 ns | 949 ns | **589 ns** | 129.7→62 MB |
+
+Compaction is 1.6-1.9× faster than raw at scale, **flattens the cache-swing 4.6×→3.2×**, and
+**halves memory** (drops the append-only leaks). Net: the compacted slab trie is **5.8× faster than
+the mutable `PathMap` at 200k** and **~2.9× Rust** (589 vs 205 ns) — *below* the ~4× compute-floor
+estimate, from the mutable trie's ~12-18×. **The ADR thesis is decisively confirmed: contiguous
+isbits-handle node storage + locality layout closes most of the Julia-vs-Rust gap.** Remaining for
+parity: LineList-node compaction (memory — dense-byte-only still uses ~1.6× the RAM after compaction),
+free-list reuse, COW/structural-sharing, then replacing `PathMap`.
 
 ## Scope boundaries
 
