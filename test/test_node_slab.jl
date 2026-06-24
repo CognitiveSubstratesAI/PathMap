@@ -36,4 +36,24 @@ using Test
         @test PathMap.slab_is_nil(PathMap.SLAB_NIL)
         @test !PathMap.slab_is_nil(PathMap.SlabHandle(UInt32(1), PathMap.TAG_LINELIST))
     end
+
+    @testset "step 2: DenseByteNode in-slab round-trip" begin
+        s = PathMap.NodeSlab(16)
+        mask = PathMap.set(PathMap.set(PathMap.ByteMask(), 0x41), 0x7a)   # bytes 'A','z' set
+        DBN = PathMap.DBNEntry{Int32}
+        entries = [DBN(PathMap.SlabHandle(UInt32(100), PathMap.TAG_LINELIST), Int32(7), true),
+                   DBN(PathMap.SLAB_NIL, Int32(0), false)]
+        h = PathMap.dbn_pack!(s, mask, entries)
+        @test h.tag == PathMap.TAG_DENSEBYTE
+        @test PathMap.dbn_mask(s, h) == mask
+        @test PathMap.dbn_nentries(s, h) == 2
+        e1 = PathMap.dbn_entry(s, h, 1, Int32)
+        @test e1.child == PathMap.SlabHandle(UInt32(100), PathMap.TAG_LINELIST)
+        @test e1.val == Int32(7) && e1.has_val
+        e2 = PathMap.dbn_entry(s, h, 2, Int32)
+        @test PathMap.slab_is_nil(e2.child) && !e2.has_val
+        for _ in 1:30; PathMap.dbn_pack!(s, mask, entries); end   # force regrow
+        @test PathMap.dbn_mask(s, h) == mask                      # earlier record survived
+        @test PathMap.dbn_entry(s, h, 1, Int32).val == Int32(7)
+    end
 end

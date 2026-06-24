@@ -63,3 +63,45 @@ end
 @inline function slab_load(s::NodeSlab, off::UInt32, ::Type{T}) where {T}
     GC.@preserve s unsafe_load(Ptr{T}(pointer(s.bytes) + (Int(off) - 1)))
 end
+
+# ── increment 1, step 2: DenseByteNode in-slab record (round-trip; NOT wired into the live trie) ──
+# A `DenseByteNode` is a `ByteMask` (which bytes are present) + one `CoFreeEntry` (child + value) per
+# present byte. Packed layout, fixed-stride for O(1) entry indexing (requires isbits `V`):
+#   [mask: ByteMask (32 B)] [nentries: UInt16] [entries...]
+#   entry = [child: SlabHandle (8 B)] [val: V (sizeof(V))] [has_val: UInt8]   (child==SLAB_NIL ⇒ none)
+
+"One packed dense-byte entry: the child handle, the value, and whether the value is present."
+struct DBNEntry{V}
+    child::SlabHandle
+    val::V
+    has_val::Bool
+end
+
+@inline _dbn_estride(::Type{V}) where {V} = sizeof(SlabHandle) + sizeof(V) + 1
+
+"Pack a dense byte node (mask + entries) into the slab; return its `SlabHandle`."
+function dbn_pack!(s::NodeSlab, mask::ByteMask, entries::AbstractVector{DBNEntry{V}}) where {V}
+    es = _dbn_estride(V)
+    start = slab_reserve!(s, sizeof(ByteMask) + 2 + length(entries) * es)
+    off = start
+    slab_store!(s, off, mask);                    off += UInt32(sizeof(ByteMask))
+    slab_store!(s, off, UInt16(length(entries))); off += UInt32(2)
+    for e in entries
+        slab_store!(s, off, e.child);             off += UInt32(sizeof(SlabHandle))
+        slab_store!(s, off, e.val);               off += UInt32(sizeof(V))
+        slab_store!(s, off, e.has_val ? 0x01 : 0x00); off += UInt32(1)
+    end
+    return SlabHandle(start, TAG_DENSEBYTE)
+end
+
+@inline dbn_mask(s::NodeSlab, h::SlabHandle) = slab_load(s, h.idx, ByteMask)
+@inline dbn_nentries(s::NodeSlab, h::SlabHandle) = Int(slab_load(s, h.idx + UInt32(sizeof(ByteMask)), UInt16))
+
+"Read the `i`-th (1-based) entry of the slab dense byte node at `h`."
+function dbn_entry(s::NodeSlab, h::SlabHandle, i::Integer, ::Type{V}) where {V}
+    base = h.idx + UInt32(sizeof(ByteMask) + 2 + (Int(i) - 1) * _dbn_estride(V))
+    child = slab_load(s, base, SlabHandle)
+    val = slab_load(s, base + UInt32(sizeof(SlabHandle)), V)
+    hv = slab_load(s, base + UInt32(sizeof(SlabHandle) + sizeof(V)), UInt8)
+    return DBNEntry{V}(child, val, hv != 0x00)
+end
