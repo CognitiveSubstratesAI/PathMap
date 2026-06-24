@@ -71,23 +71,36 @@ compaction (Q2). **Consequence (sequence): this GATES MORK integration and must 
 the start.** The PoC's single reallocatable `Memory{UInt8}` is NOT concurrency-viable; retrofitting
 concurrency onto it later is a rewrite, not a patch.
 
-## ⚠️ PREREQUISITE before ANY of the below: cross-check upstream Rust pathmap + MORK
+## ✅ UPSTREAM CROSS-CHECK — DONE (2026-06-24, `~/JuliaAGI/dev-zone/PathMap-upstream` + `MORK`)
 
-**This ADR's slab/COW/concurrency design was reasoned from the Julia code + first principles, NOT yet
-grounded in how upstream Rust `pathmap` actually does its allocator/arena.** PathMap is a 1:1 port of
-Rust `pathmap`; the slab is the Julia-idiomatic equivalent of what Rust gets "for free" from its
-`Allocator` trait + value-type node enums. Before writing a line of slab/concurrency code, READ upstream
-(local: `~/JuliaAGI/dev-zone/` — user downloaded upstream pathmap there):
+Read `alloc.rs`, `trie_node.rs` (`make_mut`), and MORK's space construction. Result: **the slab has NO
+direct Rust analog — it is a Julia-specific adaptation, so there is nothing upstream to "deviate" from
+on the slab mechanism. Q1 is confirmed aligned; Q4's concurrency assumption needs one specific revision.**
 
-- **pathmap `Allocator` trait + how nodes are allocated/laid out** — does Rust already have an
-  arena/segment scheme we should mirror? (jemalloc is its arena strategy; bound requires `Send + Sync`.)
-- **`make_mut` / COW / refcount** (slim_ptrs `AtomicU32`) — confirm Q1/Q2 match Rust's COW semantics.
-- **How Rust handles the concurrency Q4 targets** — `ZipperHead` / write-zipper exclusivity in Rust.
-- **MORK's actual cross-Space + concurrency usage** — validate the per-Space + graft-copies decision.
+- **No arena in Rust. Per-node heap allocation via the GLOBAL allocator.** `alloc.rs`: on stable
+  `Allocator` is an **empty trait** and `GlobalAlloc = ()` (a no-op); nodes are `TrieNodeODRc(Arc<dyn
+  TrieNode>)` — individually heap-allocated, refcounted `Arc`. Rust's locality comes from compact
+  value-type nodes + jemalloc size-classes, **NOT a contiguous trie arena.** ⇒ The Julia slab is the
+  idiomatic way to get that locality *despite GC scatter* — a Julia-specific solution to a Julia-specific
+  problem (GC doesn't cluster like jemalloc). **Confirmed: no deviation — there's no Rust arena to match.**
+- **Q1 COW — CONFIRMED ALIGNED.** `make_mut` = `Arc::make_mut`: if refcount>1, **clone the shared node
+  into a NEW heap allocation**; else mutate in place. ADR-002's "COW into a new slab record" is the exact
+  Julia-slab equivalent of "new heap allocation." The slim_ptrs variant's inline `AtomicU32` is what the
+  port's node-keyed `@atomic refcnt` mirrors. Q1/Q2 refcount semantics match upstream.
+- **Q4 — SPECIFIC REVISION (the slab's concurrency cost is largely self-inflicted).** Rust gets
+  concurrent-safe allocation **for free** from the global allocator; the segmented-CAS-append scheme
+  solves a problem the arena *introduces*, that Rust doesn't have. And **MORK's parallelism is
+  `par_iter().reduce(PathMap::new(), merge)` — independent per-worker PathMaps MERGED, not concurrent
+  writes to one shared trie.** ⇒ **Before committing to segmented CAS-append, verify whether MORK's
+  RUNTIME (not just construction) ever does concurrent zipper-head writes to a SINGLE trie.** If it does
+  not (construction is par-reduce; runtime may be single-writer-per-space), **Q4 simplifies dramatically**:
+  one slab per PathMap, single-threaded writes per slab, parallelism via independent slabs + merge — **no
+  CAS, no segmentation-for-thread-safety needed.** (Segmentation may still be worth it to avoid
+  realloc-invalidating-live-zippers per Q3, but that's a Q3 concern, not a concurrency one.)
 
-**Until this cross-check is done, the Q4 segmented-slab design (and the build order below) is PROVISIONAL
-— a reasonable proposal, not a confirmed faithful adaptation.** Deviating from upstream here risks
-forking the port. Adjust the design to match Rust's allocator semantics before step 0.
+**Net:** the slab direction and Q1/Q2/Q3 are confirmed; **Q4 is the one component to re-scope** — pin
+MORK's actual single-trie concurrency before building the segmented allocator. Do that verification as
+the first thing after the segmented-handle format (step 0), before the Q4 allocator (step 1).
 
 ## Implied build order (what the next coding session starts from)
 

@@ -62,3 +62,17 @@ together. Choose B now for safety; its memory overhead is recovered by the Day-2
 - `LineListNode` varlen keys (Day 2): pack key bytes inline at a fixed max-klen stride **after**
   measuring the real key-length distribution.
 - COW + structural sharing remain gated on **ADR-002** (design note, Day 2; no implementation).
+
+## Implementation tooling (Julia arena options — pick the persistent one)
+
+Upstream Rust has no arena (per-node global alloc); the slab is a Julia-specific fight against GC
+scatter, so the tool must back a **persistent** structure (nodes outlive any call):
+
+- **`Memory{T}` (native, Julia ≥1.11) — the choice.** Already the basis of Option B; a persistent,
+  typed, growable buffer. The right primitive for the slab. `ManualMemory.jl` is a lower-level fallback
+  if `Memory{T}` lacks something.
+- **`Bumper.jl` — NOT for node storage.** Its `@no_escape` arena is *scoped* (reclaimed at block exit) —
+  correct for *transient* hot-loop scratch, wrong for trie nodes that must persist. May still help for
+  per-traversal scratch (focus_stack, temp key buffers), a secondary concern.
+- **`StaticArrays.jl` / in-place mutation** — relevant for the fixed-size typed node *records* (SVector-
+  like) and keeping the read path zero-alloc.
