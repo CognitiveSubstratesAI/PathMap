@@ -6,9 +6,11 @@
 # the residual allocs (get_val_at / path_exists_at = 8) are the `node_get_child_nb` Tuple boxing +
 # `Int64` Union returns, eliminable only by the ADR-001 isbits node slab (deferred) — we assert they
 # do NOT grow. `zipper_path == 0` is a genuine zero-alloc invariant the coref de-box (MORK 1d7599b:
-# S1 `_coref_path_length`, S5 `@view`) builds on. AllocCheck is a dev-only [extras] tool → loaded
-# optionally, like Aqua. (A Julia / AllocCheck version bump may shift these static counts and require
-# re-baselining — that is the guard doing its job, not a spurious failure.)
+# S1 `_coref_path_length`, S5 `@view`) builds on. AllocCheck is NOT a PathMap dependency — it is
+# loaded OPTIONALLY from the developer's global environment (no hardcoded UUID in Project.toml); the
+# guard runs in a dev `julia --project=.` run and skips cleanly where AllocCheck is absent. (A Julia /
+# AllocCheck version bump may shift these static counts and require re-baselining — that is the guard
+# doing its job, not a spurious failure.)
 const _HAS_ALLOCCHECK = try
     @eval using AllocCheck
     true
