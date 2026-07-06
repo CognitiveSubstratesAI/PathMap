@@ -757,3 +757,6 @@ end
 
 # ADR-001 increment 1 — slab scaffold (additive; not wired into the live trie)
 include("test_node_slab.jl")
+
+# AllocCheck read-path allocation regression guard (dev-only; skips if AllocCheck absent)
+include("test_alloc_regression.jl")
