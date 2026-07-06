@@ -181,3 +181,26 @@ usefully can.
 
 *Methodology files (ephemeral, this session): `bench_dict*.jl`, `pmcmp/` (Rust), `profile_get.jl`,
 `alloccheck_get.jl`; committed: `benchmarks/profile_get_val.jl`.*
+
+## Fresh cross-check 2026-07-06 — LIVE Rust bench + small-N read parity (confirms the above)
+
+Re-ran a live head-to-head after the coref work (which touched MORK, not PathMap — so no read/write-path
+change here). **Rust**: `cargo bench --bench binary_keys` on upstream `~/JuliaAGI/dev-zone/PathMap`
+(rustup nightly, `--no-default-features --features nightly,graft_root_vals,slim_ptrs` to skip the
+libz/cmake serialization dep), divan. **Julia**: fresh `BenchmarkTools`, deterministic 12-byte keys.
+
+| op | Rust pathmap | Julia PathMap | gap |
+|---|---|---|---|
+| insert (N=200→1600) | 363–482 ns/key | 3.9–5.7 µs/key | **~10–14×** |
+| **point-get, cache-resident (N≤4000)** | ~205 ns | **198–352 ns** | **~parity** |
+| point-get @ 200k (table above) | 205 ns | 2560 ns | 12.5× |
+
+**The new finding: read is at NEAR-PARITY with Rust when cache-resident** (198–352 ns vs ~205 ns for
+N≤4000) — the 12.5× is a pure **scale/cache-scatter** effect (Julia's non-moving GC never compacts the
+scattered mutable-struct nodes; the sweep above: 864 ns @1k → 8742 ns @1M). At the compute floor we are
+already ~Rust. **The insert ~10–14× gap holds even at small N** — it is node **allocation + dynamic
+dispatch** (AllocCheck: `set_val_at!` = 85 allocs + 30 dyn-dispatch/call; Rust arena-allocates + value-type
+enums), locked by `test/test_alloc_regression.jl`. Both gaps → the same **ADR-001 isbits `Memory{T}` node
+slab** (contiguous storage fixes read-at-scale AND write alloc/dispatch in one), still deferred on
+measured-need (PathMap is not the MeTTa-eval bottleneck; the coref join's GC is only 4.5% — see
+`~/.claude/.../memory/reference_julia_gc_memory_model.md`). No regression vs 2026-06-24.
