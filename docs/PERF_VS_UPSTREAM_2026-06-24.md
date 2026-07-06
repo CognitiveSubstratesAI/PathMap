@@ -204,3 +204,22 @@ enums), locked by `test/test_alloc_regression.jl`. Both gaps → the same **ADR-
 slab** (contiguous storage fixes read-at-scale AND write alloc/dispatch in one), still deferred on
 measured-need (PathMap is not the MeTTa-eval bottleneck; the coref join's GC is only 4.5% — see
 `~/.claude/.../memory/reference_julia_gc_memory_model.md`). No regression vs 2026-06-24.
+
+## Insert-dispatch win 2026-07-06 (`b38b990`) — type-stability alone buys ~40%, no slab
+
+Testing "does type-stability help the insert gap without the slab?" — YES. AllocCheck attributed
+`set_val_at!` = 85 allocs + **30 dynamic dispatches**; the dispatches were on **basic ops** (`length`,
+`>=`, `+`, `view`) in the insert hot loop `_wz_descend_to_internal!`, because `TrieNodeODRc.node` is
+abstract (`Union{Nothing,AbstractTrieNode}`) → `node_get_child(focus_node, key)` dispatches dynamically
+and infers `Any`, cascading. All 4 `node_get_child` methods return exactly
+`Union{Nothing,Tuple{Int,TrieNodeODRc}}`, so a **call-site type assertion** (semantic no-op) pins it:
+
+| metric | before | after |
+|---|---|---|
+| set_val_at! dynamic dispatch | 30 | **20** |
+| insert @N=1600 | 5662 ns/key | **~3400 ns/key** (3 runs: 3387/3473/3326) |
+| Julia ÷ Rust insert | ~12× | **~7×** |
+
+Full suite byte-identical (147 pass / 1 broken pre-existing / 0 fail); floor locked at
+`test_alloc_regression.jl` (`set_dyn <= 20`). **Confirms the slab's dispatch benefit is real** — the
+remaining 20 dispatches + node-creation allocs need the isbits-`.node` slab (ADR-001), still deferred.
