@@ -204,7 +204,11 @@ function _wz_descend_to_internal!(z::WriteZipperCore{V, A}) where {V, A}
 
     while true
         focus_node = z.focus_stack[end].node
-        result = node_get_child(focus_node, key)
+        # `focus_node` is abstract (`TrieNodeODRc.node::Union{Nothing,AbstractTrieNode}`), so this
+        # dispatch is dynamic and infers `Any` — the assertion pins the concrete return (all 4
+        # node_get_child methods return exactly this), stabilizing `consumed`/`child_rc` and killing
+        # the downstream `length`/`>=`/`+`/`view` dynamic-dispatch cascade. Semantic no-op.
+        result = node_get_child(focus_node, key)::Union{Nothing, Tuple{Int, TrieNodeODRc{V, A}}}
         result === nothing && break
         consumed, child_rc = result
         # Only descend if there are bytes remaining AFTER consuming this child's key

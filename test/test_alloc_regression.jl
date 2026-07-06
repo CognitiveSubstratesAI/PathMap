@@ -39,6 +39,14 @@ if _HAS_ALLOCCHECK
         @test nallocs(PathMap.zipper_child_mask,   (typeof(rz),)) <= 4
         @test nallocs(PathMap.zipper_ascend_byte!, (typeof(rz),)) <= 3
         @test nallocs(PathMap.zipper_val,          (typeof(rz),)) <= 4
+
+        # write path: `_wz_descend_to_internal!` type-cascade de-box (WriteZipper.jl:207 assertion,
+        # 2026-07-06) took set_val_at! dynamic dispatch 30 → 20 (~40% faster insert). Lock the floor
+        # so a future write-path type-instability regression is caught. (Full elimination of the
+        # remaining 20 needs the ADR-001 isbits node slab — the `.node` field is abstract.)
+        set_dyn = count(a -> a isa AllocCheck.DynamicDispatch,
+                        AllocCheck.check_allocs(PathMap.set_val_at!, (typeof(m), Vector{UInt8}, Int32); ignore_throw = true))
+        @test set_dyn <= 20
     end
 else
     @info "AllocCheck not loadable (plain julia --project=.) — read-path alloc guard runs under Pkg.test/CI"
