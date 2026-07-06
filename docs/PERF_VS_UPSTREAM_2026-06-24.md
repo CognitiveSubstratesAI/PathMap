@@ -214,12 +214,17 @@ abstract (`Union{Nothing,AbstractTrieNode}`) → `node_get_child(focus_node, key
 and infers `Any`, cascading. All 4 `node_get_child` methods return exactly
 `Union{Nothing,Tuple{Int,TrieNodeODRc}}`, so a **call-site type assertion** (semantic no-op) pins it:
 
-| metric | before | after |
-|---|---|---|
-| set_val_at! dynamic dispatch | 30 | **20** |
-| insert @N=1600 | 5662 ns/key | **~3400 ns/key** (3 runs: 3387/3473/3326) |
-| Julia ÷ Rust insert | ~12× | **~7×** |
+| metric | orig | after descend (`b38b990`) | after sweep (`93b359a`) |
+|---|---|---|---|
+| set_val_at! dynamic dispatch | 30 | 20 | **17** |
+| insert @N=1600 | 5662 ns/key | ~3400 | **~2650** (2878/2657/2628) |
+| Julia ÷ Rust insert | ~12× | ~7× | **~6×** |
 
-Full suite byte-identical (147 pass / 1 broken pre-existing / 0 fail); floor locked at
-`test_alloc_regression.jl` (`set_dyn <= 20`). **Confirms the slab's dispatch benefit is real** — the
-remaining 20 dispatches + node-creation allocs need the isbits-`.node` slab (ADR-001), still deferred.
+Two rounds of call-site type assertions (each a semantic no-op re-stating a return type Julia lost when
+`TrieNodeODRc.node` was stored abstract): (1) `node_get_child` in the descend loop; (2) `clone_self`
+×2 (upstream trait is literally `fn clone_self -> TrieNodeODRc<V,A>`, trie_node.rs:353) + the
+`node_set_val!` closure. **−53% insert, no slab, byte-identical** (147 pass / 1 broken pre-existing / 0
+fail); floor locked at `test_alloc_regression.jl` (`set_dyn <= 17`). The remaining 17 dispatches +
+node-creation allocs are node mutations / the abstract `.node` field → need the isbits node slab
+(ADR-001), still deferred. **This confirms the slab's dispatch benefit is real (type-stability alone
+halved insert), and shows how far the cheap Julia-idiom fixes reach before the slab is required.**
