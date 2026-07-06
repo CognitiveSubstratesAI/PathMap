@@ -149,7 +149,7 @@ function _wz_ensure_write_unique!(z::WriteZipperCore{V, A}) where {V, A}
             # via the original (pre-clone) inner node's child slot.
             # We CANNOT modify rc.node in-place — that would alias m1's subtrie.
             # Create a completely new TrieNodeODRc so we leave rc (and m1) untouched.
-            new_rc = clone_self(rc.node)   # new TrieNodeODRc, refcount=1, fresh inner node
+            new_rc = clone_self(rc.node)::TrieNodeODRc{V, A}   # new TrieNodeODRc, refcount=1, fresh inner node
             z.focus_stack[k] = new_rc
             rc = new_rc
             was_cloned = true
@@ -269,7 +269,7 @@ function wz_set_val!(z::WriteZipperCore{V, A}, val::V) where {V, A}
     end
 
     (old_val, created_subnode) = _wz_in_mut_static_result!(
-        z, (node, key) -> node_set_val!(node, key, val), (_node, _key) -> (nothing, true)
+        z, (node, key) -> node_set_val!(node, key, val)::Union{Tuple{Union{Nothing, V}, Bool}, TrieNodeODRc{V, A}}, (_node, _key) -> (nothing, true)
     )  # retry after upgrade always creates subnode
 
     if created_subnode

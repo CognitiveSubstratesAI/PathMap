@@ -466,7 +466,9 @@ function make_unique!(rc::TrieNodeODRc{V, A}) where {V, A <: Allocator}
     _has_refcnt(n) || return rc
     if _node_refcount(n) > 1
         _node_dec_refcnt!(n)               # one fewer referrer to the shared node
-        new_inner = clone_self(n)          # shallow clone; the fresh node has refcnt = 1
+        # `n` is abstract (rc.node::Union{Nothing,AbstractTrieNode}); assert the concrete return
+        # upstream's `fn clone_self(&self) -> TrieNodeODRc<V,A>` guarantees (semantic no-op).
+        new_inner = clone_self(n)::TrieNodeODRc{V, A}  # shallow clone; the fresh node has refcnt = 1
         rc.node = new_inner.node
     end
     return rc
