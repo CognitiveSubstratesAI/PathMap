@@ -99,6 +99,9 @@ include("pathmap/PathsSerialization.jl")
 # Counters. Ports pathmap/src/counters.rs.
 include("pathmap/Counters.jl")
 
+# Viz. Ports pathmap/src/viz.rs (Mermaid trie rendering; observe structural sharing).
+include("pathmap/Viz.jl")
+
 # Policy-based algebraic operations (A.0003).
 include("pathmap/PolicyOps.jl")
 

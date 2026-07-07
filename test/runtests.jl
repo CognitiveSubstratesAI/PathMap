@@ -760,3 +760,6 @@ include("test_node_slab.jl")
 
 # AllocCheck read-path allocation regression guard (dev-only; skips if AllocCheck absent)
 include("test_alloc_regression.jl")
+
+# Viz (Mermaid rendering + structural-sharing observability) — port of viz.rs
+include("test_viz.jl")
