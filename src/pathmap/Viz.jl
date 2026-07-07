@@ -5,11 +5,12 @@
 # more than one map) — can be inspected visually. Mirrors upstream `viz_maps` / `DrawConfig` /
 # `VizMode` and the `viz_node_physical` recursive node walk + `color_for_bitmask` sharing colors.
 #
-# Ported: the PHYSICAL Mermaid renderer (walks the real in-memory nodes — the mode that actually
+# Ported: the PHYSICAL renderers — Mermaid (`viz_maps_mermaid`) AND the ASCII tree (`viz_maps_ascii`,
+# box-drawing + `◆N` shared markers) — both walking the real in-memory nodes (the view that actually
 # reveals shared nodes). Node identity uses `shared_node_id(rc)` (= `objectid(rc.node)`, already in
 # TrieNode.jl), so two wrappers of the SAME physical node collapse to one graph node — that is how
-# sharing becomes visible. NOT yet ported (clean follow-ups; the primitives — `zipper_to_next_step!`
-# etc. — exist): the LOGICAL renderer (`viz_zipper_logical`) and the ASCII tree mode.
+# sharing becomes visible. NOT yet ported (clean follow-up; the primitives — `zipper_to_next_step!`
+# etc. — exist): the LOGICAL path-collapsed renderer (`viz_zipper_logical`), for either mode.
 
 """Rendering mode. `MERMAID` → Mermaid flowchart markup. `ASCII` → terminal tree (not yet ported)."""
 @enum VizMode MERMAID ASCII
@@ -172,6 +173,116 @@ function _render_mermaid(ds::_DrawState, dc::DrawConfig, io::IO)
     end
 end
 
+# ── ASCII tree mode ──────────────────────────────────────────────────────────
+# A terminal-friendly tree of the PHYSICAL nodes (mirrors upstream viz_maps_ascii's box-drawing +
+# `◆N` shared markers, but node-based like our physical Mermaid rather than the logical path-collapsed
+# walk — which is best for observing real shared nodes). A structurally-shared node (ref_cnt>1) is
+# marked `◆N` on first appearance and `↩ ◆N` (with its subtree elided) on every later appearance.
+
+# recursive prepass: populate ds.nodes with per-node ref_cnt + map-bitmask across ALL maps (mirrors
+# upstream pre_init_node_hashes). Needed BEFORE rendering so shared nodes (ref_cnt>1) are known.
+function _pre_init_node_hashes!(rc::TrieNodeODRc, ds::_DrawState)
+    _update_node_hash!(rc, ds) || return
+    node = rc.node
+    node === nothing && return
+    iter_node = node isa TinyRefNode ? into_full(node) : node
+    token = new_iter_token(iter_node)
+    while token != NODE_ITER_FINISHED
+        (token, _key, rec, _val) = next_items(iter_node, token)
+        rec !== nothing && _pre_init_node_hashes!(rec, ds)
+    end
+end
+
+struct _AEdge; label::Vector{UInt8}; is_node::Bool; node_id::UInt64; vstr::String; end
+mutable struct _ANode; ntype::Symbol; inline::Union{Nothing, String}; edges::Vector{_AEdge}; shared::Bool; end
+
+# Build the physical adjacency graph for one map (each node once — a DAG under sharing).
+function _build_ascii!(rc::TrieNodeODRc, ds::_DrawState, graph::Dict{UInt64, _ANode})
+    addr = shared_node_id(rc)
+    haskey(graph, addr) && return addr
+    node = rc.node
+    node === nothing && return addr
+    meta = get(ds.nodes, addr, nothing)
+    an = _ANode(_viz_node_type(node), nothing, _AEdge[], meta !== nothing && meta.ref_cnt > 1)
+    graph[addr] = an
+    iter_node = node isa TinyRefNode ? into_full(node) : node
+    token = new_iter_token(iter_node)
+    while token != NODE_ITER_FINISHED
+        (token, key, rec, value) = next_items(iter_node, token)
+        if rec !== nothing
+            cid = _build_ascii!(rec, ds, graph)
+            push!(an.edges, _AEdge(Vector{UInt8}(key), true, cid, ""))
+        end
+        if value !== nothing
+            if isempty(key)
+                an.inline === nothing && (an.inline = string(value))
+            else
+                push!(an.edges, _AEdge(Vector{UInt8}(key), false, UInt64(0), string(value)))
+            end
+        end
+    end
+    addr
+end
+
+_val_part(v::Union{Nothing, String}, dc::DrawConfig) =
+    (v === nothing || dc.minimize_values) ? "" : " = $v"
+
+function _shared_marker(id::Int, dc::DrawConfig)
+    if dc.color
+        c = ("31", "32", "33", "34", "35", "36")[(id - 1) % 6 + 1]
+        "\e[$(c)m◆$(id)\e[0m"
+    else
+        "◆$(id)"
+    end
+end
+
+function _render_ascii(map_idx::Int, root_id::UInt64, graph::Dict{UInt64, _ANode}, dc::DrawConfig, io::IO)
+    shared_addrs = sort!(UInt64[a for (a, n) in graph if n.shared])
+    shared_ids = Dict{UInt64, Int}(a => i for (i, a) in enumerate(shared_addrs))
+    visited = Set{UInt64}()
+    root = get(graph, root_id, nothing)
+    if root === nothing
+        println(io, "PathMap[$map_idx]"); println(io, "(empty)"); return
+    end
+    line = "PathMap[$map_idx]" * _val_part(root.inline, dc)
+    if root.shared && haskey(shared_ids, root_id)
+        push!(visited, root_id); line *= " " * _shared_marker(shared_ids[root_id], dc)
+    end
+    println(io, line)
+    if isempty(root.edges) && root.inline === nothing
+        println(io, "(empty)"); return
+    end
+    _render_ascii_children(root, graph, dc, shared_ids, visited, "", io)
+end
+
+function _render_ascii_children(node::_ANode, graph, dc, shared_ids, visited, prefix, io)
+    edges = sort(node.edges; by = e -> e.label)
+    for (i, e) in enumerate(edges)
+        last = i == length(edges)
+        connector = last ? "└── " : "├── "
+        label = _render_key(e.label, dc.ascii_path)
+        if !e.is_node
+            println(io, "$(prefix)$(connector)$(label)$(_val_part(e.vstr, dc))")
+        else
+            child = get(graph, e.node_id, nothing)
+            child === nothing && continue
+            vpart = _val_part(child.inline, dc)
+            if child.shared && haskey(shared_ids, e.node_id)
+                sid = shared_ids[e.node_id]
+                if e.node_id in visited
+                    println(io, "$(prefix)$(connector)$(label)$(vpart) ↩ $(_shared_marker(sid, dc))")
+                    continue
+                end
+                push!(visited, e.node_id)
+                println(io, "$(prefix)$(connector)$(label)$(vpart) $(_shared_marker(sid, dc))")
+            else
+                println(io, "$(prefix)$(connector)$(label)$(vpart)")
+            end
+            _render_ascii_children(child, graph, dc, shared_ids, visited, prefix * (last ? "    " : "│   "), io)
+        end
+    end
+end
+
 """
     viz_maps(maps, dc::DrawConfig=DrawConfig(), io::IO=stdout)
     viz_maps(m::PathMap; kwargs...) -> String
@@ -181,15 +292,39 @@ is made visible: a node reachable from more than one map is colored by its map-m
 (`color_for_bitmask`), and physically-shared subtries (a node with `ref_cnt > 1`) collapse to a single
 graph node because identity is keyed by `shared_node_id` (`objectid` of the physical node).
 
-Mirrors upstream `viz_maps`. Only `VizMode.MERMAID` + physical (`logical=false`) is ported so far;
-`ASCII` / `logical=true` throw a clear error (follow-ups). The 1-arg keyword form returns a `String`.
+Mirrors upstream `viz_maps`. `VizMode.MERMAID` (graph markup) and `VizMode.ASCII` (terminal tree with
+`◆N` shared-node markers) are ported, both PHYSICAL (`logical=false`); the LOGICAL path-collapsed walk
+(`logical=true`) throws a clear error (follow-up). The 1-arg keyword form returns a `String`.
 """
 # Core (no default positional args, so it does not generate a `viz_maps(::AbstractVector)` that would
 # collide with the kwargs convenience method below).
 function viz_maps(maps::AbstractVector{<:PathMap}, dc::DrawConfig, io::IO)
-    dc.mode === ASCII && error("viz: ASCII mode not yet ported (use MERMAID); see Viz.jl header")
-    dc.logical && error("viz: logical mode not yet ported (use logical=false / physical); see Viz.jl header")
-    ds = _DrawState()
+    dc.logical && error("viz: logical (path-collapsed) mode not yet ported (use logical=false / physical); see Viz.jl header")
+    if dc.mode === ASCII
+        ds = _DrawState()                       # prepass over ALL maps for cross-map ref_cnt
+        for m in maps
+            _ensure_root!(m); m.root !== nothing && _pre_init_node_hashes!(m.root, ds); ds.root += 1
+        end
+        ds.root = 0
+        for m in maps
+            ds.root > 0 && println(io)
+            _ensure_root!(m)
+            if m.root === nothing
+                println(io, "PathMap[$(ds.root)]"); println(io, "(empty)")
+            else
+                graph = Dict{UInt64, _ANode}()
+                _build_ascii!(m.root, ds, graph)
+                if m.root_val !== nothing        # value at the empty/root key lives in root_val
+                    an = get(graph, shared_node_id(m.root), nothing)
+                    an !== nothing && an.inline === nothing && (an.inline = string(m.root_val))
+                end
+                _render_ascii(ds.root, shared_node_id(m.root), graph, dc, io)
+            end
+            ds.root += 1
+        end
+        return io
+    end
+    ds = _DrawState()                           # MERMAID physical
     for m in maps
         _viz_map_physical!(m, dc, ds)
         ds.root += 1

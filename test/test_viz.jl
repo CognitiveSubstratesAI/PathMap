@@ -53,7 +53,19 @@ const _PMv = PathMap.PathMap
     @test occursin("#quot;", esc)              # quote escaped
     @test !occursin("\"a\"b\"", esc)           # no raw quote breaking the label
 
-    # unported modes error clearly (not silently wrong)
-    @test_throws ErrorException PathMap.viz_maps([m], PathMap.DrawConfig(; mode = PathMap.ASCII), IOBuffer())
+    # ── ASCII tree mode ─────────────────────────────────────────────────────
+    ascii(mp) = String(take!(PathMap.viz_maps(mp,
+        PathMap.DrawConfig(; mode = PathMap.ASCII, ascii_path = true, color = false), IOBuffer())))
+    at = ascii([m])
+    @test occursin("PathMap[0]", at)
+    @test occursin("├── ", at) || occursin("└── ", at)   # box-drawing tree
+    @test occursin(" = 4", at)                            # a value leaf (bow=4)
+
+    # ASCII shows structural sharing as ◆N (first) + ↩ ◆N (revisited, subtree elided)
+    ash = ascii([mw])                                     # mw has the within-map grafted shared node
+    @test occursin("◆1", ash)
+    @test occursin("↩ ◆1", ash)
+
+    # only the still-deferred logical (path-collapsed) mode errors
     @test_throws ErrorException PathMap.viz_maps([m], PathMap.DrawConfig(; logical = true), IOBuffer())
 end
