@@ -9,8 +9,9 @@
 # box-drawing + `◆N` shared markers) — both walking the real in-memory nodes (the view that actually
 # reveals shared nodes). Node identity uses `shared_node_id(rc)` (= `objectid(rc.node)`, already in
 # TrieNode.jl), so two wrappers of the SAME physical node collapse to one graph node — that is how
-# sharing becomes visible. NOT yet ported (clean follow-up; the primitives — `zipper_to_next_step!`
-# etc. — exist): the LOGICAL path-collapsed renderer (`viz_zipper_logical`), for either mode.
+# sharing becomes visible. Both PHYSICAL (real nodes) and LOGICAL (`logical=true` — pass-through nodes
+# with one child + no value + not shared are collapsed into their parent edge, the node-based
+# equivalent of upstream's `viz_zipper_logical` path-collapse) are supported for both modes.
 
 """Rendering mode. `MERMAID` → Mermaid flowchart markup. `ASCII` → terminal tree (not yet ported)."""
 @enum VizMode MERMAID ASCII
@@ -283,6 +284,76 @@ function _render_ascii_children(node::_ANode, graph, dc, shared_ids, visited, pr
     end
 end
 
+# LOGICAL collapse: splice out pass-through nodes (exactly one child edge, no inline value, not shared,
+# not a map root) into their parent edge — the node-based equivalent of upstream's logical path-collapse
+# (a straight single-child run becomes ONE edge with the concatenated key). Operates in place on the
+# physical _ANode graph. A pass-through has ref_cnt==1 (not shared), so it has exactly one parent ⇒
+# splicing can't lose a reference.
+function _collapse_logical!(graph::Dict{UInt64, _ANode}, roots::Set{UInt64})
+    ispass(id) = !(id in roots) && haskey(graph, id) &&
+        (n = graph[id]; length(n.edges) == 1 && n.edges[1].is_node && n.inline === nothing && !n.shared)
+    for (_id, node) in graph
+        newedges = _AEdge[]
+        for e in node.edges
+            if e.is_node
+                label = copy(e.label); tgt = e.node_id
+                while ispass(tgt)
+                    te = graph[tgt].edges[1]; append!(label, te.label); tgt = te.node_id
+                end
+                push!(newedges, _AEdge(label, true, tgt, ""))
+            else
+                push!(newedges, e)
+            end
+        end
+        node.edges = newedges
+    end
+    for id in collect(keys(graph)); ispass(id) && delete!(graph, id); end
+end
+
+function _emit_value_box(io::IO, vid::AbstractString, vstr::AbstractString, dc::DrawConfig)
+    if dc.minimize_values
+        println(io, "$(vid)@{ shape: circle, label: \".\"}")
+        println(io, "style $(vid) fill:black,stroke:none,color:transparent,font-size:0px")
+    else
+        println(io, "$(vid)@{ shape: rounded, label: \"$(_mermaid_escape(vstr))\" }")
+    end
+end
+
+# Render an _ANode graph (physical or logically-collapsed) as ONE Mermaid flowchart across all maps
+# (used for logical Mermaid — the physical Mermaid uses the DrawCmd path). Shared nodes appear once
+# (graph is deduped by objectid); color comes from the map bitmask in ds.nodes.
+function _render_mermaid_graph(map_roots::Vector{UInt64}, graph::Dict{UInt64, _ANode}, ds::_DrawState, dc::DrawConfig, io::IO)
+    println(io, "flowchart LR")
+    for (i, rid) in enumerate(map_roots)
+        rid == 0 && continue
+        println(io, "m$(i-1)@{ shape: cylinder, label: \"PathMap[$(i-1)]\"}")
+        println(io, "m$(i-1) --> g$(rid)")
+    end
+    for (addr, node) in graph
+        println(io, "g$(addr)@{ shape: rect, label: \"$(node.ntype)\"}")
+        if dc.color
+            meta = get(ds.nodes, addr, nothing)
+            meta !== nothing && println(io, "style g$(addr) fill:$(_color_for_bitmask(meta.shared))")
+        end
+        if node.inline !== nothing && !dc.hide_value_paths
+            vid = "v$(hash((addr, UInt8[])))_$(addr)"
+            println(io, "g$(addr) --> $(vid)"); _emit_value_box(io, vid, node.inline, dc)
+        end
+        for e in node.edges
+            jump = _mermaid_escape(_render_key(e.label, dc.ascii_path))
+            if e.is_node
+                isempty(e.label) ? println(io, "g$(addr) --> g$(e.node_id)") :
+                                   println(io, "g$(addr) --\"$(jump)\"--> g$(e.node_id)")
+            elseif !dc.hide_value_paths
+                vid = "v$(hash((addr, e.label)))_$(addr)"
+                isempty(e.label) ? println(io, "g$(addr) --> $(vid)") :
+                                   println(io, "g$(addr) --\"$(jump)\"--> $(vid)")
+                _emit_value_box(io, vid, e.vstr, dc)
+            end
+        end
+    end
+end
+
 """
     viz_maps(maps, dc::DrawConfig=DrawConfig(), io::IO=stdout)
     viz_maps(m::PathMap; kwargs...) -> String
@@ -292,39 +363,52 @@ is made visible: a node reachable from more than one map is colored by its map-m
 (`color_for_bitmask`), and physically-shared subtries (a node with `ref_cnt > 1`) collapse to a single
 graph node because identity is keyed by `shared_node_id` (`objectid` of the physical node).
 
-Mirrors upstream `viz_maps`. `VizMode.MERMAID` (graph markup) and `VizMode.ASCII` (terminal tree with
-`◆N` shared-node markers) are ported, both PHYSICAL (`logical=false`); the LOGICAL path-collapsed walk
-(`logical=true`) throws a clear error (follow-up). The 1-arg keyword form returns a `String`.
+Mirrors upstream `viz_maps`. Both `VizMode.MERMAID` (graph markup) and `VizMode.ASCII` (terminal tree
+with `◆N` shared-node markers) are ported, in both `logical=false` (PHYSICAL — real nodes) and
+`logical=true` (path-collapsed — cross-node single-child runs merged into one edge) forms. Note that
+PathMap's `LineListNode` already path-compresses within a node, so logical often coincides with
+physical. The 1-arg keyword form returns a `String`.
 """
 # Core (no default positional args, so it does not generate a `viz_maps(::AbstractVector)` that would
 # collide with the kwargs convenience method below).
 function viz_maps(maps::AbstractVector{<:PathMap}, dc::DrawConfig, io::IO)
-    dc.logical && error("viz: logical (path-collapsed) mode not yet ported (use logical=false / physical); see Viz.jl header")
-    if dc.mode === ASCII
-        ds = _DrawState()                       # prepass over ALL maps for cross-map ref_cnt
+    # Graph-based path — ASCII (always) and logical Mermaid. Prepass over ALL maps for cross-map ref_cnt.
+    if dc.mode === ASCII || dc.logical
+        ds = _DrawState()
         for m in maps
             _ensure_root!(m); m.root !== nothing && _pre_init_node_hashes!(m.root, ds); ds.root += 1
         end
-        ds.root = 0
-        for m in maps
-            ds.root > 0 && println(io)
-            _ensure_root!(m)
-            if m.root === nothing
-                println(io, "PathMap[$(ds.root)]"); println(io, "(empty)")
-            else
-                graph = Dict{UInt64, _ANode}()
-                _build_ascii!(m.root, ds, graph)
-                if m.root_val !== nothing        # value at the empty/root key lives in root_val
-                    an = get(graph, shared_node_id(m.root), nothing)
-                    an !== nothing && an.inline === nothing && (an.inline = string(m.root_val))
-                end
-                _render_ascii(ds.root, shared_node_id(m.root), graph, dc, io)
+        _map_inline!(g, m, rid) = (m.root_val !== nothing &&
+            (an = get(g, rid, nothing); an !== nothing && an.inline === nothing && (an.inline = string(m.root_val))))
+        if dc.mode === MERMAID           # logical Mermaid: one collapsed graph across all maps
+            graph = Dict{UInt64, _ANode}(); map_roots = UInt64[]
+            for m in maps
+                _ensure_root!(m)
+                if m.root === nothing; push!(map_roots, UInt64(0)); continue; end
+                rid = shared_node_id(m.root); _build_ascii!(m.root, ds, graph); _map_inline!(graph, m, rid)
+                push!(map_roots, rid)
             end
-            ds.root += 1
+            _collapse_logical!(graph, Set(map_roots))
+            _render_mermaid_graph(map_roots, graph, ds, dc, io)
+        else                             # ASCII (physical or logical): per-map tree
+            r = 0
+            for m in maps
+                r > 0 && println(io); _ensure_root!(m)
+                if m.root === nothing
+                    println(io, "PathMap[$r]"); println(io, "(empty)")
+                else
+                    graph = Dict{UInt64, _ANode}(); rid = shared_node_id(m.root)
+                    _build_ascii!(m.root, ds, graph); _map_inline!(graph, m, rid)
+                    dc.logical && _collapse_logical!(graph, Set([rid]))
+                    _render_ascii(r, rid, graph, dc, io)
+                end
+                r += 1
+            end
         end
         return io
     end
-    ds = _DrawState()                           # MERMAID physical
+    # MERMAID physical (DrawCmd path — unchanged/tested)
+    ds = _DrawState()
     for m in maps
         _viz_map_physical!(m, dc, ds)
         ds.root += 1

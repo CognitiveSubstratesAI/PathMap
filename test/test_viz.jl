@@ -66,6 +66,15 @@ const _PMv = PathMap.PathMap
     @test occursin("◆1", ash)
     @test occursin("↩ ◆1", ash)
 
-    # only the still-deferred logical (path-collapsed) mode errors
-    @test_throws ErrorException PathMap.viz_maps([m], PathMap.DrawConfig(; logical = true), IOBuffer())
+    # ── LOGICAL (path-collapsed) mode — both renderers. Collapses cross-node single-child runs, so
+    #    it is valid and never MORE nodes than physical (often equal, since LineListNode pre-compresses).
+    rectcount(logical) = count("shape: rect",
+        String(take!(PathMap.viz_maps([m], PathMap.DrawConfig(; logical, ascii_path = true, color = false), IOBuffer()))))
+    lg_m = String(take!(PathMap.viz_maps([m], PathMap.DrawConfig(; logical = true, ascii_path = true, color = false), IOBuffer())))
+    @test occursin("flowchart LR", lg_m)
+    @test rectcount(true) <= rectcount(false)
+    lg_a = String(take!(PathMap.viz_maps([m],
+        PathMap.DrawConfig(; mode = PathMap.ASCII, logical = true, ascii_path = true, color = false), IOBuffer())))
+    @test occursin("PathMap[0]", lg_a)
+    @test occursin(" = ", lg_a)   # values still shown after collapse
 end
