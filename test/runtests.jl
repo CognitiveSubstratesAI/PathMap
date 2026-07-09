@@ -731,6 +731,32 @@ const PM = PathMap.PathMap   # PathMap module and PathMap type share the same na
         @test get_val_at(m1, b"abcYY") == 2
     end
 
+    # ── EU-fixpoint regression (07-09): a snapshot that SHARES the map's ROOT (as
+    #    `PathMap::clone` / the MM2 exec-calculus's `pjoin` read-copy does) must stay
+    #    FROZEN when the live map takes a SAME-SUBTRIE write. The transitive-COW bug in
+    #    `_wz_ensure_write_unique!` forked the DESCENT's stale child wrapper (owned by the
+    #    snapshot's child slot) + re-linked, so BOTH the snapshot and the live map ended up
+    #    pointing through the SAME forked child → a same-subtrie write LEAKED into the
+    #    snapshot. In MORK that made the exec's `pjoin` read-snapshot see the AddSink's OWN
+    #    freshly-added atoms, over-collect the `(new …)` frontier, and halt the CTL `EU`
+    #    least-fixpoint one round early. Fixed by RE-FETCHING children from the just-
+    #    uniquified parent (upstream `write_zipper.rs make_mut`). The existing "graft then
+    #    write" Gate-A test does NOT cover this (it passed on the buggy baseline) — the
+    #    trigger is a ROOT-shared snapshot + same-subtrie write via `set_val_at!`.
+    @testset "COW — root-shared snapshot + same-subtrie write preserves snapshot (EU-bug regression)" begin
+        m = PM{Int}()
+        set_val_at!(m, b"Ea", 1); set_val_at!(m, b"Eb", 2); set_val_at!(m, b"Ec", 3)
+        snap = typeof(m)(copy(m.root::PathMap.TrieNodeODRc), m.root_val, m.alloc)  # share the root
+        set_val_at!(m, b"Ed", 4)                                                    # SAME (E*) subtrie
+        @test get_val_at(snap, b"Ed") === nothing                                   # snapshot NOT leaked into
+        @test get_val_at(snap, b"Ea") == 1 && get_val_at(snap, b"Eb") == 2 && get_val_at(snap, b"Ec") == 3
+        @test get_val_at(m, b"Ed") == 4                                             # live map reflects the write
+        # reverse: writing the snapshot must not corrupt the source
+        set_val_at!(snap, b"Ee", 5)
+        @test get_val_at(m, b"Ee") === nothing
+        @test get_val_at(snap, b"Ee") == 5
+    end
+
     # ── close-out 2-A: the refcount is now node-keyed (@atomic refcnt on the node),
     #    so concurrent copy() from many threads increments ONE atomic counter with no
     #    lost updates. The previous per-wrapper `Ref{Int} += 1` was racy. Needs

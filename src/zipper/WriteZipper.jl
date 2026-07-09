@@ -133,36 +133,39 @@ end
 function _wz_ensure_write_unique!(z::WriteZipperCore{V, A}) where {V, A}
     n = length(z.focus_stack)
     n == 0 && return nothing
-    parent_was_cloned = false
-    for k in 1:n
-        rc = z.focus_stack[k]
-        rc.node === nothing && break
-        was_cloned = false
-        if refcount(rc) > 1
-            # Explicitly shared via copy(): safe to modify rc's fields in-place.
-            # make_unique! decrements the shared refcount and replaces rc.node.
-            make_unique!(rc)
-            was_cloned = true
-        elseif parent_was_cloned
-            # Transitively shared: refcount==1 but an ancestor was just cloned,
-            # so the original ancestor's subtrie STILL references this TrieNodeODRc
-            # via the original (pre-clone) inner node's child slot.
-            # We CANNOT modify rc.node in-place — that would alias m1's subtrie.
-            # Create a completely new TrieNodeODRc so we leave rc (and m1) untouched.
-            new_rc = clone_self(rc.node)::TrieNodeODRc{V, A}   # new TrieNodeODRc, refcount=1, fresh inner node
-            z.focus_stack[k] = new_rc
-            rc = new_rc
-            was_cloned = true
-        end
-        # Parent was cloned (its inner node is a fresh deepcopy) — the deepcopy's
-        # child slot holds a stale copy, not our focus_stack[k]. Re-link the parent
-        # to point to the real (now unique) rc.
-        if parent_was_cloned && k > 1
-            pk = collect(_wz_parent_key_for_level(z, k))
-            node_replace_child!(z.focus_stack[k - 1].node, pk, rc)
-        end
-        parent_was_cloned = was_cloned
+    # k=1 (root): uniquify in place if shared.
+    root_rc = z.focus_stack[1]
+    root_rc.node === nothing && return nothing
+    refcount(root_rc) > 1 && make_unique!(root_rc)
+    # k=2..n: RE-FETCH each child from the (now-unique) parent's ACTUAL slot and
+    # uniquify it there. Do NOT reuse the descent's stale focus_stack wrapper: that
+    # wrapper belongs to the PRE-clone parent's child slot, which is still owned by
+    # whatever shares that parent (a `clone()`/graft SNAPSHOT). Forking the stale
+    # wrapper + re-linking makes the snapshot and this map point through the SAME
+    # forked child, so a same-subtrie write LEAKS into the snapshot (the transitive-COW
+    # bug: root forks, child stays shared). `clone_self` gives each cloned node its OWN
+    # child wrappers (`_shallow_clone_slot` = `copy(child)`, refcount-bumped), so the
+    # cloned parent's real child (from `node_get_child`) is the one to uniquify. Mirrors
+    # upstream write_zipper.rs `make_mut`, which walks top-down re-fetching each child
+    # from the just-made_mut'd parent. (Stale "deepcopy" premise in the old comment was
+    # wrong: clone_self shallow-SHARES children with a refcount bump, not a deepcopy.)
+    for k in 2:n
+        parent = z.focus_stack[k - 1].node
+        parent === nothing && break
+        pk = _wz_parent_key_for_level(z, k)   # view: node_get_child only READS the key
+        gc = node_get_child(parent, pk)::Union{Nothing, Tuple{Int, TrieNodeODRc{V, A}}}
+        gc === nothing && break
+        child_rc = gc[2]
+        # `child_rc` IS the (now-unique) parent's OWN slot wrapper (node_get_child returns
+        # the stored `cf.rec` / `voc._child` object). Forking it in place via make_unique!
+        # updates that slot directly — no node_replace_child! needed. The descent's stale
+        # wrapper (still held by any snapshot of the PRE-clone parent) is left untouched, so
+        # the snapshot keeps the original shared child. make_unique!'s own refcount dec keeps
+        # the counts exact.
+        refcount(child_rc) > 1 && make_unique!(child_rc)
+        z.focus_stack[k] = child_rc
     end
+    return nothing
 end
 
 # =====================================================================
