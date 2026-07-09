@@ -625,15 +625,21 @@ end
 Base.IteratorSize(::Type{ByteMask}) = Base.HasLength()
 Base.eltype(::Type{ByteMask}) = UInt8
 Base.length(m::ByteMask) = count_bits(m)
-function Base.iterate(m::ByteMask, state::Int=0)
-    # Walk without mutation (non-destructive)
-    while state < 256
-        if test_bit(m, UInt8(state))
-            return (UInt8(state), state + 1)
-        end
-        state += 1
+function Base.iterate(m::ByteMask, state::Tuple{Int, UInt64} = (1, @inbounds m.bits[1]))
+    # ctz word-walk (non-destructive): O(popcount) per full pass, not O(256).
+    # Mirrors next_bit / ByteMaskIter (trailing_zeros + clear-lowest-set-bit),
+    # non-allocating, ascending byte order. Replaces a 256-way linear test_bit
+    # scan that did a runtime Bits4-tuple index each step (the exec-loop hot leaf).
+    wi, w = state
+    b = m.bits
+    while w == UInt64(0)
+        wi >= 4 && return nothing
+        wi += 1
+        w = wi == 2 ? b[2] : (wi == 3 ? b[3] : b[4])   # static word indices only
     end
-    return nothing
+    tz = trailing_zeros(w)
+    byte = UInt8(((wi - 1) << 6) | tz)
+    return (byte, (wi, w & (w - UInt64(1))))           # clear lowest set bit, resume
 end
 
 # =====================================================================
