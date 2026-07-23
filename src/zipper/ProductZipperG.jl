@@ -116,10 +116,19 @@ type.  Mirrors `ProductZipperG<PrimaryZ, SecondaryZ, V>` in product_zipper.rs.
 is a PrefixZipper).
 `factor_paths` = offsets into `path()` at secondary boundaries.
 """
-mutable struct ProductZipperG
+# PARAMETERIZED 2026-07-23. Was `primary::Any` + `secondary::Vector{Any}` — a Vector{Any} sitting in
+# the hot product-DFS descent, so every `prz.primary` / `prz.secondary[idx]` access boxed and
+# DYNAMICALLY DISPATCHED the `_zpg_*` zipper operations (path/descend/ascend/child-mask, called per
+# byte). Measured cost: ip_sudoku's source-join wedged with 438M allocations. Parameterizing lets the
+# compiler SPECIALIZE the descent on the concrete zipper types (ReadZipperCore{V,A} / PrefixZipper{Z} /
+# DependentZipper{PZ,SZ} / StaticZipper), union-splitting when one query mixes source kinds. The
+# `_zpg_*` helpers already dispatch on those concrete types — this just stops erasing them at the field.
+# NOTE: this only bites if the CALLER passes a concretely-typed `secondaries` (not Any[]); MORK
+# `space_query_multi_i` was updated to narrow its factors. CLAUDE.md: no Vector{Any} in hot paths.
+mutable struct ProductZipperG{P, S}
     factor_paths::Vector{Int}
-    primary::Any
-    secondary::Vector{Any}
+    primary::P
+    secondary::Vector{S}
 end
 
 ProductZipperG(primary, secondaries) = ProductZipperG(Int[], primary, collect(secondaries))
