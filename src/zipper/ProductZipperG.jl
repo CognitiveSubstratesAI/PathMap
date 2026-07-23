@@ -129,9 +129,14 @@ mutable struct ProductZipperG{P, S}
     factor_paths::Vector{Int}
     primary::P
     secondary::Vector{S}
+    total_iters::Int   # CUMULATIVE product-DFS steps across ALL pzg_to_next_val! calls on this zipper.
+                       # Fresh per query (space_query_multi_i builds a new zipper each call).
+    deadline::Float64  # wall-clock fail-loud: set on the FIRST budget tick to time()+PZG_QUERY_TIME_BUDGET;
+                       # a runaway query (naive source-join explosion) errors here. Robust — no threshold
+                       # to tune, since a legit query's whole product-DFS finishes in well under a second.
 end
 
-ProductZipperG(primary, secondaries) = ProductZipperG(Int[], primary, collect(secondaries))
+ProductZipperG(primary, secondaries) = ProductZipperG(Int[], primary, collect(secondaries), 0, 0.0)
 
 # =====================================================================
 # Internal helpers (mirrors ProductZipperG private methods)
@@ -224,6 +229,7 @@ end
 
 function pzg_reset!(prz::ProductZipperG)
     empty!(prz.factor_paths)
+    prz.total_iters = 0
     for s in prz.secondary
         ;
         _zpg_reset!(s);
@@ -239,6 +245,7 @@ function pzg_descend_to_existing!(prz::ProductZipperG, path)
     pv = collect(UInt8, path)
     descended = 0
     while !isempty(pv)
+        _pzg_budget!(prz)
         _pzg_enter_factors!(prz)
         idx = _pzg_factor_idx(prz, false)
         good = if idx !== nothing
@@ -366,15 +373,50 @@ function pzg_to_next_sibling_byte!(prz::ProductZipperG)::Bool
     end
 end
 
+# The naive product DFS has NO coreferential pruning (the coref join was ported only to MORK's
+# NON-source query path — see MORK `space_query_multi_i` / [[reference_mork_port_state_and_rule64]]).
+# A higher-order self-referential SOURCE pattern (e.g. ip_sudoku's priority-decrement meta-exec) makes
+# the product DFS enumerate an EXPLODING cross-product. The budget below now FAILS LOUD, and it is
+# CUMULATIVE over the whole query (prz.total_iters), NOT per-call: the old per-call cap (200k) never
+# fired here because each next-value advance stayed just under it while the query performed MILLIONS of
+# advances. The old behavior was worse still — a `@warn maxlog=1` + SILENT `return false` that truncated
+# the join mid-enumeration, surfacing as wrong results or a program-level non-termination (each capped
+# advance returns an incomplete match → the exec respawns → repeat). A silent cap that changes the
+# ANSWER is exactly the hazard this session set out to kill: a hang or wrong result that reads as
+# "working". A well-behaved query over Rule-of-64-scale data does far fewer than this many total DFS
+# steps; raise `PZG_QUERY_ITER_CAP[]` for a legitimately huge join (and file the coref-source port).
+const PZG_QUERY_ITER_CAP = Ref(100_000_000)
+
+# One unit of product-DFS work — ticked from BOTH the outer next-value loop AND the inner descend loop,
+# because the explosion spins inside the descend sub-operations (pzg_descend_to_existing!), not the
+# outer advance. Fails loud when the cumulative budget is blown (see the block comment above).
+const PZG_QUERY_TIME_BUDGET = Ref(30.0)   # seconds — a single query's product-DFS may not exceed this
+const PZG_PEAK_ITERS = Ref(0)             # diagnostic: high-water mark of per-query DFS steps (any query)
+@inline function _pzg_budget!(prz::ProductZipperG)
+    prz.total_iters += 1
+    prz.total_iters > PZG_PEAK_ITERS[] && (PZG_PEAK_ITERS[] = prz.total_iters)
+    if prz.total_iters == 1
+        prz.deadline = time() + PZG_QUERY_TIME_BUDGET[]        # arm the wall-clock on the first step
+    elseif prz.total_iters & 0xffff == 0 && time() > prz.deadline
+        error("ProductZipperG product-DFS exceeded the $(PZG_QUERY_TIME_BUDGET[])s per-query wall-clock \
+               budget — a naive product/source join is EXPLODING (no coreferential pruning on this path). \
+               This was previously a SILENT `return false` that truncated the join and returned a \
+               wrong/partial answer — a hang/wrong-result that reads as 'working'. Port the coreferential \
+               join to the source path, fix the pattern, or raise `PathMap.PZG_QUERY_TIME_BUDGET[]`. See \
+               reference_mork_port_state_and_rule64.")
+    end
+    if prz.total_iters > PZG_QUERY_ITER_CAP[]                  # backstop for a fast (non-slow) explosion
+        error("ProductZipperG product-DFS exceeded $(PZG_QUERY_ITER_CAP[]) CUMULATIVE steps for one query \
+               — naive product/source join explosion; see the wall-clock message / \
+               reference_mork_port_state_and_rule64.")
+    end
+    nothing
+end
+
 # ZipperIteration default impl
 function pzg_to_next_val!(prz::ProductZipperG)::Bool
-    iters = 0
     while true
-        iters += 1
-        if iters > 200_000
-            @warn "ProductZipperG pzg_to_next_val! hit iteration cap (200k); returning false. This indicates a likely infinite loop in generic product DFS." maxlog=1
-            return false
-        end
+        _pzg_budget!(prz)
         if pzg_descend_first_byte!(prz)
             pzg_is_val(prz) && return true
             pzg_descend_until!(prz) && pzg_is_val(prz) && return true
