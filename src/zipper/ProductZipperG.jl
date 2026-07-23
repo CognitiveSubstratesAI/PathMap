@@ -436,6 +436,63 @@ function pzg_to_next_val!(prz::ProductZipperG)::Bool
 end
 
 # =====================================================================
+# Additional navigation for the coreferential DFS (the coref-source-join port, 2026-07-23).
+# Upstream defines these as ZipperMoving TRAIT DEFAULTS (pathmap/src/zipper.rs: descend_to_check :180,
+# descend_to_existing_byte :245, descend_first_k_path :660, to_next_k_path :675) — generic over the
+# basic moving interface, which is exactly why upstream's `coreferential_transition` runs over
+# ProductZipperG for free. Julia has no trait defaults, so our port hand-writes them per type; this is
+# the ProductZipperG set, a mechanical mirror of ProductZipper's (ProductZipper.jl:322-392), all
+# generic over ProductZipperG's basic ops (pzg_descend_first_byte!/to_next_sibling!/ascend_byte!/
+# descend_to_existing!/path) — which already dispatch through the source zippers (ReadZipperCore/
+# DependentZipper/PrefixZipper/ACTZipper). Routing space_query_multi_i through `_coreferential_transition!`
+# then gives the SOURCE path the same coreferential PRUNING the non-source path has — killing the naive
+# cross-product explosion (ip_sudoku) at the algorithm. The wall-clock budget still ticks underneath
+# (via pzg_descend_to_existing!), so a bug that re-explodes is caught loud, not wedged.
+# =====================================================================
+
+# single-byte existing descend: true iff the byte existed and was descended.
+pzg_descend_to_existing_byte!(prz::ProductZipperG, b::UInt8)::Bool =
+    pzg_descend_to_existing!(prz, UInt8[b]) == 1
+
+# descend `bytes` iff the exact path exists; on failure ascend back to restore the prior position.
+function pzg_descend_to_check!(prz::ProductZipperG, bytes)::Bool
+    bv = bytes isa AbstractVector{UInt8} ? bytes : collect(UInt8, bytes)
+    isempty(bv) && return true
+    n = pzg_descend_to_existing!(prz, bv)
+    n == length(bv) && return true
+    n > 0 && pzg_ascend!(prz, n)
+    false
+end
+
+# descend to the first path exactly `k` bytes below the current focus.
+pzg_descend_first_k_path!(prz::ProductZipperG, k::Int)::Bool =
+    _pzg_k_path_internal!(prz, k, length(pzg_path(prz)))
+
+# move to the next path at the same depth (k bytes from the common base).
+pzg_to_next_k_path!(prz::ProductZipperG, k::Int)::Bool =
+    _pzg_k_path_internal!(prz, k, length(pzg_path(prz)) - k)
+
+function _pzg_k_path_internal!(prz::ProductZipperG, k::Int, base_idx::Int)::Bool
+    # Direct port of _pz_k_path_internal! (ProductZipper.jl:374) using pzg_* methods.
+    while true
+        if length(pzg_path(prz)) < base_idx + k
+            while pzg_descend_first_byte!(prz)
+                length(pzg_path(prz)) == base_idx + k && return true
+            end
+        end
+        if pzg_to_next_sibling_byte!(prz)
+            length(pzg_path(prz)) == base_idx + k && return true
+            continue
+        end
+        while length(pzg_path(prz)) > base_idx
+            pzg_ascend_byte!(prz)
+            length(pzg_path(prz)) == base_idx && return false
+            pzg_to_next_sibling_byte!(prz) && break
+        end
+    end
+end
+
+# =====================================================================
 # Exports
 # =====================================================================
 
@@ -444,5 +501,7 @@ export pzg_path, pzg_origin_path, pzg_root_prefix_len
 export pzg_is_val, pzg_path_exists, pzg_child_count, pzg_child_mask
 export pzg_at_root, pzg_factor_count, pzg_focus_factor, pzg_factor_paths
 export pzg_reset!, pzg_descend_to_byte!, pzg_descend_first_byte!
-export pzg_descend_until!, pzg_ascend_byte!, pzg_ascend_until!
+export pzg_descend_until!, pzg_ascend_byte!, pzg_ascend!, pzg_ascend_until!
 export pzg_to_next_sibling_byte!, pzg_to_next_val!
+export pzg_descend_to_existing_byte!, pzg_descend_to_check!
+export pzg_descend_first_k_path!, pzg_to_next_k_path!
