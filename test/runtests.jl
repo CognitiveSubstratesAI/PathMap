@@ -12,7 +12,11 @@ catch
 end
 const PM = PathMap.PathMap   # PathMap module and PathMap type share the same name
 
-@testset "PathMap" begin
+# Fails the build on any testset that runs but asserts nothing — see the file header for the two
+# inert-oracle instances that motivated it. Captured into `_PM_TS` and checked AFTER the suite.
+include("inert_testset_guard.jl")
+
+const _PM_TS = @testset "PathMap" begin
     if _HAS_AQUA
         @testset "Aqua quality" begin
             # unbound_args: the lattice ops take Option-style `Union{Nothing,V}` args and
@@ -789,3 +793,6 @@ include("test_alloc_regression.jl")
 
 # Viz (Mermaid rendering + structural-sharing observability) — port of viz.rs
 include("test_viz.jl")
+
+# Post-suite: a testset that asserted NOTHING must fail the build, not read as green.
+assert_no_inert_testsets(_PM_TS)
