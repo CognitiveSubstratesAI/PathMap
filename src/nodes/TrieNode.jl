@@ -476,9 +476,17 @@ end
 
 # Delegating overload for join_into_dyn!: unwraps the first TrieNodeODRc.
 # DenseByteNode calls join_into_dyn!(cf.rec, node) where cf.rec::TrieNodeODRc.
-# Mirrors Rust's implicit Deref through Arc<dyn TrieNode>.
+# Mirrors upstream `TrieNodeODRc::join_into` (trie_node.rs:3094-3103): `self.make_mut()`
+# BEFORE delegating to the mutating trait method — make_mut is the COW-fork (clone iff
+# shared) that makes the subsequent in-place mutation safe. The prior version skipped
+# this and mutated `rc.node` directly regardless of sharing, corrupting any OTHER live
+# reference to the same node (e.g. a shallow-cloned parent's shared child during pjoin's
+# deepcopy_bn+merge_from_list_node! path — found 2026-07-24 investigating a DTL
+# non-termination bug: a read-only isolated snapshot built via `pjoin` was silently
+# leaking writes back into the live space through exactly this aliasing gap).
 function join_into_dyn!(rc::TrieNodeODRc{V, A}, other::TrieNodeODRc{V, A}) where {V, A}
     rc.node === nothing && return (ALG_STATUS_IDENTITY, nothing)
+    make_unique!(rc)
     join_into_dyn!(rc.node, other)
 end
 
