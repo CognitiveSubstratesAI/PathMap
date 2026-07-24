@@ -362,8 +362,18 @@ Recursively counts values in the subtree rooted at `rc`, with memoisation.
 Ports upstream `val_count_below_node`.
 """
 function val_count_below_node(rc::TrieNodeODRc{V, A}, cache::Dict{UInt64, Int}) where {V, A}
-    id = shared_node_id(rc)
-    get!(cache, id) do
+    # Mirrors upstream trie_node.rs:2377-2394: the empty-sentinel case (`rc.node === nothing`,
+    # left behind by remove_val_at! without prune=true, the default) must short-circuit to 0
+    # BEFORE as_tagged/node_val_count — it is not a node to recurse into. Caching is also
+    # upstream-gated to refcount()>1 (only SHARED subtries are memoised; a uniquely-owned node
+    # is walked directly, since caching it by id risks a stale hit across COW mutation).
+    is_empty_node(rc) && return 0
+    if refcount(rc) > 1
+        id = shared_node_id(rc)
+        get!(cache, id) do
+            node_val_count(as_tagged(rc), cache)
+        end
+    else
         node_val_count(as_tagged(rc), cache)
     end
 end
