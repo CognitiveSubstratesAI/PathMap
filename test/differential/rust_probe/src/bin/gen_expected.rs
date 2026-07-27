@@ -47,6 +47,15 @@ fn main() {
             format!("{}", m.path_exists_at(p.as_bytes())),
         );
     }
+    // Empty-path existence, across map states — pins what "" means before we change our answer.
+    let empty_map = PathMap::<()>::new();
+    emit("path_exists_at/empty_map_empty_path", format!("{}", empty_map.path_exists_at(b"")));
+    emit("path_exists_at/empty_map_some_path", format!("{}", empty_map.path_exists_at(b"a")));
+    let mut rootonly = PathMap::<()>::new();
+    rootonly.set_val_at(b"", ());
+    emit("path_exists_at/rootval_empty_path", format!("{}", rootonly.path_exists_at(b"")));
+    emit("path_exists_at/rootval_some_path", format!("{}", rootonly.path_exists_at(b"a")));
+
     let key16 = "zzzzzzzzzzzzzzzz";
     let m2 = mk(&[key16]);
     let bits: String = (1..=16)

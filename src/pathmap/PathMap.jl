@@ -115,8 +115,14 @@ function path_exists_at(m::PathMap{V, A}, path) where {V, A}
     # Do not reintroduce a hand-rolled traversal here: the zipper already implements it.
     _ensure_root!(m)
     path_v = path isa AbstractVector{UInt8} ? path : collect(UInt8, path)
-    m.root === nothing && return isempty(path_v) && m.root_val !== nothing
-    isempty(path_v) && return m.root_val !== nothing
+    # The EMPTY path always exists — upstream returns true even for an empty map
+    # (`read_zipper_at_borrowed_path("").path_exists()`; our own zipper_path_exists agrees,
+    # Zipper.jl:483 `isempty(key) ? true : ...`). We previously returned
+    # `m.root_val !== nothing`, i.e. false unless a ROOT VALUE happened to exist — measured
+    # against upstream by test/differential (path_exists_at/<empty>, /empty_map_empty_path,
+    # /rootval_empty_path all true upstream; /empty_map_some_path false).
+    isempty(path_v) && return true
+    m.root === nothing && return false
     last_rc, off, full = node_along_path_off(m.root::TrieNodeODRc{V, A}, path_v)
     # full match (remaining matched a child edge, incl. a dangling edge) → structurally exists.
     full && return true

@@ -7,6 +7,10 @@ path_exists_at/abcdefghij	true
 path_exists_at/abz	false
 path_exists_at/abcx	false
 path_exists_at/<empty>	true
+path_exists_at/empty_map_empty_path	true
+path_exists_at/empty_map_some_path	false
+path_exists_at/rootval_empty_path	true
+path_exists_at/rootval_some_path	false
 path_exists_at/16z_prefixes	TTTTTTTTTTTTTTTT
 basic/mk_three	[a,ab,abc] vc=3
 basic/empty	[] vc=0

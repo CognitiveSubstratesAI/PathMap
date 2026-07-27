@@ -63,6 +63,14 @@ function differential_results()
         nm = "path_exists_at/" * (isempty(p) ? "<empty>" : p)
         out[nm] = string(PathMap.path_exists_at(m, _b(p)))
     end
+    empty_map = PMT{PathMap.UnitVal}()
+    out["path_exists_at/empty_map_empty_path"] = string(PathMap.path_exists_at(empty_map, UInt8[]))
+    out["path_exists_at/empty_map_some_path"] = string(PathMap.path_exists_at(empty_map, _b("a")))
+    rootonly = PMT{PathMap.UnitVal}()
+    PathMap.set_val_at!(rootonly, UInt8[], PathMap.UnitVal())
+    out["path_exists_at/rootval_empty_path"] = string(PathMap.path_exists_at(rootonly, UInt8[]))
+    out["path_exists_at/rootval_some_path"] = string(PathMap.path_exists_at(rootonly, _b("a")))
+
     key16 = "zzzzzzzzzzzzzzzz"
     m2 = _mk([key16])
     out["path_exists_at/16z_prefixes"] =
