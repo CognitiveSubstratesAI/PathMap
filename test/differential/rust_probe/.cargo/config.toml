@@ -1,0 +1,5 @@
+# Mirrors upstream PathMap's own .cargo/config.toml. gxhash hard-fails to compile
+# without AES/SSE2 intrinsics, so the ground-truth generator must build with the same
+# flags the upstream crate is built with — otherwise this harness cannot build at all.
+[build]
+rustflags = ["-C", "target-cpu=native", "-Awarnings"]

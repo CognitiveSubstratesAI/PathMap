@@ -1,0 +1,20 @@
+# Ground-truth generator for PathMap's upstream differential.
+# Depends on the UPSTREAM Rust pathmap; its stdout is vendored as expected/upstream.tsv.
+[package]
+name = "pathmap_differential"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Relative so this is not machine-specific. Resolves to the upstream PathMap checkout
+# alongside this workspace. If your layout differs, override without editing this file:
+#     cargo run --release --bin gen_expected --config 'patch.crates-io.pathmap.path="/abs/path"'
+# NOTE: the GATE itself never needs this crate — upstream output is vendored at
+# ../expected/upstream.tsv. Rust is only required to REGENERATE that file.
+pathmap = { path = "../../../../../../JuliaAGI/dev-zone/PathMap" }
+
+[[bin]]
+name = "gen_expected"
+path = "src/bin/gen_expected.rs"
+
+[workspace]

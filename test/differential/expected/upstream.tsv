@@ -1,0 +1,26 @@
+path_exists_at/a	true
+path_exists_at/ab	true
+path_exists_at/abc	true
+path_exists_at/abcd	true
+path_exists_at/abcdefghi	true
+path_exists_at/abcdefghij	true
+path_exists_at/abz	false
+path_exists_at/abcx	false
+path_exists_at/<empty>	true
+path_exists_at/16z_prefixes	TTTTTTTTTTTTTTTT
+basic/mk_three	[a,ab,abc] vc=3
+basic/empty	[] vc=0
+basic/remove_noprune	[k1,k3] vc=2
+basic/remove_prune	[k1,k3] vc=2
+graft/graft_map_at_p	[py,q] vc=2
+graft/meet_into_at_p	[px,q] vc=2
+graft/subtract_into_rootval_at_p	[px,q] vc=2
+graft/join_into_at_p	[px,py,q] vc=3
+algebra/join_root	[a,b,c] vc=3
+algebra/meet_root	[b,c] vc=2
+algebra/subtract_root	[a,c] vc=2
+prefix/insert_prefix_at_foo	[foo:bar,foo:ns:bar] vc=2
+prefix/remove_prefix_at_foo	[foo:bar,foo:baz] vc=2
+deep/long_common_prefix	[dddddddddddd0,dddddddddddd1,dddddddddddd2,dddddddddddd3,dddddddddddd4,dddddddddddd5,dddddddddddd6,dddddddddddd7] vc=8
+cow/source_after_clone_write	[s:1,s:2] vc=2
+cow/target_after_clone_write	[s:1,s:2,s:3] vc=3

@@ -800,5 +800,11 @@ include("test_viz.jl")
 include("test_william_nary.jl")
 include("test_path_exists_at.jl")
 
+# Upstream differential ratchet (added 2026-07-27). PathMap previously had NO executable check
+# against upstream Rust — only local tests comparing PathMap to itself, which is how a
+# self-consistent wrong answer (path_exists_at on mid-edge prefixes) survived for months.
+# Needs no Rust toolchain: upstream output is vendored under test/differential/expected/.
+include("differential_gate.jl")
+
 # Post-suite: a testset that asserted NOTHING must fail the build, not read as green.
 assert_no_inert_testsets(_PM_TS)
