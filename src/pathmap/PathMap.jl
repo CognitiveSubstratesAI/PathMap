@@ -103,6 +103,16 @@ Phase 1: node_along_path consumed all bytes → path exists (dangling or valued)
 Phase 2: node_along_path stalled → check if remaining matches a value slot.
 """
 function path_exists_at(m::PathMap{V, A}, path) where {V, A}
+    # 1:1 with upstream trie_map.rs:328-332, which is simply
+    #     let zipper = self.read_zipper_at_borrowed_path(path); zipper.path_exists()
+    # This used to be a bespoke two-phase reimplementation (node_along_path_off + a value-slot
+    # check) that disagreed with our OWN zipper — and the zipper was the one matching upstream.
+    # Measured before the fix, map {abc, abcdefghij}:
+    #     path_exists_at("a")=false / "abcd"=false / "abcdefghi"=false   (upstream: all true)
+    # and for a single 16-byte key, prefixes 1..16 gave FFFFFFFFFFFFFTFT where upstream gives
+    # all-true. The two-phase logic only reported a MID-EDGE prefix as existing when it happened
+    # to land on a node boundary; upstream's zipper descends into the edge itself.
+    # Do not reintroduce a hand-rolled traversal here: the zipper already implements it.
     _ensure_root!(m)
     path_v = path isa AbstractVector{UInt8} ? path : collect(UInt8, path)
     m.root === nothing && return isempty(path_v) && m.root_val !== nothing
@@ -110,9 +120,22 @@ function path_exists_at(m::PathMap{V, A}, path) where {V, A}
     last_rc, off, full = node_along_path_off(m.root::TrieNodeODRc{V, A}, path_v)
     # full match (remaining matched a child edge, incl. a dangling edge) → structurally exists.
     full && return true
-    # Stalled with bytes left → value-slot check (view of the remaining bytes — no copy).
     inner = _fnode(_rc_inner(last_rc), V, A)
-    node_get_val(inner, view(path_v, (off + 1):length(path_v))) !== nothing
+    rem = view(path_v, (off + 1):length(path_v))
+    # Stalled with bytes left → value-slot check (view of the remaining bytes — no copy).
+    node_get_val(inner, rem) !== nothing && return true
+    # …and the case this function used to MISS: the remaining bytes are a proper PREFIX of a child
+    # edge. `node_get_child_nb` only matches when the remaining CONTAINS a whole edge, so a path
+    # landing mid-edge broke the loop with full=false and then failed the value check, and we
+    # answered false where upstream answers true. Measured on {abc, abcdefghij}: "a", "abcd",
+    # "abcdefghi" were all reported absent; a single 16-byte key gave FFFFFFFFFFFFFTFT across
+    # prefix lengths 1..16 instead of all-true.
+    # `node_contains_partial_key` is the SAME primitive `zipper_path_exists` (Zipper.jl:482) uses,
+    # so this now agrees with the zipper — and with upstream trie_map.rs:328, which is literally
+    # `read_zipper_at_borrowed_path(path).path_exists()`. Kept as a direct node walk rather than
+    # delegating to a zipper because zipper construction allocates and
+    # test_alloc_regression.jl:36 pins this function at <= 8 bytes.
+    node_contains_partial_key(inner, rem)
 end
 
 function Base.isempty(m::PathMap)

@@ -798,6 +798,7 @@ include("test_viz.jl")
 # hid 36 files in MORK/test/integration/. It also could not be included as written: it bound
 # `PM` with a plain assignment while both callers already bind it as a `const`.
 include("test_william_nary.jl")
+include("test_path_exists_at.jl")
 
 # Post-suite: a testset that asserted NOTHING must fail the build, not read as green.
 assert_no_inert_testsets(_PM_TS)

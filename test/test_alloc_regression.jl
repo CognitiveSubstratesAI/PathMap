@@ -33,7 +33,15 @@ if _HAS_ALLOCCHECK
         # read-path residual — must not GROW beyond the measured optimized floor (ADR-001-gated:
         # node_get_child_nb Tuple boxing + Int64 Union returns → zero only under the isbits node slab)
         @test nallocs(PathMap.get_val_at,     (typeof(m), Vector{UInt8})) <= 8
-        @test nallocs(PathMap.path_exists_at, (typeof(m), Vector{UInt8})) <= 8
+        # path_exists_at: floor moved 8 -> 11 on 2026-07-27, DELIBERATELY. The old floor was
+        # measured on an implementation that answered WRONG for mid-edge prefixes (it reported
+        # "a"/"abcd"/"abcdefghi" as absent in {abc, abcdefghij}, disagreeing with our own
+        # zipper and with upstream trie_map.rs:328). The correctness fix adds a
+        # `node_contains_partial_key` call, costing 3 more alloc SITES. A correct answer at 11
+        # beats a wrong one at 8. Still a ratchet — pinned at the new measured floor, not
+        # loosened to a round number. Reducing it again is a real optimisation opportunity
+        # (the residual is node-type dynamic dispatch, same class as the ADR-001 note above).
+        @test nallocs(PathMap.path_exists_at, (typeof(m), Vector{UInt8})) <= 11
 
         # cheap read-cursor primitives — locked at their measured floors
         @test nallocs(PathMap.zipper_child_mask,   (typeof(rz),)) <= 4
