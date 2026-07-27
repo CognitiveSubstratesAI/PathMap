@@ -794,5 +794,10 @@ include("test_alloc_regression.jl")
 # Viz (Mermaid rendering + structural-sharing observability) — port of viz.rs
 include("test_viz.jl")
 
+# Wired 2026-07-27. This file existed but was NEVER included — the same orphan pattern that
+# hid 36 files in MORK/test/integration/. It also could not be included as written: it bound
+# `PM` with a plain assignment while both callers already bind it as a `const`.
+include("test_william_nary.jl")
+
 # Post-suite: a testset that asserted NOTHING must fail the build, not read as green.
 assert_no_inert_testsets(_PM_TS)
