@@ -100,6 +100,31 @@ The rate went UP slightly, which is the informative part: the extra programs rea
 300 never generated. "5 remaining" was never a population estimate — only what 300 random programs
 happened to expose. **Zero crashes at 10x scale** is the other result worth noting.
 
+### CLOSED from the "fewer" group: `_bn_psubtract_abstract` dropped a value (81 -> 75)
+
+Shrinking the first 10 "fewer atoms" cases collapsed 5 of them onto ONE missing `else`.
+`_bn_psubtract_abstract` looked up `node_get_val(other, key)` and, when the source had structure at
+that byte but NO VALUE, did nothing — leaving `new_cf.val` unset, so OUR value vanished. A value
+must be removed only when the source has a VALUE AT THE SAME PATH, never merely structure below it.
+
+    {a}    - {ab}    upstream Identity [a]     ours was None []
+    {a,ab} - {ab}    upstream Element  [a]     ours was None []
+    {:b:}  - {:b:b}  upstream Identity [:b:]   ours was None []
+
+FAMILY SWEEP DONE: only two `_abstract` algebra paths exist — `_bn_psubtract_abstract` (fixed) and
+`_bn_prestrict_abstract`, which already has the `else`. No `pjoin`/`pmeet` equivalents.
+
+### ⚠️ COVERAGE GAP — the fuzzer never exercises `restrict`
+
+The generator's op set is DESCEND · ASCEND · SETVAL · REMOVEVAL · GRAFTMAP · JOINMAP · MEET · SUB ·
+TAKEMAP · INSPREFIX · REMPREFIX · RESET. There is **no RESTRICT**, so `wz_restrict!` and
+`_bn_prestrict_abstract` are covered by nothing here — and `prestrict` is precisely a sibling of
+the function that just turned out to be silently dropping values.
+
+⚠️ Adding an op is a RE-BASELINE event, not a free change: the generator picks ops with
+`r.below(13)`, so widening it changes RNG consumption and reshuffles every case. Do it
+deliberately, regenerate ground truth, and re-derive KNOWN_DIVERGENT.txt in the same commit.
+
 ### Cheap shape split of the 81 (by `vc=` count, before any shrinking)
 
 | shape | count | reading |

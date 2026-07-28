@@ -10,7 +10,15 @@
 # issues thousands of queries and process spawn would otherwise dominate.
 #
 # Usage (needs the rustup toolchain — see run_fuzz.jl for the PATH incantation):
-#   PMROOT=<pathmap> julia --project=. test/differential/shrink.jl [max_cases]
+#   PMROOT=<pathmap> ./tools/run_tests.sh test/differential/shrink.jl   # args via SHRINK_N/SHRINK_SHAPE
+#
+# SHRINK_SHAPE filters which divergences to work on, by comparing the `vc=` counts:
+#   fewer  we produce FEWER atoms than upstream -> we LOSE data, most likely OUR defect
+#   more   we produce MORE  atoms -> we PRESERVE where upstream destroys (deviation class)
+#   same   equal counts, different content
+#   all    (default)
+# Triaging by shape FIRST is what keeps a large corpus tractable: at 3000 cases the 81 divergences
+# split 33 "more" / 24 "fewer" / 24 "same", and only the "fewer" group is unambiguously ours.
 using PathMap
 include(joinpath(@__DIR__, "run_fuzz.jl"))
 
@@ -118,12 +126,23 @@ function shrink(c0)
     (text, _ours(text), get(w, "final", "?"))
 end
 
+_vc(s) = (m = match(r"vc=(\d+)\s*$", s); m === nothing ? -1 : parse(Int, m.captures[1]))
+
+"Classify a divergence by atom COUNT — cheap triage that needs no shrinking."
+function _shape(ours, up)
+    o = _vc(split(ours, '|')[end])
+    u = _vc(split(up, '|')[end])
+    o > u ? "more" : (o < u ? "fewer" : "same")
+end
+
 function main()
-    maxc = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 6
+    maxc = parse(Int, get(ENV, "SHRINK_N", "6"))
+    want = get(ENV, "SHRINK_SHAPE", "all")
     all_cases = fuzz_cases()
     n, mism, errs = fuzz_compare()
-    failing = vcat([(nm, "mismatch") for (nm, _, _) in mism], [(nm, "error") for (nm, _) in errs])
-    println("=== $(length(failing)) failing of $n; shrinking first $maxc ===\n")
+    sel = want == "all" ? mism : filter(m -> _shape(m[2], m[3]) == want, mism)
+    failing = vcat([(nm, "mismatch") for (nm, _, _) in sel], [(nm, "error") for (nm, _) in errs])
+    println("=== $(length(mism)) mismatches of $n | shape=$want -> $(length(sel)) | shrinking $maxc ===\n")
     for (name, kind) in first(failing, maxc)
         c0 = _fparse_text(all_cases[name])
         text, ours, up = shrink(c0)

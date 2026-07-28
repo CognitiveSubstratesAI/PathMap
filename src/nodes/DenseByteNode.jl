@@ -966,6 +966,26 @@ function _bn_psubtract_abstract(
                             is_identity = false
                             new_cf.val = r.value
                         end
+                    else
+                        # ⚠️ MISSING BRANCH — this `else` did not exist, and its absence was SILENT
+                        # DATA LOSS. `other` reaching this key means it has SOMETHING at this byte,
+                        # but that something may be a CHILD (deeper structure) rather than a VALUE.
+                        # Subtracting `{ab}` from `{a}` must leave `a` alone: a value is removed only
+                        # when the source has a VALUE AT THE SAME PATH, never merely structure below
+                        # it. Without this branch `new_cf.val` was left unset and our value vanished.
+                        #
+                        # Upstream keeps it: `subtract_from_slot_contents` matches
+                        # `onward_node.node_get_val(onward_key)` and returns
+                        # `AlgebraicResult::Identity(SELF_IDENT)` on `None` (line_list_node.rs:1153-1156),
+                        # and the CoFree `(None, Identity)` combine arm preserves it
+                        # (dense_byte_node.rs:1944-1956).
+                        #
+                        # Measured before/after against the binary:
+                        #   {a}    - {ab}   upstream Identity [a]      ours was None []
+                        #   {a,ab} - {ab}   upstream Element  [a]      ours was None []
+                        #   {:b:}  - {:b:b} upstream Identity [:b:]    ours was None []
+                        # Five of the fuzzer's ten shrunk "we lose data" cases were this one branch.
+                        new_cf.val = deepcopy(cf.val)
                     end
                 end
 
