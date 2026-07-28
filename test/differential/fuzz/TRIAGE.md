@@ -23,6 +23,28 @@ subnode at THIS level — so under-reporting made `_wz_graft_internal!` skip its
 `mend_root!`/`descend_to_internal!`, leaving the zipper pointing at the parent while the split had
 moved the value into the new child.
 
+## The `root_key_start` bookkeeping is not unwound by `wz_reset!` — NEXT ITEM
+
+Diagnosed 2026-07-28 while closing 00174's first cause. `_wz_mend_root!` advances
+`root_key_start` and OVERWRITES `focus_stack[1]` with an inner node, and **nothing restores
+either**. `wz_reset!` pops the stack and truncates `prefix_buf` but leaves `root_key_start`
+advanced and the original map root already lost.
+
+Upstream can restore because its `MutNodeStack` keeps the original root SEPARATELY
+(`take_root`/`replace_root`, and `reset` calls `focus_stack.to_root()`); our `focus_stack[1]` is
+simply overwritten, so the information is gone. **This needs a struct change** — keep the origin
+root (and its `root_key_start`) alongside the working one — not a one-liner.
+
+Two of the remaining five are this:
+
+| case | shape | ours | upstream |
+|---|---|---|---|
+| `00174` | RESET + REMOVEVAL | `false;[:a,:ab,ab,bb:] vc=4` | `true;[:ab,ab,bb:] vc=3` |
+| `00177` | RESET + REMPREFIX | `[:::a,a:,ba] vc=3` | `[:::a,:::a,a:,ba] vc=4` |
+
+⚠️ `00177` is ALSO a case where upstream emits a DUPLICATE path, so closing the reset gap may not
+make it match — check that separately rather than assuming one fix covers both.
+
 ## Open — the last 5, NOT yet firmly attributed
 
 ⚠️ **Attribution below is a hypothesis, not a finding.** Each needs the ours-vs-upstream probe

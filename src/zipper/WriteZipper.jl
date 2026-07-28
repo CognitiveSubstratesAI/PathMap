@@ -126,9 +126,28 @@ function _wz_replace_top_node!(
         node_replace_child!(parent_node, pk, new_rc)
         push!(z.focus_stack, new_rc)
     else
-        # At root: update PathMap.root and the stack root entry
-        z.pathmap.root = new_rc
-        z.focus_stack[1] = new_rc
+        # At the STACK root — which is the MAP's root only while `root_key_start == 0`.
+        #
+        # ⚠️ `_wz_mend_root!` re-points `focus_stack[1]` at an INNER node (advancing
+        # `root_key_start`) whenever a subnode gets created above the origin. Assigning
+        # `pathmap.root` unconditionally after that RE-ROOTS the whole map at that inner node,
+        # discarding the origin prefix and every sibling outside it.
+        # Upstream never has this problem because it writes through the stack's root SLOT —
+        # `*focus_stack.root_mut() = replacement_node` (write_zipper.rs:2532) — which after a mend
+        # is the inner node's slot inside its parent, not the map's root pointer.
+        #
+        # Symptom: `join_map_into` at origin `":a"` with a source that HAS a root value produced
+        # `[a,aa:bb,ab,aba]` where upstream gives `[:a,:aa:bb,:ab,:aba,bb:]` — the entire map lost
+        # its `:` prefix and the unrelated key `bb:`. Only reachable when the val write fires
+        # first (it is what creates the subnode and triggers the mend), which is why the
+        # no-root-value case agreed exactly. PathMap fuzz 00174.
+        if z.root_key_start == 0
+            z.pathmap.root = new_rc
+            z.focus_stack[1] = new_rc
+        else
+            # Write THROUGH the shared wrapper so the parent's child pointer sees it.
+            z.focus_stack[1].node = new_rc.node
+        end
     end
 end
 
