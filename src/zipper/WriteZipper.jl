@@ -809,12 +809,13 @@ function wz_join_map_into!(z::WriteZipperCore{V, A}, map::PathMap{V, A}) where {
 
     src_rc = map.root
     if src_rc === nothing
+        # ⚠️ Upstream tests ONLY `self_focus.is_none()` here (write_zipper.rs:1696-1700) — NOT
+        # emptiness. An EMPTY-but-present focus is `Some`, so upstream answers Identity where an
+        # added `|| node_is_empty(...)` makes us answer None. Joining nothing into an existing
+        # (even empty) focus IS the identity; there is no focus to have been annihilated.
+        # Fuzz 00134: two empty maps, join at the root — upstream Identity, ours was None.
         focus_anr = _wz_get_focus_anr(z)
-        return if (is_none(focus_anr) || node_is_empty(as_tagged(focus_anr)))
-            ALG_STATUS_NONE
-        else
-            ALG_STATUS_IDENTITY
-        end
+        return is_none(focus_anr) ? ALG_STATUS_NONE : ALG_STATUS_IDENTITY
     end
     focus_anr = _wz_get_focus_anr(z)
     node_status = if is_none(focus_anr) || node_is_empty(as_tagged(focus_anr))
@@ -1277,13 +1278,34 @@ If `prune`, empty ancestor paths are pruned.
 Mirrors `WriteZipperCore::take_focus` (write_zipper.rs:2057).
 """
 function wz_take_focus!(z::WriteZipperCore{V, A}, prune::Bool=false) where {V, A}
-    focus_anr = _wz_get_focus_anr(z)
-    is_none(focus_anr) && return nothing
-    rc = into_option(focus_anr)
-    rc === nothing && return nothing
-    _wz_graft_internal!(z, nothing)
-    prune && wz_prune_path!(z)
-    rc
+    # 1:1 with upstream `take_focus` (write_zipper.rs:2202-2227), which has TWO branches keyed on
+    # `node_key().len() == 0`.
+    #
+    # ⚠️ This used to be a read-then-clear — `get_focus()` for the node, then
+    # `graft_internal(nothing)` to remove it. That is NOT the same operation. `get_focus` reports
+    # only a node that EXISTS, whereas upstream's `take_node_at_key` also yields the empty node
+    # sitting on a DANGLING path (take_focus's own doc says it "may leave behind a dangling path",
+    # so the next call meets one). We answered `nothing` where upstream answers `Some(empty)`,
+    # which `take_map` then turns into `nothing` instead of an empty PathMap. Fuzz cases
+    # 00056 / 00277 / 00287: a SECOND `take_map` at the same focus gives us None, upstream `[] vc=0`.
+    _wz_ensure_write_unique!(z)
+    nk = collect(_wz_node_key(z))
+    if isempty(nk)
+        # AT ROOT: upstream swaps a FRESH empty node into the stack root and returns the old one
+        # only if it was non-empty (:2208-2215) — so taking an already-empty root yields None,
+        # while taking a populated one hands the whole trie over and leaves an empty map behind.
+        old_rc = z.focus_stack[1]
+        replacement = TrieNodeODRc(LineListNode{V, A}(z.alloc), z.alloc)
+        z.pathmap.root = replacement
+        z.focus_stack[1] = replacement
+        return node_is_empty(old_rc.node) ? nothing : old_rc
+    else
+        focus_node = z.focus_stack[end].node
+        new_node = take_node_at_key!(focus_node, nk, prune)
+        new_node === nothing && return nothing
+        prune && _wz_prune_path_internal!(z)
+        return new_node
+    end
 end
 
 """

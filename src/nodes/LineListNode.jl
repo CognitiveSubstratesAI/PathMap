@@ -630,7 +630,22 @@ function set_payload_abstract!(
             return if res isa TrieNodeODRc
                 SetPayloadUpgrade{V, A}(res)
             else
-                SetPayloadOk{V, A}(nothing, res)
+                # `created_subnode` is TRUE unconditionally — upstream hardcodes it in BOTH arms
+                # (`.map(|_| (None, true))` for the child arm, `.map(|(ret_val, _)| (ret_val, true))`
+                # for the value arm; line_list_node.rs:944-951). We reach here only via `split_0`,
+                # which by definition JUST CREATED a subnode at THIS level — what the recursive
+                # call reports about ITS own slot is a different question and must not be
+                # forwarded.
+                #
+                # ⚠️ The value arm below already hardcoded `true`; only this one forwarded `res`,
+                # so the bug was an asymmetry inside this function. Forwarding a `false` made
+                # `node_set_branch!` under-report, `_wz_graft_internal!` then skipped its
+                # `mend_root!` + `descend_to_internal!`, and the zipper kept pointing at the parent
+                # while the split had moved the value down into the new child — so the follow-up
+                # `wz_remove_val!` could not FIND a value the read zipper still enumerated.
+                # Symptom: graft_map at a focus that holds a value left it behind
+                # (`[:ab,:abaaa]` vs upstream `[:abaaa]`). Fuzz 00106/00111/00234/00281.
+                SetPayloadOk{V, A}(nothing, true)
             end
         else
             val = into_val(payload)
