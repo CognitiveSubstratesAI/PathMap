@@ -805,6 +805,10 @@ include("test_path_exists_at.jl")
 # self-consistent wrong answer (path_exists_at on mid-edge prefixes) survived for months.
 # Needs no Rust toolchain: upstream output is vendored under test/differential/expected/.
 include("differential_gate.jl")
+# Randomised sibling of the curated differential above: 300 generated operation programs, each
+# paired with the upstream Rust engine's own answer. Ratchet, same contract. Curated scenarios
+# only find what someone thought to write down; this searches. See test/fuzz_gate.jl.
+include("fuzz_gate.jl")
 
 # Post-suite: a testset that asserted NOTHING must fail the build, not read as green.
 assert_no_inert_testsets(_PM_TS)

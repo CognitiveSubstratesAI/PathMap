@@ -189,8 +189,63 @@ fn run(c: &Case) -> String {
     format!("{}|{}", trace, dump(&a))
 }
 
+/// Inverse of `script()` — lets this binary act as an ORACLE FOR ARBITRARY SCRIPTS, not just ones
+/// it generated. That is what makes SHRINKING possible: a minimiser proposes a reduced program and
+/// must be able to ask upstream what it does. Without this you can only ever diff whole random
+/// cases, and a 6-op failure stays a 6-op failure.
+fn parse(text: &str) -> Case {
+    let mut c = Case {
+        a_keys: vec![], a_rootval: false, s_keys: vec![], s_rootval: false,
+        origin: "-".into(), ops: vec![],
+    };
+    for line in text.lines() {
+        if line.is_empty() { continue }
+        let mut it = line.splitn(2, ' ');
+        let tag = it.next().unwrap_or("");
+        let rest = it.next().unwrap_or("").trim();
+        let words = || -> Vec<String> {
+            rest.split(' ').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect()
+        };
+        match tag {
+            "A" => c.a_keys = words(),
+            "S" => c.s_keys = words(),
+            "AROOTVAL" => c.a_rootval = rest == "1",
+            "SROOTVAL" => c.s_rootval = rest == "1",
+            "ORIGIN" => c.origin = if rest.is_empty() { "-".into() } else { rest.to_string() },
+            "OP" => c.ops.push(rest.to_string()),
+            _ => {}
+        }
+    }
+    c
+}
+
+/// `--exec <dir>`: execute every `*.txt` in <dir> and print `stem<TAB>result`. Batched over a
+/// directory rather than one script per process — a shrink pass issues thousands of queries and
+/// process spawn would dominate.
+fn exec_dir(dir: &str) {
+    let mut names: Vec<_> = std::fs::read_dir(dir)
+        .expect("read exec dir")
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().map(|x| x == "txt").unwrap_or(false))
+        .collect();
+    names.sort();
+    let mut out = String::new();
+    for p in names {
+        let text = std::fs::read_to_string(&p).expect("read script");
+        let c = parse(&text);
+        let stem = p.file_stem().unwrap().to_string_lossy().to_string();
+        let _ = writeln!(out, "{}\t{}", stem, run(&c));
+    }
+    print!("{}", out);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(|s| s == "--exec").unwrap_or(false) {
+        exec_dir(args.get(2).expect("--exec needs a directory"));
+        return;
+    }
     let n: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(2000);
     let seed: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0x9E3779B97F4A7C15);
 
