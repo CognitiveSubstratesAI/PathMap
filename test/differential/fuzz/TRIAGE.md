@@ -114,6 +114,35 @@ must be removed only when the source has a VALUE AT THE SAME PATH, never merely 
 FAMILY SWEEP DONE: only two `_abstract` algebra paths exist — `_bn_psubtract_abstract` (fixed) and
 `_bn_prestrict_abstract`, which already has the `else`. No `pjoin`/`pmeet` equivalents.
 
+### THE CONSTRUCTOR-DESCEND CAUSE IS WORTH ~9 OF THE 15 REMAINING DATA-LOSS CASES
+
+After the subtract fix, shrinking ALL 15 remaining "fewer atoms" cases collapses them to 7 op
+shapes, and one cause dominates:
+
+    x4  RESET SETVAL              00642 01137 01991 02767
+    x4  RESET JOINMAP             01100 01963 01978 02974
+    x1  RESET REMPREFIX           00177
+    x3  DESCEND REMPREFIX         00498 00800 01536
+    x1  DESCEND ASCEND            00724
+    x2  (singletons)              01687 02038
+
+**NINE of fifteen involve RESET** — the same root cause already documented above for `00174`: our
+`write_zipper_at_path` DESCENDS at construction (upstream's constructors do not), which leaves
+`prefix_idx` non-empty, which makes `_wz_mend_root!` a no-op, which leaves `reset` landing at a
+depth upstream never occupies. The `RESET JOINMAP` group is status-only (`None` vs `Identity` with
+identical dumps), which is consistent: after a mis-positioned reset our `_wz_get_focus_anr` reports
+none where upstream's reports Some.
+
+**So this is now the single highest-value item in the corpus** — roughly 9 here plus `00174` and
+`00177`, and plausibly some of the "same count" group too.
+
+⚠️ Still NOT a deletion. Removing the constructor descend was tried and reverted (see above): it
+over-removes and breaks 6 tests, because with no descend our node-level ops receive a MULTI-BYTE
+`node_key` and something in our port does not handle that the way upstream's `node_set_val` /
+`node_set_branch` do (they split and recurse internally). The coordinated change is:
+constructor stops descending **and** the node ops handle full-length keys. Budget it as a session,
+not a patch.
+
 ### ⚠️ COVERAGE GAP — the fuzzer never exercises `restrict`
 
 The generator's op set is DESCEND · ASCEND · SETVAL · REMOVEVAL · GRAFTMAP · JOINMAP · MEET · SUB ·
