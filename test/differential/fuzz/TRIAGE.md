@@ -86,6 +86,17 @@ alone.
 `00177` (RESET + REMPREFIX) is listed with this pair only because it also follows a `RESET`; its
 divergence is upstream emitting a DUPLICATE path, which is a different question. Treat separately.
 
+## CLASSIFIED 2026-07-28 — `00111` and `00119` are UPSTREAM, not ours
+
+Settled by execution, not by resemblance: both are the mid-edge write-loss bug already approved for
+deviation (`../UPSTREAM_BUGS.md` §1b, which carries the full probe table). `00119` is an explicit
+`SETVAL` after a join; `00111` is `graft_map` whose `graft_root_vals` arm calls `set_val` ITSELF
+when the source has a root value. Controls confirm the boundaries — at a root origin, at a
+full-key origin, or with `REMOVEVAL` instead of `SETVAL`, both engines agree exactly.
+
+**So 2 of the remaining 5 are not defects to fix.** They stay in `KNOWN_DIVERGENT.txt` because the
+gate compares against upstream's actual bytes and we deliberately differ; do not "fix" them.
+
 ## Open — the last 5, NOT yet firmly attributed
 
 ⚠️ **Attribution below is a hypothesis, not a finding.** Each needs the ours-vs-upstream probe

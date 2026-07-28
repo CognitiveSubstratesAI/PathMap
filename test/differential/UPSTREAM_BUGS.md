@@ -56,6 +56,34 @@ other operation in that position, all of which PRESERVE the insert on both engin
 only MORK caller of these APIs is HeadSink, which does not use `insert_prefix`), or upstream
 declaring it intentional.
 
+### 1b. The same bug reached through `join_map_into` and `graft_map` — fuzz `00119`, `00111`
+
+**Status:** classified 2026-07-28 by execution. Same deviation, same reasoning; recorded here so
+they are not re-investigated as separate defects.
+
+`insert_prefix` is not special — ANY structural write at a mid-edge focus followed by `set_val`
+loses the structural change. A one-factor-at-a-time probe series, every value pinned against the
+binary:
+
+| probe | upstream | ours | reading |
+|---|---|---|---|
+| join only, mid-edge origin `:` | `[::,::,::aa,:ab,:ba] vc=5` | identical | fine |
+| **join + `SETVAL`** (`00119`) | `[:,::] vc=2` — joined content GONE | `…vc=5`, preserved | **the bug** |
+| join + `SETVAL`, origin at the ROOT | `[::,:aa,ab,ba] vc=5` | identical | not mid-edge ⇒ safe |
+| join + `SETVAL`, origin at a FULL KEY | `[::,:::aa,::ab,::ba] vc=4` | identical | node boundary ⇒ safe |
+| join + **`REMOVEVAL`** | content preserved | identical | it is `set_val` specifically |
+| **`graft_map`, source HAS a root value** (`00111`) | `:abb:` dropped | preserved | **the bug** |
+| `graft_map`, source has NO root value | `[:a,:a,:abb:] vc=4` | identical | no internal `set_val` fires |
+
+The graft rows are the informative ones: `graft_map` takes no `set_val` op from the caller, but
+under `graft_root_vals` it calls `self.set_val(src_val)` ITSELF when the source has a root value
+(write_zipper.rs:1471). So the destructive path is entered from inside the graft — which is why
+`00111` looked like "upstream drops grafted content" until the source-root-value factor was
+isolated.
+
+**Net:** we agree with upstream on every probe in that table EXCEPT the two where upstream destroys
+data. We keep the data in all of them.
+
 ---
 
 ## 2. Duplicate paths enumerated from a single map — OBSERVED, not yet characterised
