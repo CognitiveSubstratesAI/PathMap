@@ -1,8 +1,0 @@
-A ab abaa abb baaa bab
-AROOTVAL 0
-S :a b b:b:
-SROOTVAL 1
-ORIGIN a
-OP GRAFTMAP
-OP DESCEND aaa
-OP DESCEND a

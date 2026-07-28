@@ -1,9 +1,0 @@
-A a: ab b: b:b bba
-AROOTVAL 0
-S :b ba:
-SROOTVAL 0
-ORIGIN a:
-OP MEET 0
-OP DESCEND :::b
-OP REMOVEVAL 0
-OP MEET 0

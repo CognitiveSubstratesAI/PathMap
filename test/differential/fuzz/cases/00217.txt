@@ -1,8 +1,0 @@
-A a aa aaaa bb bb:
-AROOTVAL 0
-S : :b:b
-SROOTVAL 0
-ORIGIN -
-OP TAKEMAP 1
-OP GRAFTMAP
-OP TAKEMAP 0

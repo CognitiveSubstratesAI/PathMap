@@ -1,8 +1,0 @@
-A ::: :ab ab bb:
-AROOTVAL 0
-S a:bb ba
-SROOTVAL 1
-ORIGIN :a
-OP JOINMAP
-OP RESET
-OP REMOVEVAL 1

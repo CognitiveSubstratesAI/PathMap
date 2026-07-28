@@ -1,9 +1,0 @@
-A : :bbb a:aa ab: ba::
-AROOTVAL 1
-S aa:b aba: bb:a
-SROOTVAL 0
-ORIGIN -
-OP MEET 1
-OP REMPREFIX 0
-OP GRAFTMAP
-OP SETVAL

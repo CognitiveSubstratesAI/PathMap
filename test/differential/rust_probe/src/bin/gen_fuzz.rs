@@ -249,20 +249,21 @@ fn main() {
     let n: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(2000);
     let seed: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0x9E3779B97F4A7C15);
 
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fuzz/cases");
-    std::fs::create_dir_all(&dir).expect("mkdir fuzz/cases");
-    // Stale cases from a previous, larger run would otherwise be compared against a
-    // regenerated expected.tsv that no longer mentions them.
-    for e in std::fs::read_dir(&dir).unwrap().flatten() {
-        let _ = std::fs::remove_file(e.path());
-    }
+    // ONE file, not one file per case. At 3000 cases the per-file layout was 3000 git blobs and
+    // 12 MB of 4 KB-block overhead for 278 KB of actual content; as a single file it is one blob,
+    // which is what makes scaling the corpus again cheap.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fuzz");
+    std::fs::create_dir_all(&dir).expect("mkdir fuzz");
+    let _ = std::fs::remove_dir_all(dir.join("cases")); // drop the old per-case layout if present
 
     let mut r = Rng(seed);
     let mut out = String::new();
+    let mut cases = String::new();
     for i in 0..n {
         let c = gen_case(&mut r);
-        std::fs::write(dir.join(format!("{:05}.txt", i)), script(&c)).expect("write case");
+        let _ = write!(cases, "### {:05}\n{}", i, script(&c));
         let _ = writeln!(out, "{:05}\t{}", i, run(&c));
     }
+    std::fs::write(dir.join("cases.txt"), cases).expect("write cases.txt");
     print!("{}", out);
 }

@@ -1,9 +1,0 @@
-A ::ab a a:ba aa b:b
-AROOTVAL 1
-S a
-SROOTVAL 1
-ORIGIN aa
-OP SUB 1
-OP INSPREFIX ::bb
-OP DESCEND a
-OP MEET 1

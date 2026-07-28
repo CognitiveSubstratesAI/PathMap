@@ -1,9 +1,0 @@
-A ::ba :a a:aa aa:
-AROOTVAL 0
-S : ab: bb
-SROOTVAL 1
-ORIGIN -
-OP SETVAL
-OP RESET
-OP JOINMAP
-OP INSPREFIX :ab

@@ -1,7 +1,0 @@
-A ::a: a: a:ab aabb b
-AROOTVAL 0
-S abba b:b:
-SROOTVAL 0
-ORIGIN aa
-OP JOINMAP
-OP ASCEND 4

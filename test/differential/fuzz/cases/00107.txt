@@ -1,7 +1,0 @@
-A baab
-AROOTVAL 0
-S :ba a baa
-SROOTVAL 1
-ORIGIN -
-OP SETVAL
-OP DESCEND :::

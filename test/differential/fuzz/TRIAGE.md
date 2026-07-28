@@ -1,4 +1,4 @@
-# Fuzz divergences — triage (5 remaining of an original 34)
+# Fuzz divergences — triage (81 of 3000 cases)
 
 Regenerate with `test/differential/shrink.jl` (needs the rustup toolchain): it reduces each failing
 case to a 1–2 op reproducer and re-pins it against the upstream binary.
@@ -85,6 +85,31 @@ alone.
 
 `00177` (RESET + REMPREFIX) is listed with this pair only because it also follows a `RESET`; its
 divergence is upstream emitting a DUPLICATE path, which is a different question. Treat separately.
+
+## SCALED TO 3000 CASES (2026-07-28) — 81 divergences, 0 crashes
+
+⚠️ **This is NOT a regression from "5 remaining".** That 5 was out of **300** cases. The corpus
+now runs **3000**, and case numbering is STABLE across counts (verified: the first 300 lines of the
+3000-case ground truth are byte-identical to the old corpus), so the original 5 are still present
+and the other 76 come from the 2700 NEWLY GENERATED programs.
+
+    300 cases   ->  5 divergences  (1.7%)
+    3000 cases  -> 81 divergences  (2.7%)   0 errors
+
+The rate went UP slightly, which is the informative part: the extra programs reach shapes the first
+300 never generated. "5 remaining" was never a population estimate — only what 300 random programs
+happened to expose. **Zero crashes at 10x scale** is the other result worth noting.
+
+### Cheap shape split of the 81 (by `vc=` count, before any shrinking)
+
+| shape | count | reading |
+|---|---|---|
+| ours has MORE atoms | 33 | we PRESERVE where upstream destroys — the approved deviation class |
+| ours has FEWER atoms | 24 | we LOSE data — **likely OURS** |
+| same count, different content | 24 | either; needs shrinking |
+
+So roughly a third are not defects at all. **Start with the 24 "fewer atoms" cases** — that is
+where we are losing data — and shrink before attributing, as always.
 
 ## CLASSIFIED 2026-07-28 — `00111` and `00119` are UPSTREAM, not ours
 

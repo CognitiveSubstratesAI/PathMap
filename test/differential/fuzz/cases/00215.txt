@@ -1,6 +1,0 @@
-A : aa:a abaa
-AROOTVAL 1
-S b
-SROOTVAL 0
-ORIGIN abaa
-OP REMOVEVAL 1

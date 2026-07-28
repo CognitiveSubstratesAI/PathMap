@@ -1,8 +1,0 @@
-A a: b b: bbb
-AROOTVAL 0
-S ::bb :b a
-SROOTVAL 0
-ORIGIN bb
-OP DESCEND aa:
-OP DESCEND b:a
-OP JOINMAP

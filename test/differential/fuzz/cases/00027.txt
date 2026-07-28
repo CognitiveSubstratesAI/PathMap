@@ -1,7 +1,0 @@
-A 
-AROOTVAL 0
-S :b :bb ab:
-SROOTVAL 0
-ORIGIN -
-OP SETVAL
-OP DESCEND :a

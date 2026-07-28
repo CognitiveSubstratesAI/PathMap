@@ -1,7 +1,0 @@
-A : b:b
-AROOTVAL 0
-S aba b:a:
-SROOTVAL 0
-ORIGIN b:
-OP RESET
-OP GRAFTMAP

@@ -1,6 +1,0 @@
-A aa
-AROOTVAL 0
-S ba:
-SROOTVAL 0
-ORIGIN -
-OP MEET 1

@@ -120,11 +120,12 @@ end
 
 function main()
     maxc = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 6
+    all_cases = fuzz_cases()
     n, mism, errs = fuzz_compare()
     failing = vcat([(nm, "mismatch") for (nm, _, _) in mism], [(nm, "error") for (nm, _) in errs])
     println("=== $(length(failing)) failing of $n; shrinking first $maxc ===\n")
     for (name, kind) in first(failing, maxc)
-        c0 = _fparse(joinpath(@__DIR__, "fuzz", "cases", name * ".txt"))
+        c0 = _fparse_text(all_cases[name])
         text, ours, up = shrink(c0)
         println("### $name  [$kind]  -> minimal:")
         for ln in split(strip(text), '\n')

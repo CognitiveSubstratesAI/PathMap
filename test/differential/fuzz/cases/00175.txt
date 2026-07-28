@@ -1,7 +1,0 @@
-A :bab ab: b b:a bb
-AROOTVAL 0
-S a:b ab ba
-SROOTVAL 0
-ORIGIN b
-OP JOINMAP
-OP SUB 0

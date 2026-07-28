@@ -1,6 +1,0 @@
-A :bb: ba ba:b bba
-AROOTVAL 1
-S 
-SROOTVAL 0
-ORIGIN bb
-OP SETVAL

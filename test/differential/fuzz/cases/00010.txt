@@ -1,6 +1,0 @@
-A aa aa: aabb ab
-AROOTVAL 1
-S 
-SROOTVAL 0
-ORIGIN -
-OP RESET

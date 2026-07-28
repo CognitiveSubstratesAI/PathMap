@@ -1,9 +1,0 @@
-A :aa: aa b:b
-AROOTVAL 1
-S a: bba:
-SROOTVAL 0
-ORIGIN aa
-OP INSPREFIX bab
-OP DESCEND ::ab
-OP GRAFTMAP
-OP SUB 0

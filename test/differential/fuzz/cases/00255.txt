@@ -1,6 +1,0 @@
-A :: :aa a:b b:ab ba
-AROOTVAL 1
-S 
-SROOTVAL 0
-ORIGIN -
-OP DESCEND bab

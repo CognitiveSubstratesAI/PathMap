@@ -1,6 +1,0 @@
-A aa:a abb: ba bb
-AROOTVAL 0
-S 
-SROOTVAL 0
-ORIGIN ba
-OP INSPREFIX b

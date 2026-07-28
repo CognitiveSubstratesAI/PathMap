@@ -1,8 +1,0 @@
-A aa aaa
-AROOTVAL 0
-S : a bab
-SROOTVAL 0
-ORIGIN aa
-OP MEET 1
-OP SUB 1
-OP INSPREFIX abba

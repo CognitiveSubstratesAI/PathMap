@@ -1,8 +1,0 @@
-A :::a :aa a b
-AROOTVAL 0
-S a:
-SROOTVAL 1
-ORIGIN -
-OP SUB 0
-OP MEET 0
-OP ASCEND 0

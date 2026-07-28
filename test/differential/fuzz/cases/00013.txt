@@ -1,8 +1,0 @@
-A : :a aaba ab
-AROOTVAL 0
-S a bb
-SROOTVAL 0
-ORIGIN aab
-OP ASCEND 1
-OP SETVAL
-OP TAKEMAP 1

@@ -1,7 +1,0 @@
-A : ::a a:a b:
-AROOTVAL 0
-S aa:
-SROOTVAL 1
-ORIGIN b:
-OP MEET 0
-OP DESCEND aa:b

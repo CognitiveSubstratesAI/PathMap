@@ -1,8 +1,0 @@
-A :a: b:bb
-AROOTVAL 0
-S : :a
-SROOTVAL 0
-ORIGIN :a
-OP MEET 0
-OP MEET 1
-OP RESET

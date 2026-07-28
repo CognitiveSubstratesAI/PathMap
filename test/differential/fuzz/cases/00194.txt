@@ -1,6 +1,0 @@
-A : bab
-AROOTVAL 0
-S a bb:
-SROOTVAL 0
-ORIGIN b
-OP REMPREFIX 3

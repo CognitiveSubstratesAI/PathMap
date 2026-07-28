@@ -1,9 +1,0 @@
-A ::b b: b:: ba
-AROOTVAL 0
-S :bbb aab: ba:a
-SROOTVAL 0
-ORIGIN b
-OP SUB 1
-OP REMPREFIX 1
-OP MEET 0
-OP MEET 1

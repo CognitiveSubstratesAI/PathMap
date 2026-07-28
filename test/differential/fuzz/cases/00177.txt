@@ -1,8 +1,0 @@
-A :::a a a: ba
-AROOTVAL 0
-S :aa aaaa b:::
-SROOTVAL 0
-ORIGIN :::
-OP RESET
-OP REMPREFIX 0
-OP DESCEND ab

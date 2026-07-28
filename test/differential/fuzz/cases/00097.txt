@@ -1,6 +1,0 @@
-A :a:a baa
-AROOTVAL 0
-S :bba aa aaa
-SROOTVAL 0
-ORIGIN -
-OP TAKEMAP 0

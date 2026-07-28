@@ -1,13 +1,13 @@
 # PathMap ⟷ upstream Rust DIFFERENTIAL FUZZ — RATCHET.
 #
-# 300 randomly generated operation programs, each paired with the upstream Rust engine's own
+# 3000 randomly generated operation programs, each paired with the upstream Rust engine's own
 # answer. Same ratchet contract as test/differential_gate.jl and MORK's conformance gate:
 #
 #   * a case NOT listed in fuzz/KNOWN_DIVERGENT.txt that stops matching -> FAILS, and is NAMED
 #   * a listed case that starts matching                                -> only LOGS, asking you
 #                                                                          to remove its line
 #
-# So it is green at today's fidelity and can only tighten. 266 of 300 currently match.
+# So it is green at today's fidelity and can only tighten. 2919 of 3000 currently match.
 #
 # WHY IT EXISTS. The 42 CURATED scenarios in test/differential/ only find what someone thought to
 # write down; 12 added on 2026-07-27/28 yielded 4 real defects, a hit rate saying the population
@@ -23,9 +23,14 @@
 # Needs NO Rust toolchain: cases and upstream answers are vendored under test/differential/fuzz/.
 # Regenerate (see run_fuzz.jl for why /usr/bin/cargo cannot do it):
 #   export PATH="$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:$PATH"
-#   cd test/differential/rust_probe && cargo run --release --bin gen_fuzz -- 300 > ../fuzz/expected.tsv
-# ⚠️ Regenerating with a different COUNT or SEED reshuffles case numbering, which invalidates
-# KNOWN_DIVERGENT.txt wholesale. Keep 300/default-seed unless you intend to re-baseline.
+#   cd test/differential/rust_probe && cargo run --release --bin gen_fuzz -- 3000 > ../fuzz/expected.tsv
+#
+# CASE NUMBERING IS STABLE ACROSS COUNTS — verified 2026-07-28 by regenerating at 3000 and
+# diffing the first 300 lines against the committed 300-case corpus: IDENTICAL. `gen_case` draws
+# sequentially from the seeded stream, so case `i` depends only on the SEED, never on `n`. Growing
+# the corpus is therefore PURELY ADDITIVE and preserves every KNOWN_DIVERGENT entry.
+# ⚠️ Changing the SEED does reshuffle everything and invalidates KNOWN_DIVERGENT.txt wholesale.
+# (An earlier version of this comment claimed the COUNT mattered too. It does not.)
 #
 # Minimise a failure to a 1-2 op reproducer with test/differential/shrink.jl (needs the toolchain).
 using Test

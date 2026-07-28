@@ -1,6 +1,0 @@
-A ::bb :b: aa
-AROOTVAL 0
-S :: b:aa bb:
-SROOTVAL 1
-ORIGIN :
-OP GRAFTMAP

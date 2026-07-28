@@ -1,7 +1,0 @@
-A : :: :bbb a aa
-AROOTVAL 1
-S ::b a
-SROOTVAL 0
-ORIGIN a
-OP JOINMAP
-OP RESET

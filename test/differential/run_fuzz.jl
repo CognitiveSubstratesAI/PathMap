@@ -22,7 +22,7 @@
 #
 # Regenerate ground truth (needs the rustup toolchain; /usr/bin/cargo CANNOT build it):
 #   export PATH="$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:$PATH"
-#   cd test/differential/rust_probe && cargo run --release --bin gen_fuzz -- 300 > ../fuzz/expected.tsv
+#   cd test/differential/rust_probe && cargo run --release --bin gen_fuzz -- 3000 > ../fuzz/expected.tsv
 using PathMap
 
 const _FUZZ_DIR = joinpath(@__DIR__, "fuzz")
@@ -64,12 +64,37 @@ end
 _fanr(m) = m.root === nothing ? PathMap.ANRNone{PathMap.UnitVal, PathMap.GlobalAlloc}() :
                                 PathMap.ANRBorrowedRc{PathMap.UnitVal, PathMap.GlobalAlloc}(m.root)
 
-"Parse one generated script into (a_keys, a_rootval, s_keys, s_rootval, origin, ops)."
-function _fparse(path::AbstractString)
+"""
+    fuzz_cases() -> Dict{String,String}
+
+Load the whole corpus from the single `fuzz/cases.txt`, split on `### <name>` headers.
+ONE file rather than one per case: at 3000 cases the per-file layout meant 3000 git blobs and
+12 MB of block overhead for 278 KB of content.
+"""
+function fuzz_cases()
+    path = joinpath(_FUZZ_DIR, "cases.txt")
+    d = Dict{String, String}()
+    isfile(path) || return d
+    name = ""
+    buf = IOBuffer()
+    for ln in eachline(path)
+        if startswith(ln, "### ")
+            isempty(name) || (d[name] = String(take!(buf)))
+            name = strip(ln[5:end])
+        else
+            println(buf, ln)
+        end
+    end
+    isempty(name) || (d[name] = String(take!(buf)))
+    d
+end
+
+"Parse a generated script (TEXT) into (a_keys, a_rootval, s_keys, s_rootval, origin, ops)."
+function _fparse_text(text::AbstractString)
     a_keys = String[]; s_keys = String[]
     a_rootval = false; s_rootval = false
     origin = "-"; ops = String[]
-    for ln in eachline(path)
+    for ln in split(text, '\n')
         isempty(ln) && continue
         parts = split(ln, ' ')
         tag = parts[1]
@@ -91,9 +116,13 @@ function _fparse(path::AbstractString)
     (a_keys, a_rootval, s_keys, s_rootval, origin, ops)
 end
 
-"Execute one case; return `trace|dump`."
-function fuzz_run(path::AbstractString)
-    a_keys, a_rootval, s_keys, s_rootval, origin, ops = _fparse(path)
+# Kept so callers holding a PATH (e.g. shrink.jl's temp-file probes) still work.
+_fparse(path::AbstractString) = _fparse_text(read(path, String))
+fuzz_run(path::AbstractString) = fuzz_run_text(read(path, String))
+
+"Execute one case given its script TEXT; return `trace|dump`."
+function fuzz_run_text(text::AbstractString)
+    a_keys, a_rootval, s_keys, s_rootval, origin, ops = _fparse_text(text)
     a = _fmk(a_keys, a_rootval)
     trace = IOBuffer()
     wz = origin == "-" ? PathMap.write_zipper(a) :
@@ -147,6 +176,7 @@ that treated a throw as "skip" would have hidden exactly that.)
 function fuzz_compare(; limit::Int=typemax(Int))
     exp_path = joinpath(_FUZZ_DIR, "expected.tsv")
     isfile(exp_path) || return (0, Tuple{String, String, String}[], Tuple{String, String}[])
+    cases = fuzz_cases()
     mism = Tuple{String, String, String}[]
     errs = Tuple{String, String}[]
     n = 0
@@ -156,14 +186,13 @@ function fuzz_compare(; limit::Int=typemax(Int))
         parts = split(ln, '\t'; limit = 2)
         length(parts) == 2 || continue
         name, want = String(parts[1]), String(parts[2])
-        case = joinpath(_FUZZ_DIR, "cases", name * ".txt")
-        if !isfile(case)
-            push!(errs, (name, "case file missing — expected.tsv and cases/ are out of sync"))
+        if !haskey(cases, name)
+            push!(errs, (name, "case missing — expected.tsv and cases.txt are out of sync"))
             continue
         end
         n += 1
         got = try
-            Base.invokelatest(fuzz_run, case)
+            Base.invokelatest(fuzz_run_text, cases[name])
         catch e
             push!(errs, (name, sprint(showerror, e)))
             continue

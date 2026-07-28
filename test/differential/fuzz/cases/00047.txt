@@ -1,6 +1,0 @@
-A : ::b a:b:
-AROOTVAL 0
-S b:
-SROOTVAL 1
-ORIGIN -
-OP DESCEND :aaa

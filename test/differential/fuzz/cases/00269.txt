@@ -1,8 +1,0 @@
-A :b:a b: b:ab
-AROOTVAL 0
-S aab b:
-SROOTVAL 0
-ORIGIN b:a
-OP ASCEND 3
-OP SETVAL
-OP REMOVEVAL 1

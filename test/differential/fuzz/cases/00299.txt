@@ -1,9 +1,0 @@
-A : ::ab :ab ab b
-AROOTVAL 1
-S aba
-SROOTVAL 0
-ORIGIN b
-OP DESCEND b:a
-OP SETVAL
-OP SUB 0
-OP TAKEMAP 1
