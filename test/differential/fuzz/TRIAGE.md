@@ -23,27 +23,40 @@ subnode at THIS level — so under-reporting made `_wz_graft_internal!` skip its
 `mend_root!`/`descend_to_internal!`, leaving the zipper pointing at the parent while the split had
 moved the value into the new child.
 
-## The `root_key_start` bookkeeping is not unwound by `wz_reset!` — NEXT ITEM
+## 00174 — the divergence is in TRIE SHAPE after `set_val`, not in `reset` (NEXT ITEM)
 
-Diagnosed 2026-07-28 while closing 00174's first cause. `_wz_mend_root!` advances
-`root_key_start` and OVERWRITES `focus_stack[1]` with an inner node, and **nothing restores
-either**. `wz_reset!` pops the stack and truncates `prefix_buf` but leaves `root_key_start`
-advanced and the original map root already lost.
+⚠️ **A PREVIOUS HYPOTHESIS HERE WAS REFUTED — recorded so nobody rebuilds it.** I claimed
+`wz_reset!` fails to unwind `_wz_mend_root!`'s `root_key_start` advance, and that fixing it needed
+a struct change to retain the origin root. **Wrong on both counts, settled by reading upstream:**
 
-Upstream can restore because its `MutNodeStack` keeps the original root SEPARATELY
-(`take_root`/`replace_root`, and `reset` calls `focus_stack.to_root()`); our `focus_stack[1]` is
-simply overwritten, so the information is gone. **This needs a struct change** — keep the origin
-root (and its `root_key_start`) alongside the working one — not a one-liner.
+* `MutNodeStack::to_root()` is literally `self.stack.clear()` and `replace_root()` merely
+  re-points `self.root` (write_zipper.rs:2773-2780). Upstream restores NOTHING, and its `reset`
+  does not touch `root_key_start` either — so ours is faithful here.
+* In this case `mend_root` never even fires: it no-ops while `prefix_idx` is non-empty, and
+  measurement shows `root_key_start == 0` throughout.
 
-Two of the remaining five are this:
+**The verified facts.** Reproducer: `A={":ab","ab","bb:"}`, source = ROOT VALUE ONLY, origin
+`":a"`, then `JOINMAP` · `RESET` · `REMOVEVAL 1`.
 
-| case | shape | ours | upstream |
-|---|---|---|---|
-| `00174` | RESET + REMOVEVAL | `false;[:a,:ab,ab,bb:] vc=4` | `true;[:ab,ab,bb:] vc=3` |
-| `00177` | RESET + REMPREFIX | `[:::a,a:,ba] vc=3` | `[:::a,:::a,a:,ba] vc=4` |
+    start / after JOINMAP   prefix_buf=":a" rks=0 idx=[1] depth=2 node_key="a"
+    after RESET             prefix_buf=":a" rks=0 idx=[]  depth=1 node_key=":a"
+    ours      remove_val -> false, `:a` survives   [:a,:ab,ab,bb:] vc=4
+    upstream  remove_val -> true,  `:a` removed    [:ab,ab,bb:]    vc=3
 
-⚠️ `00177` is ALSO a case where upstream emits a DUPLICATE path, so closing the reset gap may not
-make it match — check that separately rather than assuming one fix covers both.
+The join's value write happens at depth 2 (`node_key="a"`, i.e. inside the child node reached past
+`:`). After `RESET` the focus is the ROOT with `node_key=":a"` — a TWO-byte key.
+
+**And `node_remove_val` cannot serve a multi-byte key on EITHER side:** upstream's
+`DenseByteNode::node_remove_val` is `if key.len() == 1 { … } else { None }`
+(dense_byte_node.rs:847), and `LineListNode`'s matches its slot key EXACTLY. So upstream succeeds
+only because its root holds a slot keyed `":a"` where ours does not — i.e. **the two engines'
+trie SHAPES differ after the val write**, and `reset`/`remove_val` are innocent.
+
+**Next step:** dump both engines' node structure after the `JOINMAP` step (before `RESET`) and
+diff the shapes. Do NOT start from `reset`.
+
+`00177` (RESET + REMPREFIX) is listed with this pair only because it also follows a `RESET`; its
+divergence is upstream emitting a DUPLICATE path, which is a different question. Treat separately.
 
 ## Open — the last 5, NOT yet firmly attributed
 
