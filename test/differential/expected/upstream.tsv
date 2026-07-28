@@ -20,11 +20,23 @@ graft/graft_map_at_p	[py,q] vc=2
 graft/meet_into_at_p	[px,q] vc=2
 graft/subtract_into_rootval_at_p	[px,q] vc=2
 graft/join_into_at_p	[px,py,q] vc=3
+graft/graft_map_rootval_sets_focus	[p,py,q] vc=3
+graft/join_map_into_rootval_at_p	[p,px,q] vc=3
+graft/join_map_into_keeps_focus_val	[p,px,py,q] vc=4
+graft/take_map_valonly_taken	[] vc=1
+graft/take_map_valonly_residue	[q] vc=1
 algebra/join_root	[a,b,c] vc=3
 algebra/meet_root	[b,c] vc=2
 algebra/subtract_root	[a,c] vc=2
 prefix/insert_prefix_at_foo	[foo:bar,foo:ns:bar] vc=2
 prefix/remove_prefix_at_foo	[foo:bar,foo:baz] vc=2
+prefix/remove_prefix_ret_at_origin	false
+prefix/remove_prefix_below_origin	[foobar,foobaz] vc=2
+prefix/remove_prefix_below_origin_ret	true
+prefix/remove_prefix_full_ascent_at_origin	[pre:alpha,pre:beta] vc=2
+prefix/remove_prefix_full_ascent_at_origin_ret	false
+ascend/over_ascend_ret	false
+ascend/over_ascend_then_setval	[foo:,foo:bar] vc=2
 deep/long_common_prefix	[dddddddddddd0,dddddddddddd1,dddddddddddd2,dddddddddddd3,dddddddddddd4,dddddddddddd5,dddddddddddd6,dddddddddddd7] vc=8
 cow/source_after_clone_write	[s:1,s:2] vc=2
 cow/target_after_clone_write	[s:1,s:2,s:3] vc=3

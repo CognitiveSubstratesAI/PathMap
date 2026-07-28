@@ -1,0 +1,9 @@
+A :a :a:a :ba: b baa
+AROOTVAL 0
+S : :: ::a:
+SROOTVAL 1
+ORIGIN b
+OP DESCEND b:a
+OP SETVAL
+OP SUB 1
+OP REMPREFIX 3

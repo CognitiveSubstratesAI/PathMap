@@ -1,0 +1,7 @@
+A : ::: b ba
+AROOTVAL 0
+S ::a:
+SROOTVAL 0
+ORIGIN ::
+OP MEET 0
+OP DESCEND :aa:

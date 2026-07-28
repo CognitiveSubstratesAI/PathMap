@@ -1,0 +1,7 @@
+A a aa ba:
+AROOTVAL 0
+S : a:a
+SROOTVAL 1
+ORIGIN ba:
+OP INSPREFIX :::a
+OP TAKEMAP 0

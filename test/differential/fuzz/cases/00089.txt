@@ -1,0 +1,6 @@
+A b::a
+AROOTVAL 0
+S :b bb
+SROOTVAL 0
+ORIGIN b::a
+OP TAKEMAP 0

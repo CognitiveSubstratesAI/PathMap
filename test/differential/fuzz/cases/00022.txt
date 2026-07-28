@@ -1,0 +1,7 @@
+A : ba bb bbab
+AROOTVAL 0
+S ba
+SROOTVAL 0
+ORIGIN b
+OP MEET 0
+OP INSPREFIX aa

@@ -1,0 +1,7 @@
+A :aa aba ba
+AROOTVAL 0
+S ab: baa:
+SROOTVAL 1
+ORIGIN -
+OP INSPREFIX a:a:
+OP REMOVEVAL 0

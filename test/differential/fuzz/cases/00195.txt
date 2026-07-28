@@ -1,0 +1,8 @@
+A a b: b:ab
+AROOTVAL 0
+S ::a aa::
+SROOTVAL 1
+ORIGIN b
+OP DESCEND abb
+OP SETVAL
+OP MEET 0

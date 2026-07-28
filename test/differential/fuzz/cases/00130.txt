@@ -1,0 +1,7 @@
+A a:: abb b
+AROOTVAL 0
+S : :aa: aab:
+SROOTVAL 0
+ORIGIN -
+OP SETVAL
+OP INSPREFIX b

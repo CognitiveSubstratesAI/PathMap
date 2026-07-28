@@ -1,0 +1,8 @@
+A : :b b:ab bb:
+AROOTVAL 0
+S a: aa:b
+SROOTVAL 1
+ORIGIN b
+OP GRAFTMAP
+OP SUB 1
+OP REMOVEVAL 0

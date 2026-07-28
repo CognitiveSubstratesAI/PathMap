@@ -1,0 +1,9 @@
+A :a :b a b b:
+AROOTVAL 0
+S :a a ba
+SROOTVAL 0
+ORIGIN -
+OP RESET
+OP SUB 1
+OP JOINMAP
+OP DESCEND b:b

@@ -1,0 +1,6 @@
+A :a aab
+AROOTVAL 0
+S a:a a:b aab
+SROOTVAL 1
+ORIGIN aa
+OP MEET 0

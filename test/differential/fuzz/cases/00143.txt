@@ -1,0 +1,6 @@
+A :ba aa abb abba ba
+AROOTVAL 1
+S ::a abaa
+SROOTVAL 1
+ORIGIN :ba
+OP DESCEND :b::

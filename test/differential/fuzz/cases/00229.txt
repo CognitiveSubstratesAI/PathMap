@@ -1,0 +1,8 @@
+A :::: b::b b:ab ba::
+AROOTVAL 0
+S 
+SROOTVAL 0
+ORIGIN -
+OP GRAFTMAP
+OP DESCEND a:b
+OP SETVAL

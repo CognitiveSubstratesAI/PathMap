@@ -1,0 +1,6 @@
+A aba b:ba ba ba::
+AROOTVAL 1
+S : ab::
+SROOTVAL 1
+ORIGIN b:ba
+OP DESCEND b:

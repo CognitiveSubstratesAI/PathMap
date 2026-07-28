@@ -1,0 +1,6 @@
+A : a: aaa: bb
+AROOTVAL 0
+S :
+SROOTVAL 1
+ORIGIN -
+OP DESCEND :

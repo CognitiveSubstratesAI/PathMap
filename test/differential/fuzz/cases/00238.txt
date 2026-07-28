@@ -1,0 +1,11 @@
+A : aaa: b: baba bb:
+AROOTVAL 1
+S a ab:a b
+SROOTVAL 0
+ORIGIN -
+OP SUB 1
+OP SUB 0
+OP GRAFTMAP
+OP SUB 0
+OP MEET 0
+OP ASCEND 3

@@ -67,7 +67,36 @@ end
     view(z.prefix_buf, (ks + 1):length(z.prefix_buf))
 end
 
-@inline _wz_at_root(z::WriteZipperCore) = isempty(_wz_node_key(z))
+# Mirrors `WriteZipperCore::at_root` (write_zipper.rs:1002):
+#     self.key.prefix_buf.len() <= self.key.origin_path.len()
+#
+# ⚠️ This USED to read `isempty(_wz_node_key(z))`, which is a DIFFERENT predicate: it asks
+# "is the cursor at a node boundary", not "is the cursor back at the zipper's origin". The two
+# agree whenever `origin_path_len == 0` (a zipper from `write_zipper(m)`), which is why every
+# MORK call site was unaffected and the bug stayed invisible — but for a zipper built by
+# `write_zipper_at_path(m, path)` the origin bytes sit in `prefix_buf` with `root_key_start = 0`,
+# so `_wz_node_key` is NON-empty at the origin and `wz_ascend!` would truncate straight THROUGH
+# the zipper's own root into the absolute path. That made `wz_remove_prefix!(wz, 1)` at a focus of
+# `"foo:"` rewrite `foo:bar` to `foobar`, where upstream leaves the map untouched and returns
+# false. Pinned by `prefix/remove_prefix_ret_at_origin` (upstream `false`) with
+# `prefix/remove_prefix_below_origin*` as the control proving ascend must still move when the
+# focus is BELOW its origin. `_wz_prune_path_internal!` had already worked around this by
+# hand-guarding with the correct predicate instead of fixing it.
+@inline _wz_at_root(z::WriteZipperCore) = length(z.prefix_buf) <= z.origin_path_len
+
+# Mirrors `KeyFields::excess_key_len` (write_zipper.rs:2666-2667):
+#     self.prefix_buf.len() - self.prefix_idx.last().unwrap_or(self.origin_path.len())
+# Upstream's own doc: "the number of chars that can be LEGALLY ascended within the node, taking
+# into account the root_key".
+#
+# ⚠️ This is NOT `length(_wz_node_key(z))`, and the difference is the whole point: `node_key_start`
+# (:2650) falls back to `root_key_start`, this falls back to `origin_path_len`. `ascend` caps each
+# jump with THIS one (:1048), so capping with the node key lets a SINGLE jump truncate straight
+# past the zipper's origin even when the `_wz_at_root` guard is correct — the guard is only tested
+# BETWEEN jumps. Pinned by `ascend/over_ascend_*`.
+@inline function _wz_excess_key_len(z::WriteZipperCore)
+    length(z.prefix_buf) - (isempty(z.prefix_idx) ? z.origin_path_len : z.prefix_idx[end])
+end
 
 # Key from the grandparent to the current focus (used by _wz_replace_top_node!)
 # Mirrors KeyFields.parent_key()
@@ -351,7 +380,7 @@ function wz_ascend!(z::WriteZipperCore, steps::Int=1)
         end
         steps == 0 && return true
         _wz_at_root(z) && return false
-        cur_jump = min(steps, length(_wz_node_key(z)))
+        cur_jump = min(steps, _wz_excess_key_len(z))
         resize!(z.prefix_buf, length(z.prefix_buf) - cur_jump)
         steps -= cur_jump
     end
@@ -584,8 +613,58 @@ end
 # wz_graft! / wz_graft_map! — unconditional subtrie replacement
 # =====================================================================
 #
-# Mirrors WriteZipperCore::graft / graft_map (write_zipper.rs:1401/1411).
-# graft_root_vals feature not enabled — root val handling omitted.
+# Mirrors WriteZipperCore::graft / graft_map (write_zipper.rs:1444/1464).
+#
+# `graft_root_vals` IS a DEFAULT upstream feature (Cargo.toml:39), so the
+# `#[cfg(feature = "graft_root_vals")]` arm is the LIVE one and the behaviour below is the
+# DEFAULT, not an opt-in. The rule, uniform across the family: the value at the write zipper's
+# FOCUS is the counterpart of the SOURCE's ROOT value, combined under the same operation.
+
+"""
+    _wz_root_val_op!(z, op, src_root_val, prune) -> (AlgebraicStatus, val_was_none::Bool)
+
+Shared `graft_root_vals` focus-value handling for the algebraic ops — upstream applies the same
+shape in `join_map_into` (write_zipper.rs:1682), `meet_into` (:1865) and `subtract_into` (:1976),
+and its own comment at :146-148 says the implementation "could likely be factored out and shared
+among all the ops". Done once here rather than three times.
+
+`op` is the `Union{Nothing,V}` lattice op (`pjoin`/`pmeet`/`psubtract`), whose blanket impls in
+Ring.jl:436-495 already port Rust's `impl Lattice for Option<V>` — which is exactly the
+(focus value, source root value) algebra, so the four-way match upstream writes out per op falls
+out of dispatch instead of being retyped three times.
+"""
+function _wz_root_val_op!(
+    z::WriteZipperCore{V, A}, op::F, src_root_val::Union{Nothing, V}, prune::Bool
+) where {V, A, F}
+    self_val = wz_get_val(z)
+    val_was_none = self_val === nothing
+    r = op(self_val, src_root_val)
+    status = if r isa AlgResElement
+        nv = r.value
+        if nv === nothing
+            wz_remove_val!(z, prune)
+            ALG_STATUS_NONE
+        else
+            wz_set_val!(z, nv)
+            ALG_STATUS_ELEMENT
+        end
+    elseif r isa AlgResIdentity
+        if (r.mask & SELF_IDENT) > 0
+            # self is the answer — leave the focus value exactly as it is
+            val_was_none ? ALG_STATUS_NONE : ALG_STATUS_IDENTITY
+        elseif src_root_val === nothing
+            wz_remove_val!(z, prune)
+            ALG_STATUS_NONE
+        else
+            wz_set_val!(z, src_root_val)
+            ALG_STATUS_ELEMENT
+        end
+    else
+        wz_remove_val!(z, prune)
+        ALG_STATUS_NONE
+    end
+    (status, val_was_none)
+end
 
 """
     wz_graft!(z, src_anr)
@@ -605,7 +684,13 @@ function wz_graft_map!(z::WriteZipperCore{V, A}, map::PathMap{V, A}) where {V, A
     # copy() bumps the refcount so both map and the graft site track sharing;
     # make_unique! at write time will then COW-clone before any mutation.
     src = map.root !== nothing ? copy(map.root) : nothing
+    src_root_val = map.root_val
     _wz_graft_internal!(z, src)
+    # graft_root_vals (DEFAULT): the focus value becomes the source's root value —
+    # UNCONDITIONALLY, so a source with no root value CLEARS it (write_zipper.rs:1468-1473,
+    # `None => self.remove_val(false)`; note prune is false there).
+    src_root_val === nothing ? wz_remove_val!(z, false) : wz_set_val!(z, src_root_val)
+    nothing
 end
 
 # =====================================================================
@@ -669,6 +754,15 @@ end
 Join self's subtrie with `map`. Result written to self.
 """
 function wz_join_map_into!(z::WriteZipperCore{V, A}, map::PathMap{V, A}) where {V, A}
+    # graft_root_vals (DEFAULT): the map's ROOT value joins into the FOCUS value, and upstream
+    # does it BEFORE any node work (write_zipper.rs:1682-1691). Order is load-bearing — the
+    # `src_root_node === nothing` early return below returns without merging, and does NOT undo
+    # this write. That is exactly why `graft/join_map_into_rootval_at_p` yields `[p,px,q]`.
+    #
+    # ⚠️ `join_into` (the read-zipper form, :1652) has NO such block upstream. The two are
+    # deliberately asymmetric, so a caller wanting `join_into` semantics must NOT route here.
+    (val_status, _) = _wz_root_val_op!(z, pjoin, map.root_val, false)
+
     src_rc = map.root
     if src_rc === nothing
         focus_anr = _wz_get_focus_anr(z)
@@ -679,30 +773,29 @@ function wz_join_map_into!(z::WriteZipperCore{V, A}, map::PathMap{V, A}) where {
         end
     end
     focus_anr = _wz_get_focus_anr(z)
-    if is_none(focus_anr)
+    node_status = if is_none(focus_anr) || node_is_empty(as_tagged(focus_anr))
         _wz_graft_internal!(z, copy(src_rc))
-        return ALG_STATUS_ELEMENT
-    end
-    self_node = as_tagged(focus_anr)
-    if node_is_empty(self_node)
-        _wz_graft_internal!(z, copy(src_rc))
-        return ALG_STATUS_ELEMENT
-    end
-    result = pjoin_dyn(self_node, src_rc.node)
-    if result isa AlgResElement
-        _wz_graft_internal!(z, result.value)
         ALG_STATUS_ELEMENT
-    elseif result isa AlgResIdentity
-        # src_rc is from map.root — copy() so both map and graft site track sharing
-        if result.mask & SELF_IDENT > 0
-            ALG_STATUS_IDENTITY
-        else
-            (_wz_graft_internal!(z, copy(src_rc)); ALG_STATUS_ELEMENT)
-        end
     else
-        _wz_graft_internal!(z, nothing)
-        ALG_STATUS_NONE
+        result = pjoin_dyn(as_tagged(focus_anr), src_rc.node)
+        if result isa AlgResElement
+            _wz_graft_internal!(z, result.value)
+            ALG_STATUS_ELEMENT
+        elseif result isa AlgResIdentity
+            # src_rc is from map.root — copy() so both map and graft site track sharing
+            if result.mask & SELF_IDENT > 0
+                ALG_STATUS_IDENTITY
+            else
+                (_wz_graft_internal!(z, copy(src_rc)); ALG_STATUS_ELEMENT)
+            end
+        else
+            _wz_graft_internal!(z, nothing)
+            ALG_STATUS_NONE
+        end
     end
+    # join cannot turn a non-None operand into None, so both `*_was_none` flags are true
+    # (write_zipper.rs:1730, `node_status.merge(val_status, true, true)`).
+    merge_status(node_status, val_status, true, true)
 end
 
 # =====================================================================
@@ -725,35 +818,48 @@ without any DFS traversal. Mirrors upstream PathMap commit `ade1e1b`
 Mirrors `WriteZipperCore::meet_into` (write_zipper.rs:1718).
 """
 function wz_meet_into!(
-    z::WriteZipperCore{V, A}, src_anr::AbstractNodeRef{V, A}, prune::Bool=false
+    z::WriteZipperCore{V, A}, src_anr::AbstractNodeRef{V, A}, prune::Bool=false,
+    src_root_val::Union{Nothing, V}=nothing
 ) where {V, A}
+    # graft_root_vals (DEFAULT): meet the SOURCE's root value into the FOCUS value, before any
+    # node work (write_zipper.rs:1865-1878). `(Some, None)` CLEARS the focus value — that is the
+    # branch behind `graft/meet_into_at_p`.
+    #
+    # `src_root_val` exists because upstream's `meet_into` takes a READ ZIPPER, which carries a
+    # root value, where ours takes an `AbstractNodeRef`, which cannot. Defaulting it to `nothing`
+    # is the faithful reading of a bare node ref (a source with no root value), not a shortcut.
+    (val_status, val_was_none) = _wz_root_val_op!(z, pmeet, src_root_val, prune)
+
+    node_was_none = false
     focus_anr = _wz_get_focus_anr(z)
-    if is_none(focus_anr) || node_is_empty(as_tagged(focus_anr))
-        return ALG_STATUS_NONE
-    end
-    if is_none(src_anr)
-        _wz_graft_internal!(z, nothing)
-        prune && wz_prune_path!(z)
-        return ALG_STATUS_NONE
-    end
-    # Shared-node short-circuit: A ∩ A = A (identity — self unchanged).
-    _check_anr_sharing(focus_anr, src_anr) && return ALG_STATUS_IDENTITY
-    self_node = as_tagged(focus_anr)
-    result = pmeet_dyn(self_node, as_tagged(src_anr))
-    if result isa AlgResElement
-        _wz_graft_internal!(z, result.value)
-        ALG_STATUS_ELEMENT
-    elseif result isa AlgResIdentity
-        if result.mask & SELF_IDENT > 0
-            ALG_STATUS_IDENTITY
-        else
-            (_wz_graft_internal!(z, into_option(src_anr)); ALG_STATUS_ELEMENT)
-        end
-    else
+    node_status = if is_none(focus_anr) || node_is_empty(as_tagged(focus_anr))
+        node_was_none = true
+        ALG_STATUS_NONE
+    elseif is_none(src_anr)
         _wz_graft_internal!(z, nothing)
         prune && wz_prune_path!(z)
         ALG_STATUS_NONE
+    elseif _check_anr_sharing(focus_anr, src_anr)
+        # Shared-node short-circuit: A ∩ A = A (identity — self unchanged).
+        ALG_STATUS_IDENTITY
+    else
+        result = pmeet_dyn(as_tagged(focus_anr), as_tagged(src_anr))
+        if result isa AlgResElement
+            _wz_graft_internal!(z, result.value)
+            ALG_STATUS_ELEMENT
+        elseif result isa AlgResIdentity
+            if result.mask & SELF_IDENT > 0
+                ALG_STATUS_IDENTITY
+            else
+                (_wz_graft_internal!(z, into_option(src_anr)); ALG_STATUS_ELEMENT)
+            end
+        else
+            _wz_graft_internal!(z, nothing)
+            prune && wz_prune_path!(z)
+            ALG_STATUS_NONE
+        end
     end
+    merge_status(node_status, val_status, node_was_none, val_was_none)
 end
 
 # =====================================================================
@@ -776,34 +882,47 @@ immediately without any DFS traversal. Mirrors upstream PathMap commit `ade1e1b`
 Mirrors `WriteZipperCore::subtract_into` (write_zipper.rs:1829).
 """
 function wz_subtract_into!(
-    z::WriteZipperCore{V, A}, src_anr::AbstractNodeRef{V, A}, prune::Bool=false
+    z::WriteZipperCore{V, A}, src_anr::AbstractNodeRef{V, A}, prune::Bool=false,
+    src_root_val::Union{Nothing, V}=nothing
 ) where {V, A}
+    # graft_root_vals (DEFAULT): subtract the SOURCE's root value from the FOCUS value first
+    # (write_zipper.rs:1976-1990). Note the asymmetry with meet — here `(Some, None)` KEEPS the
+    # focus value (Identity); it is `(Some, Some)` that clears it, which is the branch behind
+    # `graft/subtract_into_rootval_at_p`. See `wz_meet_into!` on why `src_root_val` is a parameter.
+    (val_status, val_was_none) = _wz_root_val_op!(z, psubtract, src_root_val, prune)
+
+    node_was_none = false
     focus_anr = _wz_get_focus_anr(z)
     self_empty = is_none(focus_anr) || node_is_empty(as_tagged(focus_anr))
-    if is_none(src_anr)
-        return self_empty ? ALG_STATUS_NONE : ALG_STATUS_IDENTITY
-    end
-    if self_empty
-        return ALG_STATUS_NONE
-    end
-    # Shared-node short-circuit: A − A = ∅ (subtract set from itself = empty).
-    if _check_anr_sharing(focus_anr, src_anr)
-        _wz_graft_internal!(z, nothing)
-        prune && wz_prune_path!(z)
-        return ALG_STATUS_NONE
-    end
-    self_node = as_tagged(focus_anr)
-    result = psubtract_dyn(self_node, as_tagged(src_anr))
-    if result isa AlgResElement
-        _wz_graft_internal!(z, result.value)
-        ALG_STATUS_ELEMENT
-    elseif result isa AlgResIdentity
-        ALG_STATUS_IDENTITY   # subtract is non-commutative → only SELF_IDENT possible
-    else
+    node_status = if is_none(src_anr)
+        if self_empty
+            node_was_none = true
+            ALG_STATUS_NONE
+        else
+            ALG_STATUS_IDENTITY
+        end
+    elseif self_empty
+        node_was_none = true
+        ALG_STATUS_NONE
+    elseif _check_anr_sharing(focus_anr, src_anr)
+        # Shared-node short-circuit: A − A = ∅ (subtract set from itself = empty).
         _wz_graft_internal!(z, nothing)
         prune && wz_prune_path!(z)
         ALG_STATUS_NONE
+    else
+        result = psubtract_dyn(as_tagged(focus_anr), as_tagged(src_anr))
+        if result isa AlgResElement
+            _wz_graft_internal!(z, result.value)
+            ALG_STATUS_ELEMENT
+        elseif result isa AlgResIdentity
+            ALG_STATUS_IDENTITY   # subtract is non-commutative → only SELF_IDENT possible
+        else
+            _wz_graft_internal!(z, nothing)
+            prune && wz_prune_path!(z)
+            ALG_STATUS_NONE
+        end
     end
+    merge_status(node_status, val_status, node_was_none, val_was_none)
 end
 
 # =====================================================================
@@ -944,8 +1063,12 @@ end
 
 True iff the zipper is at its origin root (path length == origin_path_len).
 Mirrors `ZipperMoving::at_root`.
+
+Delegates to `_wz_at_root` so there is exactly ONE body for this predicate. Keeping two
+independent bodies is what let `wz_ascend!` call a wrong one for months while this correct
+one sat unused beside it — see the note at `_wz_at_root`.
 """
-@inline wz_at_root(z::WriteZipperCore) = length(z.prefix_buf) <= z.origin_path_len
+@inline wz_at_root(z::WriteZipperCore) = _wz_at_root(z)
 
 """
     wz_reset!(z) → nothing
@@ -1126,8 +1249,18 @@ Remove and return a PathMap snapshot at the cursor.
 Mirrors `WriteZipperCore::take_map` (write_zipper.rs:1973).
 """
 function wz_take_map!(z::WriteZipperCore{V, A}, prune::Bool=false) where {V, A}
+    # graft_root_vals (DEFAULT): the focus VALUE is taken out too, becoming the returned map's
+    # root value (write_zipper.rs:2119-2122). Removal happens BEFORE take_focus, as upstream.
+    root_val = wz_remove_val!(z, prune)
     root_node = wz_take_focus!(z, prune)
-    root_node === nothing ? nothing : PathMap{V, A}(z.alloc, root_node, nothing)
+    # Upstream returns Some when EITHER is present (:2126) — a focus holding only a value still
+    # yields a map, one whose root_val is set and whose root node is empty.
+    (root_node === nothing && root_val === nothing) && return nothing
+    # ⚠️ This previously read `PathMap{V, A}(z.alloc, root_node, nothing)`, but the field order is
+    # (root, root_val, alloc) and no (alloc, root, val) constructor exists — so it threw a
+    # MethodError ("Cannot convert GlobalAlloc to TrieNodeODRc") on EVERY call where the focus had
+    # a subtrie, i.e. its primary use. Invisible because nothing called it that way.
+    PathMap{V, A}(root_node, root_val, z.alloc)
 end
 
 # =====================================================================

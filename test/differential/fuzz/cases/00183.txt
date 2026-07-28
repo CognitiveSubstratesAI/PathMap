@@ -1,0 +1,8 @@
+A :::a :a:b :b:: aab: bb:
+AROOTVAL 0
+S : :ba
+SROOTVAL 0
+ORIGIN -
+OP ASCEND 4
+OP INSPREFIX a:b
+OP SUB 0

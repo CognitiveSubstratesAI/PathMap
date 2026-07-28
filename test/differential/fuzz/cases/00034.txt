@@ -1,0 +1,8 @@
+A :b a b:aa ba
+AROOTVAL 0
+S :: :bba bb
+SROOTVAL 1
+ORIGIN b:
+OP ASCEND 4
+OP ASCEND 2
+OP INSPREFIX :b

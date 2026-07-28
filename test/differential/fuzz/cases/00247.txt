@@ -1,0 +1,10 @@
+A : :b a a: b:
+AROOTVAL 0
+S a:a aaa ba::
+SROOTVAL 0
+ORIGIN a:
+OP DESCEND ba::
+OP JOINMAP
+OP DESCEND a:::
+OP SUB 1
+OP MEET 0

@@ -1,0 +1,9 @@
+A a aba b: baa
+AROOTVAL 0
+S ::b :aa b:bb
+SROOTVAL 0
+ORIGIN -
+OP DESCEND abaa
+OP REMPREFIX 2
+OP RESET
+OP TAKEMAP 0

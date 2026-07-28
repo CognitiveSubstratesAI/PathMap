@@ -1,0 +1,6 @@
+A :: aaba b:a ba baaa
+AROOTVAL 0
+S :::a a a:aa
+SROOTVAL 1
+ORIGIN -
+OP SETVAL

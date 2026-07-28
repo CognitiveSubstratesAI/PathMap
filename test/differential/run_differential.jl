@@ -93,14 +93,14 @@ function differential_results()
 
     a = _mk(["p", "px", "q"]); src = _mk(["x"])
     let wz = PathMap.write_zipper_at_path(a, _b("p"))
-        PathMap.wz_meet_into!(wz, _anr(src), false)
+        PathMap.wz_meet_into!(wz, _anr(src), false, src.root_val)
     end
     out["graft/meet_into_at_p"] = _dump(a)
 
     a = _mk(["p", "px", "q"])
     src = PMT{PathMap.UnitVal}(); PathMap.set_val_at!(src, UInt8[], PathMap.UnitVal())
     let wz = PathMap.write_zipper_at_path(a, _b("p"))
-        PathMap.wz_subtract_into!(wz, _anr(src), false)
+        PathMap.wz_subtract_into!(wz, _anr(src), false, src.root_val)
     end
     out["graft/subtract_into_rootval_at_p"] = _dump(a)
 
@@ -109,6 +109,45 @@ function differential_results()
         PathMap.wz_join_into!(wz, _anr(src))
     end
     out["graft/join_into_at_p"] = _dump(a)
+
+    # ---- graft_root_vals: DISCRIMINATING cases ----------------------------
+    # The three failing graft scenarios above all have the focus value PRESENT and the source
+    # root value ABSENT, so they cannot distinguish "we ignore the focus value" from "we clear
+    # it". These pin the other direction and the ops the first set never reaches.
+    a = _mk(["px", "q"])
+    src = PMT{PathMap.UnitVal}()
+    PathMap.set_val_at!(src, UInt8[], PathMap.UnitVal())
+    PathMap.set_val_at!(src, _b("y"), PathMap.UnitVal())
+    let wz = PathMap.write_zipper_at_path(a, _b("p"))
+        PathMap.wz_graft_map!(wz, src)
+    end
+    out["graft/graft_map_rootval_sets_focus"] = _dump(a)
+
+    # join_map_into HAS a graft_root_vals block upstream (write_zipper.rs:1682); `join_into`
+    # does NOT — so `graft/join_into_at_p` passing says nothing about this one.
+    a = _mk(["px", "q"])
+    src = PMT{PathMap.UnitVal}()
+    PathMap.set_val_at!(src, UInt8[], PathMap.UnitVal())
+    let wz = PathMap.write_zipper_at_path(a, _b("p"))
+        PathMap.wz_join_map_into!(wz, src)
+    end
+    out["graft/join_map_into_rootval_at_p"] = _dump(a)
+
+    # CONTROL: join must NOT clear the focus value when the source root has none.
+    a = _mk(["p", "px", "q"]); src = _mk(["y"])
+    let wz = PathMap.write_zipper_at_path(a, _b("p"))
+        PathMap.wz_join_map_into!(wz, src)
+    end
+    out["graft/join_map_into_keeps_focus_val"] = _dump(a)
+
+    # take_map at a focus holding ONLY a value: upstream moves it into the returned map's
+    # root_val and returns a map even with no root node.
+    a = _mk(["p", "q"])
+    taken = let wz = PathMap.write_zipper_at_path(a, _b("p"))
+        PathMap.wz_take_map!(wz, false)
+    end
+    out["graft/take_map_valonly_taken"] = taken === nothing ? "None" : _dump(taken)
+    out["graft/take_map_valonly_residue"] = _dump(a)
 
     # ---- algebra at ROOT --------------------------------------------------
     a = _mk(["a", "b"]); b = _mk(["b", "c"])
@@ -141,6 +180,49 @@ function differential_results()
         PathMap.wz_remove_prefix!(wz, 1)
     end
     out["prefix/remove_prefix_at_foo"] = _dump(m)
+
+    # `remove_prefix` is a faithful 3-liner on both sides; the divergence is in ASCEND's clamp.
+    # Upstream `at_root()` is `prefix_buf.len() <= origin_path.len()` (write_zipper.rs:1002), so
+    # a zipper created AT `foo:` is already at its origin and cannot ascend. The RETURN VALUE is
+    # the direct observable of that clamp.
+    m = _mk(["foo:bar", "foo:baz"])
+    ret_at_origin = let wz = PathMap.write_zipper_at_path(m, _b("foo:"))
+        PathMap.wz_remove_prefix!(wz, 1)
+    end
+    out["prefix/remove_prefix_ret_at_origin"] = string(ret_at_origin)
+
+    # CONTROL: from a zipper rooted at the MAP root and descended to `foo:`, the focus is BELOW
+    # its origin, so ascend may move and the removal must happen. Stops a clamp fix from
+    # over-correcting into "ascend never moves".
+    m = _mk(["foo:bar", "foo:baz"])
+    ret_below_origin = let wz = PathMap.write_zipper(m)
+        PathMap.wz_descend_to!(wz, _b("foo:"))
+        PathMap.wz_remove_prefix!(wz, 1)
+    end
+    out["prefix/remove_prefix_below_origin"] = _dump(m)
+    out["prefix/remove_prefix_below_origin_ret"] = string(ret_below_origin)
+
+    # MORK's test/integration/pathmap_prefix_ops.jl "remove_prefix — full ascent to root"
+    # asserts this returns true and strips `pre:`. Same at-origin case, n == origin length.
+    m = _mk(["pre:alpha", "pre:beta"])
+    ret_full_ascent = let wz = PathMap.write_zipper_at_path(m, _b("pre:"))
+        PathMap.wz_remove_prefix!(wz, 4)
+    end
+    out["prefix/remove_prefix_full_ascent_at_origin"] = _dump(m)
+    out["prefix/remove_prefix_full_ascent_at_origin_ret"] = string(ret_full_ascent)
+
+    # OVER-ASCENT: a correct `at_root` check still does not bound a SINGLE jump. Upstream caps
+    # each one with `excess_key_len()` (origin-relative, write_zipper.rs:1048/:2666); capping with
+    # `node_key` length (root_key_start-relative) lets one jump cross the origin.
+    m = _mk(["foo:bar"])
+    ret_over = let wz = PathMap.write_zipper_at_path(m, _b("foo:"))
+        PathMap.wz_descend_to!(wz, _b("bar"))
+        r = PathMap.wz_ascend!(wz, 5)
+        PathMap.wz_set_val!(wz, PathMap.UnitVal())
+        r
+    end
+    out["ascend/over_ascend_ret"] = string(ret_over)
+    out["ascend/over_ascend_then_setval"] = _dump(m)
 
     # ---- deep / COW -------------------------------------------------------
     out["deep/long_common_prefix"] = _dump(_mk([repeat("d", 12) * string(i) for i in 0:7]))

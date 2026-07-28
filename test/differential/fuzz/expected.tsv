@@ -1,0 +1,300 @@
+00000	None;-;None;Element;false;|[b:b,b:ba] vc=2
+00001	Element;-;|[:,::,:bbb,a,a::b,aa] vc=7
+00002	-;|[:,a:,aaa:,bb] vc=4
+00003	true;false;Identity;false;|[:,bb::::aa,bb:::a,bb:::ba:] vc=4
+00004	-;false;-;false;-;Identity;|[b:] vc=1
+00005	true;|[abbb:,abbbbbb] vc=2
+00006	-;-;None;-;|[:a,:bbb,bb] vc=4
+00007	Element;false;|[::a:,a:,a:ab,aaabba,aab:b:,aabb,b] vc=7
+00008	false;false;false;None;|[] vc=0
+00009	[] vc=1;Element;-;|[a:baa,aa] vc=2
+00010	-;|[aa,aa:,aabb,ab] vc=5
+00011	-;|[:b,a,ba,bab] vc=4
+00012	-;false;-;None;|[:aa,a,ba,bab] vc=4
+00013	false;false;[a] vc=2;|[:,:a,ab] vc=3
+00014	true;false;-;None;-;|[baa,bab::a] vc=3
+00015	-;None;-;-;|[a,b:,bbb:a::b:ab] vc=3
+00016	true;Identity;false;-;|[b] vc=2
+00017	-;false;-;false;-;false;|[] vc=1
+00018	Element;[:a:] vc=2;|[] vc=0
+00019	-;|[a,a:,b] vc=3
+00020	true;[a] vc=1;Identity;Identity;|[:ba,a] vc=2
+00021	false;|[a,a:b] vc=2
+00022	None;false;|[:] vc=1
+00023	false;true;|[a::] vc=1
+00024	Identity;Identity;-;|[:a:,b:bb] vc=2
+00025	true;false;-;None;None;-;|[aa::b,b:,baa] vc=3
+00026	None;true;-;false;|[aa:b,aba:,bb:a] vc=4
+00027	false;-;|[] vc=1
+00028	Element;None;false;|[] vc=0
+00029	-;-;false;-;false;|[:b,a:ab,ab,ab:aab,b::,ba:] vc=7
+00030	false;Element;true;Element;-;-;|[:,::,:aaba,ab::,b,b::] vc=6
+00031	Element;None;false;-;|[a,b:] vc=2
+00032	false;false;false;-;|[:aaa,aa:,ab:a,aba] vc=4
+00033	true;-;Element;true;|[ab:,aba,abaa,abbaaa,b:] vc=5
+00034	false;false;true;|[:b,a,b::baa,ba] vc=4
+00035	false;true;false;false;-;|[:,:a,a,ba] vc=4
+00036	None;-;false;false;|[b:b] vc=1
+00037	true;-;|[b] vc=1
+00038	-;|[a,aa,ba,bb] vc=4
+00039	Identity;false;false;false;false;|[:a:,a::,a:a] vc=3
+00040	-;-;|[:b,a] vc=2
+00041	[b] vc=1;true;Element;[:::,a,aab:] vc=4;false;false;|[::b] vc=1
+00042	Identity;true;|[:a,:ba:] vc=3
+00043	-;-;false;|[a::a,aaa] vc=3
+00044	false;None;None;None;None;|[] vc=0
+00045	None;false;-;-;-;|[::] vc=1
+00046	-;true;|[ab,b,ba] vc=4
+00047	-;|[:,::b,a:b:] vc=3
+00048	-;false;true;|[] vc=0
+00049	true;-;None;-;None;false;|[:bbb,a,b] vc=3
+00050	-;false;-;false;|[::,bb,bba] vc=4
+00051	true;true;Identity;-;false;|[::a,:b,abb] vc=3
+00052	-;false;-;true;-;false;|[] vc=1
+00053	false;true;false;|[] vc=1
+00054	-;false;-;Element;false;false;|[:a,:b::,a,aa,b:,b::] vc=6
+00055	false;Element;true;true;|[ababa,ababa:] vc=3
+00056	false;[] vc=1;[] vc=0;false;|[] vc=0
+00057	true;None;None;None;false;|[::a:,:a:] vc=3
+00058	false;false;|[:,abaa,abaa] vc=3
+00059	-;-;None;None;|[::a,a,a:,aa,aba] vc=5
+00060	Element;-;true;[:b,aa,b] vc=4;false;-;|[:,::b,:aa,:b] vc=4
+00061	-;-;None;-;-;|[:,bba] vc=3
+00062	-;-;None;None;|[b,b:bb] vc=2
+00063	false;-;|[] vc=1
+00064	-;-;false;false;-;-;|[::a:::,::bab,:a:::,:bab,a,b,b::] vc=8
+00065	Identity;-;|[:,aa] vc=2
+00066	false;None;-;true;|[] vc=0
+00067	Identity;-;-;false;|[:ab] vc=1
+00068	-;|[:ab,aa,b,baa:] vc=4
+00069	Identity;-;None;None;-;None;|[a:b,b::] vc=3
+00070	-;|[b,ba:a] vc=2
+00071	-;false;Element;|[] vc=1
+00072	Identity;false;true;|[::a:,a,b] vc=4
+00073	-;-;|[a,b,b:ab,bab] vc=4
+00074	None;true;|[:,aa:,ab,b::b] vc=4
+00075	-;-;|[:b] vc=2
+00076	None;false;None;-;-;|[::bab,:b] vc=2
+00077	-;false;|[:ab,b,bb,bb:] vc=4
+00078	false;Element;-;None;|[:::,:a::,:b,ab::,b:,bba:] vc=7
+00079	Identity;-;false;false;-;|[:,:a,b] vc=3
+00080	false;Identity;[:ba:,a,a::,bb,bbb] vc=6;|[] vc=0
+00081	false;[:a,aab,aba] vc=4;false;false;false;false;|[] vc=0
+00082	-;[:] vc=1;[] vc=0;-;|[aa] vc=1
+00083	-;-;true;|[] vc=1
+00084	true;Identity;|[a,bb::] vc=3
+00085	true;true;None;false;true;|[:bb,a::] vc=2
+00086	false;[] vc=1;|[a,aa] vc=2
+00087	-;false;None;None;None;None;|[] vc=0
+00088	true;-;false;true;false;|[a,ab:,aba::,abaa:a:,bb] vc=5
+00089	[] vc=1;|[] vc=0
+00090	false;true;Element;true;|[a,a::,aa:] vc=3
+00091	true;-;Element;-;false;|[::ab:,::ab:ab,:b:aa::a,bb,bb:b] vc=5
+00092	Identity;None;true;|[] vc=0
+00093	Element;false;[bb::] vc=2;false;Identity;|[b] vc=1
+00094	Element;None;false;|[] vc=0
+00095	None;false;-;None;None;|[] vc=0
+00096	false;|[:,:ba:,b:] vc=3
+00097	[:a:a,baa] vc=2;|[] vc=0
+00098	true;false;|[a:a::aa,a:a:aba,a:a:ba] vc=3
+00099	true;false;false;-;|[abab,b:] vc=2
+00100	false;false;false;|[::a,ab] vc=2
+00101	[::] vc=2;false;|[:::b,a:] vc=3
+00102	-;Identity;false;|[ba] vc=2
+00103	false;|[:bb:,ba,ba:b,bb,bba] vc=6
+00104	None;-;false;None;|[] vc=0
+00105	-;-;-;|[a,a:,aa,aaaa,bb:] vc=5
+00106	-;None;|[:,a:a,abab] vc=3
+00107	false;-;|[baab] vc=2
+00108	None;None;false;true;Identity;true;|[] vc=1
+00109	None;|[] vc=0
+00110	-;false;|[] vc=1
+00111	Identity;-;false;-;true;|[:,:a] vc=3
+00112	Identity;true;true;false;|[::ba:a] vc=1
+00113	Identity;false;-;None;false;-;|[:,aa,b,b:] vc=4
+00114	[b] vc=1;false;-;None;true;|[b] vc=1
+00115	-;true;None;|[] vc=0
+00116	None;-;false;false;false;-;|[] vc=1
+00117	false;-;-;true;|[:baa,a,b::] vc=4
+00118	-;Identity;Identity;Element;false;true;|[:,:a:,:ab:,:abb,:abb:,a:::] vc=6
+00119	true;Element;false;-;false;true;|[::] vc=1
+00120	false;|[:ab,a:,b:a,bbb:] vc=5
+00121	None;None;false;|[] vc=1
+00122	false;None;|[] vc=0
+00123	true;-;|[::,a] vc=2
+00124	-;true;|[:b,bbbb] vc=2
+00125	Element;Identity;|[:a,:a:,:aa,:aa::b,:aa:b] vc=6
+00126	None;-;|[:,b,ba] vc=3
+00127	false;-;Element;true;|[:ab:,:ab::ba,:ab:a,:aba:aa,:abaa:,:abab:,:abbb] vc=8
+00128	-;false;false;Identity;true;None;|[:b,b] vc=2
+00129	false;-;-;-;|[aaba,ab:] vc=3
+00130	false;true;|[ba::,babb,bb] vc=4
+00131	false;-;true;None;None;false;|[a:a] vc=2
+00132	[:aa] vc=2;|[:b:,ab] vc=2
+00133	-;-;false;Identity;true;|[bbab,bbbb:ab] vc=2
+00134	Identity;|[] vc=0
+00135	true;Identity;-;|[aab:,b:,b::] vc=3
+00136	-;false;None;true;|[:a,:a:a,:ba:,b] vc=4
+00137	None;|[:a] vc=1
+00138	-;true;Element;|[::a:b,:a:ba] vc=2
+00139	-;Element;-;Element;|[aab] vc=2
+00140	-;false;true;true;|[] vc=0
+00141	false;None;-;|[a::b] vc=1
+00142	-;|[:,:a:a,b:a,ba] vc=4
+00143	-;|[:ba,aa,abb,abba,ba] vc=6
+00144	false;false;Identity;false;|[:,::,:a:,:ba] vc=5
+00145	-;-;Identity;true;[:b,b:b,bb:a] vc=4;-;|[] vc=0
+00146	-;Identity;false;|[::a,a,b,ba] vc=4
+00147	false;|[aa:a,abb:,ba,bb] vc=4
+00148	-;false;|[] vc=0
+00149	Identity;false;None;None;|[::b] vc=1
+00150	true;|[b::,baa] vc=3
+00151	-;-;false;true;-;None;|[aba,b,b:bbaa] vc=3
+00152	true;None;None;|[:ba:,a,abaa] vc=4
+00153	-;false;true;None;false;|[:,::,ab:a,bbb:] vc=5
+00154	true;|[:::,a,a:b,ab:,bb] vc=6
+00155	Element;Element;false;-;|[::ba,:a:b,b:a] vc=4
+00156	-;false;-;-;false;|[::,aa,abb:,b] vc=4
+00157	false;-;false;-;-;|[:a,:a] vc=2
+00158	Element;true;|[:::ba,:::bbbab,:a] vc=3
+00159	None;false;|[] vc=0
+00160	-;true;Identity;false;|[:baaabb:,a,aaa:,b:,b:ab] vc=5
+00161	-;-;Element;-;true;|[::a::,::a:bb:,:a,a,aaa,bab] vc=6
+00162	true;|[:ab,a,a::,a:::,ab] vc=5
+00163	-;false;|[b] vc=1
+00164	-;-;Element;|[a:,b,b:,bbaa:b:a::bb,bbaa:b:a:b,bbaa:b:aa,bbb] vc=7
+00165	Identity;|[::a,:ba:,baa] vc=3
+00166	-;[::,a:,aab:] vc=3;Identity;|[:a:,b:,b:b:,baab] vc=5
+00167	-;false;|[bb] vc=1
+00168	-;false;-;false;|[::,a,a:a:,aa:b,bb] vc=5
+00169	true;false;false;-;false;-;|[:,:a:a,:b:ab,:b:bb] vc=5
+00170	true;true;false;Identity;|[:,::,aa:,bbab] vc=5
+00171	-;true;true;-;|[:ab,a::b,aaa,b,babb:b:] vc=5
+00172	None;false;-;None;|[::ab,a,a:ba,b:b] vc=5
+00173	false;-;-;None;|[:aa:,aa,b:b] vc=4
+00174	Element;-;true;|[:::,:aa:bb,:ab,:aba,ab,bb:] vc=6
+00175	Element;Element;|[:bab,ab:,b,b:a] vc=4
+00176	-;Element;Element;Identity;-;true;|[] vc=0
+00177	-;true;-;|[:::a,:::a,a,a:,ba] vc=5
+00178	Element;-;Element;None;false;None;|[:,::,::aa,::bb:,b:a] vc=5
+00179	false;true;|[:b] vc=1
+00180	false;-;Identity;-;|[a:] vc=2
+00181	false;false;true;false;|[:,a,aaba] vc=3
+00182	false;-;false;None;|[] vc=0
+00183	false;true;Identity;|[a:b:::a,a:b:a:b,a:b:b::,a:baab:,a:bbb:] vc=5
+00184	-;false;true;|[:,:aa,ab,b] vc=4
+00185	[] vc=1;None;false;-;None;|[:,a,b,b:b] vc=4
+00186	None;None;-;false;None;|[] vc=0
+00187	false;false;|[aa:b,aaba,b,bba] vc=4
+00188	-;true;|[] vc=0
+00189	Identity;-;|[:,::a,a:a,b:] vc=4
+00190	-;Element;Element;-;|[:a,:b,a,b,b:,ba] vc=6
+00191	-;|[:,:::,:b:aa,:bb:,aa] vc=5
+00192	false;false;[] vc=1;|[:,a] vc=3
+00193	true;-;|[] vc=0
+00194	false;|[:,bab] vc=2
+00195	-;false;Identity;|[a,b:,b:ab,babb] vc=4
+00196	true;|[:,:b:,a,b,ba] vc=5
+00197	-;None;|[::b,b::a,baa:] vc=3
+00198	-;|[a] vc=1
+00199	Element;Element;false;[a,aaa,b:::] vc=3;None;|[] vc=0
+00200	true;false;|[b:,bab] vc=3
+00201	None;true;None;None;|[] vc=0
+00202	None;None;Identity;None;true;|[] vc=0
+00203	Identity;|[:ab,ab,b,b:,b::] vc=5
+00204	false;Identity;false;[b::] vc=1;|[::,::b,aba] vc=4
+00205	false;None;false;false;false;|[b:a:,bb] vc=2
+00206	Element;true;Element;true;false;|[] vc=0
+00207	false;None;None;|[] vc=0
+00208	None;Element;Identity;true;false;true;|[:::a:::b] vc=1
+00209	false;true;-;-;|[:ab:] vc=1
+00210	None;None;true;false;false;|[] vc=0
+00211	Element;false;Element;true;-;[aaaaa,aabaa] vc=2;|[aa,b:ba] vc=3
+00212	None;-;false;None;|[ab,b:,b:b,bba] vc=4
+00213	false;true;false;None;false;|[] vc=1
+00214	true;|[:,abb,b:a] vc=3
+00215	true;|[:,aa:a] vc=3
+00216	false;None;|[:,a:ba,bb:a,bbbb] vc=4
+00217	[a,aa,aaaa,bb,bb:] vc=5;-;[:,:b:b] vc=2;|[] vc=0
+00218	-;-;-;-;-;|[:,::a,a,a:a] vc=4
+00219	Identity;|[:,a:bb,ab::] vc=3
+00220	None;-;[a] vc=2;Element;false;true;|[a] vc=2
+00221	false;[:] vc=2;|[a,aba] vc=2
+00222	-;-;None;|[ba] vc=1
+00223	true;|[a:b] vc=1
+00224	true;-;false;-;true;-;|[:b:,a:::,bba] vc=3
+00225	-;|[:,b,b:] vc=3
+00226	false;false;None;false;-;None;|[] vc=0
+00227	false;-;|[] vc=1
+00228	false;true;false;None;|[] vc=0
+00229	-;-;false;|[a:b] vc=1
+00230	-;true;|[bb::] vc=2
+00231	-;true;false;-;None;-;|[::] vc=1
+00232	false;|[::,aaba,b:a,ba,baaa] vc=6
+00233	false;false;false;|[:,a,a:b,bba] vc=4
+00234	false;-;-;false;|[a:a::,a:a:b,a:a:bab,b] vc=4
+00235	-;true;-;[bab] vc=1;-;true;|[] vc=0
+00236	[:,b:] vc=2;None;Element;|[:,::,:::a,b,b:] vc=6
+00237	-;-;None;Element;None;-;|[:a:,aa,bb,bb:baa,bbb] vc=5
+00238	Identity;Identity;-;None;None;false;|[] vc=0
+00239	-;-;-;|[a,a:a,ab,ab:b:,baaa,bab] vc=6
+00240	false;-;|[:bb:] vc=1
+00241	Identity;|[] vc=0
+00242	Identity;[a] vc=1;-;Element;[:] vc=1;-;|[b:ab] vc=1
+00243	true;false;|[:::a:a,:::b,:::babb] vc=4
+00244	Element;-;-;false;false;None;|[a:b] vc=1
+00245	-;true;-;[a,b:,baa] vc=3;|[] vc=0
+00246	-;-;false;false;|[b] vc=1
+00247	-;Element;-;None;None;|[:,:b,a,a:,a:ba::a:a,a:ba::aaa,a:ba::ba::,b:] vc=8
+00248	true;-;None;-;-;|[:ba] vc=1
+00249	[:,::b,abb] vc=3;|[] vc=0
+00250	-;-;false;None;[] vc=1;None;|[] vc=1
+00251	false;|[] vc=1
+00252	-;-;None;-;-;false;|[::,:a:b,b:,babb:::a::b] vc=5
+00253	false;true;Element;true;|[::ab,a:,abaabba:b,b] vc=4
+00254	[] vc=1;-;None;None;|[] vc=0
+00255	-;|[::,:aa,a:b,b:ab,ba] vc=6
+00256	false;-;false;None;false;|[] vc=1
+00257	None;None;false;|[] vc=0
+00258	Identity;true;false;true;|[:,:b:,ab,b,b:baa] vc=5
+00259	-;false;|[] vc=1
+00260	true;-;Element;-;false;false;|[::,::a,a:a,a:a::b,abbaa] vc=5
+00261	true;Element;|[::b:,:ab:b] vc=2
+00262	-;-;|[:,b:aba,b:b,b:b:a:] vc=4
+00263	None;false;-;Identity;|[a,ba:a,bba] vc=3
+00264	None;false;false;None;None;-;|[] vc=0
+00265	-;Element;Identity;|[bb:,bb:a:,bba:] vc=3
+00266	false;false;-;-;Identity;|[:,a,bba:] vc=4
+00267	-;false;-;Element;-;|[:b:aa,:b:aabb,:b:bab,:ba,a,abb:,b:,bab] vc=9
+00268	-;|[aba,b:ba,ba,ba::] vc=5
+00269	false;false;true;|[:b:a,b:,b:ab] vc=3
+00270	true;Identity;true;true;-;true;|[:baa,a,aab,b] vc=4
+00271	false;false;false;-;false;|[] vc=0
+00272	-;[:ab] vc=2;None;false;-;|[] vc=0
+00273	None;-;None;false;None;-;|[b,b:b,ba:b,bb::] vc=4
+00274	false;-;true;false;-;|[bb::] vc=1
+00275	false;Identity;-;Identity;-;None;|[:bb,a] vc=3
+00276	-;Element;true;true;false;|[:,:aba,a,ab,abbb,abbb:a,abbb:abb::,b:a] vc=8
+00277	true;true;-;[] vc=0;-;|[a] vc=1
+00278	false;Identity;true;false;Identity;true;|[::,::bbab:,a::a,b:aa] vc=4
+00279	false;None;false;-;-;false;|[b,baab,bb:] vc=3
+00280	-;-;false;|[:a,a,b:] vc=4
+00281	Identity;false;-;true;Element;|[:abb,:abb:ba,:abba,:abbaba,a,ab,bbbb] vc=8
+00282	false;-;true;-;false;|[bba:,bbaa:,bbaabaa,bbabba,bbbb] vc=6
+00283	false;false;[::] vc=2;|[ab,b] vc=2
+00284	-;None;false;|[:,:b] vc=2
+00285	Element;-;false;-;-;|[:::a,:::a:b:b,:::a:b:b:abbba,:::abbba,::b] vc=5
+00286	-;Element;-;|[:,:::,::a,:bab,:babb:b,:babba,a] vc=7
+00287	-;[:,b] vc=2;[:] vc=1;|[] vc=1
+00288	false;Identity;Element;false;true;|[b,b::bb,baa:] vc=3
+00289	None;false;None;false;false;false;|[:,bba:] vc=2
+00290	false;false;None;-;-;None;|[] vc=0
+00291	Identity;None;|[] vc=0
+00292	Identity;|[] vc=1
+00293	-;Identity;-;-;None;|[ab:] vc=1
+00294	[::,b] vc=2;-;true;|[a:::] vc=1
+00295	-;-;-;None;false;|[b:aa] vc=1
+00296	None;false;None;false;[] vc=1;|[] vc=0
+00297	-;None;|[ab,b:,bba:] vc=4
+00298	false;-;false;-;-;|[:::::,:::::b:b:,:::a,:::a] vc=4
+00299	-;false;Identity;[] vc=1;|[:,::ab,:ab,ab,b] vc=6

@@ -1,0 +1,6 @@
+A :ab ab b b: b::
+AROOTVAL 0
+S 
+SROOTVAL 0
+ORIGIN -
+OP SUB 1

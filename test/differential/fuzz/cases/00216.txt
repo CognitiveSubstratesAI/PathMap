@@ -1,0 +1,7 @@
+A : a:ba aba bb:a bbbb
+AROOTVAL 0
+S baba
+SROOTVAL 0
+ORIGIN aba
+OP REMPREFIX 2
+OP MEET 0

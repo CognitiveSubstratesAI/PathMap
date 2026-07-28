@@ -1,0 +1,7 @@
+A aa:b aaba b bba
+AROOTVAL 0
+S 
+SROOTVAL 0
+ORIGIN aa
+OP ASCEND 4
+OP REMOVEVAL 1

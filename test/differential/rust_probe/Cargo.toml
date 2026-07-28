@@ -17,4 +17,8 @@ pathmap = { path = "../../../../../../JuliaAGI/dev-zone/PathMap" }
 name = "gen_expected"
 path = "src/bin/gen_expected.rs"
 
+[[bin]]
+name = "gen_fuzz"
+path = "src/bin/gen_fuzz.rs"
+
 [workspace]

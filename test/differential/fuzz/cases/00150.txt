@@ -1,0 +1,6 @@
+A b:: baa
+AROOTVAL 1
+S 
+SROOTVAL 0
+ORIGIN -
+OP SETVAL

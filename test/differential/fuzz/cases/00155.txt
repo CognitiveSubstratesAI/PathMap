@@ -1,0 +1,9 @@
+A : ::a a baaa bb
+AROOTVAL 0
+S ::ba :a:b b:a
+SROOTVAL 1
+ORIGIN -
+OP JOINMAP
+OP MEET 1
+OP ASCEND 3
+OP DESCEND a:b:

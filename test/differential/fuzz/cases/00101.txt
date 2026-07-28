@@ -1,0 +1,7 @@
+A :::b a: b b::
+AROOTVAL 1
+S 
+SROOTVAL 0
+ORIGIN b
+OP TAKEMAP 0
+OP ASCEND 1

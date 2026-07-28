@@ -1,0 +1,8 @@
+A :ba: a abaa bb bb::
+AROOTVAL 1
+S abba
+SROOTVAL 1
+ORIGIN b
+OP ASCEND 0
+OP MEET 1
+OP TAKEMAP 1

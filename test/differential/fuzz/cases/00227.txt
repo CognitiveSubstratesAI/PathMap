@@ -1,0 +1,7 @@
+A 
+AROOTVAL 0
+S aba b:bb ba
+SROOTVAL 0
+ORIGIN -
+OP SETVAL
+OP RESET

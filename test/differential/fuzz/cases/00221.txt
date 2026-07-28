@@ -1,0 +1,7 @@
+A a a:: aba
+AROOTVAL 0
+S :a b
+SROOTVAL 0
+ORIGIN a:
+OP SETVAL
+OP TAKEMAP 0

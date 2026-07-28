@@ -112,6 +112,64 @@ fn main() {
     }
     emit("graft/join_into_at_p", dump(&a));
 
+    // ---- graft_root_vals: DISCRIMINATING cases -------------------------------
+    // The three failing graft scenarios above all have the focus value present and the
+    // source root value absent, so they cannot tell "we ignore the focus value" apart from
+    // "we clear the focus value". These pin the other direction and the ops the first set
+    // never reaches. `graft_root_vals` is a DEFAULT feature (Cargo.toml:39); under it the
+    // focus value is the counterpart of the source's ROOT value.
+
+    // graft_map where the SOURCE ROOT has a value and the focus does NOT: upstream's
+    // `Some(src_val) => self.set_val(src_val)` (write_zipper.rs:1471) MAKES `p` appear.
+    let mut a = mk(&["px", "q"]);
+    let mut src = PathMap::<()>::new();
+    src.set_val_at(b"", ());
+    src.set_val_at(b"y", ());
+    {
+        let mut wz = a.write_zipper_at_path(b"p");
+        wz.graft_map(src);
+    }
+    emit("graft/graft_map_rootval_sets_focus", dump(&a));
+
+    // join_map_into: upstream HAS a graft_root_vals block (write_zipper.rs:1682) even though
+    // its own doc comment claims "the currently implemented behavior is NO". The body wins.
+    // `join_into` (read-zipper variant) has NO such block — hence the asymmetry, and hence
+    // `graft/join_into_at_p` passing is NOT evidence that join is ported.
+    let mut a = mk(&["px", "q"]);
+    let mut src = PathMap::<()>::new();
+    src.set_val_at(b"", ());
+    {
+        let mut wz = a.write_zipper_at_path(b"p");
+        wz.join_map_into(src);
+    }
+    emit("graft/join_map_into_rootval_at_p", dump(&a));
+
+    // CONTROL: join must NOT clear the focus value when the source root has none
+    // (`(Some(_), None) => Identity`). Guards against over-correcting meet's clear into join.
+    let mut a = mk(&["p", "px", "q"]);
+    let src = mk(&["y"]);
+    {
+        let mut wz = a.write_zipper_at_path(b"p");
+        wz.join_map_into(src);
+    }
+    emit("graft/join_map_into_keeps_focus_val", dump(&a));
+
+    // take_map at a focus holding ONLY a value: upstream takes the value out into the
+    // returned map's root_val (write_zipper.rs:2121) and returns Some even with no root node.
+    let mut a = mk(&["p", "q"]);
+    let taken = {
+        let mut wz = a.write_zipper_at_path(b"p");
+        wz.take_map(false)
+    };
+    emit(
+        "graft/take_map_valonly_taken",
+        match &taken {
+            Some(m) => dump(m),
+            None => "None".to_string(),
+        },
+    );
+    emit("graft/take_map_valonly_residue", dump(&a));
+
     // ---- join / meet / subtract at ROOT --------------------------------------
     let mut a = mk(&["a", "b"]);
     let b = mk(&["b", "c"]);
@@ -156,6 +214,60 @@ fn main() {
         wz.remove_prefix(1);
     }
     emit("prefix/remove_prefix_at_foo", dump(&m));
+
+    // remove_prefix is a faithful 3-liner upstream (write_zipper.rs:1866): capture the focus
+    // subtrie, `ascend(n)`, graft it back. The map is UNCHANGED above only because
+    // `WriteZipperCore::ascend` CLAMPS at the zipper's own root — `at_root()` is
+    // `prefix_buf.len() <= origin_path.len()` (:1002), and a write zipper created AT `foo:`
+    // is already at its origin. The RETURN VALUE is the direct observable of that clamp.
+    let mut m = mk(&["foo:bar", "foo:baz"]);
+    let ret_at_origin = {
+        let mut wz = m.write_zipper_at_path(b"foo:");
+        wz.remove_prefix(1)
+    };
+    emit("prefix/remove_prefix_ret_at_origin", format!("{}", ret_at_origin));
+
+    // CONTROL: the same removal from a zipper rooted at the MAP root, descended to `foo:`,
+    // is BELOW its origin — so ascend may move and the removal must actually happen.
+    // This is what stops a clamp fix from over-correcting into "ascend never moves".
+    let mut m = mk(&["foo:bar", "foo:baz"]);
+    let ret_below_origin = {
+        let mut wz = m.write_zipper();
+        wz.descend_to(b"foo:");
+        wz.remove_prefix(1)
+    };
+    emit("prefix/remove_prefix_below_origin", dump(&m));
+    emit("prefix/remove_prefix_below_origin_ret", format!("{}", ret_below_origin));
+
+    // MORK's test/integration/pathmap_prefix_ops.jl "remove_prefix — full ascent to root"
+    // asserts that stripping the WHOLE origin from a zipper rooted at `pre:` succeeds and
+    // returns true. That is the at-origin case again, just with n == origin length. Pinned
+    // here rather than argued by analogy with the n=1 case above.
+    let mut m = mk(&["pre:alpha", "pre:beta"]);
+    let ret_full_ascent = {
+        let mut wz = m.write_zipper_at_path(b"pre:");
+        wz.remove_prefix(4)
+    };
+    emit("prefix/remove_prefix_full_ascent_at_origin", dump(&m));
+    emit("prefix/remove_prefix_full_ascent_at_origin_ret", format!("{}", ret_full_ascent));
+
+    // OVER-ASCENT. `at_root()` alone does not bound a single step: upstream caps each jump with
+    // `excess_key_len()` (write_zipper.rs:1048), whose fallback is `origin_path.len()`
+    // (:2666-2667) — "the number of chars that can be LEGALLY ascended". `node_key_start()`
+    // (:2650) falls back to `root_key_start` instead, so capping by `node_key().len()` lets a
+    // SINGLE jump truncate straight past the origin even when the at_root check is correct.
+    // Here the focus sits 3 bytes below a 4-byte origin and we ask for 5: upstream clamps to the
+    // origin and returns false, so the subsequent write lands AT `foo:`.
+    let mut m = mk(&["foo:bar"]);
+    let ret_over = {
+        let mut wz = m.write_zipper_at_path(b"foo:");
+        wz.descend_to(b"bar");
+        let r = wz.ascend(5);
+        wz.set_val(());
+        r
+    };
+    emit("ascend/over_ascend_ret", format!("{}", ret_over));
+    emit("ascend/over_ascend_then_setval", dump(&m));
 
     // ---- deep / shared structure --------------------------------------------
     let deep: Vec<String> = (0..8).map(|i| format!("{}{}", "d".repeat(12), i)).collect();

@@ -1,0 +1,7 @@
+A :a :a:
+AROOTVAL 1
+S a a::b a:b
+SROOTVAL 0
+ORIGIN :a
+OP JOINMAP
+OP JOINMAP

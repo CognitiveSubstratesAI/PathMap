@@ -1,0 +1,7 @@
+A a b b: bab
+AROOTVAL 0
+S ab
+SROOTVAL 0
+ORIGIN b:
+OP GRAFTMAP
+OP RESET
