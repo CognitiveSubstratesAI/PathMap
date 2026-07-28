@@ -211,6 +211,16 @@ function _wz_in_mut_static_result!(
     _wz_ensure_write_unique!(z)
     key = collect(_wz_node_key(z))
     focus_node = z.focus_stack[end].node
+    if focus_node === nothing
+        # The null sentinel IS the empty node (EmptyNode.jl:83). Reads and removals answer it
+        # directly, but a WRITE cannot no-op — it has to materialise real storage first. This is
+        # the same move as the upgrade path below, just triggered by absence rather than by a
+        # node outgrowing its representation. Upstream never needs it: its stack holds a
+        # `&mut dyn TrieNode`, so there is no null to materialise, and hence no code to port.
+        fresh = TrieNodeODRc(LineListNode{V, A}(z.alloc), z.alloc)
+        _wz_replace_top_node!(z, fresh)
+        focus_node = z.focus_stack[end].node
+    end
     result = node_f(focus_node, key)
     if result isa TrieNodeODRc
         _wz_replace_top_node!(z, result)
@@ -236,6 +246,20 @@ function _wz_descend_to_internal!(z::WriteZipperCore{V, A}) where {V, A}
 
     while true
         focus_node = z.focus_stack[end].node
+        # A NULL node has no children, so there is nothing to descend into — stop.
+        #
+        # ⚠️ Upstream cannot hit this: `descend_to_internal` drives `focus_stack.advance(|node| …)`
+        # (write_zipper.rs:2481) and the Rust `MutNodeStack` hands the closure a `&mut dyn TrieNode`
+        # that is non-null BY CONSTRUCTION. Our `TrieNodeODRc.node` is
+        # `Union{Nothing, AbstractTrieNode}` and CAN be nothing — a port-introduced state, already
+        # guarded elsewhere (`_wz_ensure_write_unique!`, `_wz_prune_path_internal!`) but not here.
+        # Without this line, any DESCEND after an op that empties the trie (remove_val / subtract /
+        # graft of an empty source / take_map) died with
+        # `MethodError: no method matching node_get_child(::Nothing, …)` where upstream simply
+        # continues. Seven of the differential fuzzer's 34 divergences were this ONE line.
+        # Minimal repro: set_val_at!(m,"b:") · write_zipper_at_path(m,"b:") · wz_remove_val! ·
+        # wz_descend_to!(wz,":a").
+        focus_node === nothing && break
         # `focus_node` is abstract (`TrieNodeODRc.node::Union{Nothing,AbstractTrieNode}`), so this
         # dispatch is dynamic and infers `Any` — the assertion pins the concrete return (all 4
         # node_get_child methods return exactly this), stabilizing `consumed`/`child_rc` and killing
@@ -504,6 +528,21 @@ Set the value at `path` in `m`.  Returns the previously stored value.
 or any other byte-iterable; no intermediate copy is made.
 """
 function set_val_at!(m::PathMap{V, A}, path::AbstractVector{UInt8}, val::V) where {V, A}
+    if isempty(path)
+        # The ROOT VALUE lives in `m.root_val`, not in any node, so setting it needs no node at
+        # all. Going through `write_zipper(m)` would call `_ensure_root!` and MATERIALISE an empty
+        # root node as a side effect — upstream does not, and the difference is OBSERVABLE:
+        # `join_map_into`/`graft_map` branch on whether the source map HAS a root node
+        # (write_zipper.rs:1694-1700), so a spurious empty root sends us down the node path where
+        # upstream takes its early return, and we answer Element where upstream answers
+        # None/Identity. Confirmed against the binary by fuzz case 00074.
+        # ⚠️ NOT the same as "treat an empty root node as absent" — upstream CAN legitimately hold
+        # `Some(empty root)` (its `take_map` returns exactly that, fuzz case 00056), so the fix has
+        # to be to stop CREATING one, not to ignore one.
+        old = m.root_val
+        m.root_val = val
+        return old
+    end
     z = write_zipper(m)
     wz_descend_to!(z, path)
     wz_set_val!(z, val)
@@ -549,7 +588,12 @@ function _wz_get_focus_anr(z::WriteZipperCore{V, A}) where {V, A}
     if isempty(nk)
         ANRBorrowedRc{V, A}(z.focus_stack[1])
     else
-        get_node_at_key(z.focus_stack[end].node, nk)
+        # The null sentinel IS the empty node (EmptyNode.jl:83 and the contract below it), and an
+        # empty node has no subtrie at any key. Guarded HERE rather than as a `::Nothing` method
+        # because the empty answer is `ANRNone{V,A}()` — it needs the type params, which only the
+        # zipper knows. Same contract hole as the node_* accessors; found by the fuzzer.
+        fnode = z.focus_stack[end].node
+        fnode === nothing ? ANRNone{V, A}() : get_node_at_key(fnode, nk)
     end
 end
 

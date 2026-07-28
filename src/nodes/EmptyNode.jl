@@ -82,6 +82,59 @@ node_is_empty(::EmptyNode) = true
 # method; without it psubtract over a node with an empty child rc crashes (`node_is_empty(::Nothing)`).
 node_is_empty(::Nothing) = true
 
+# ---------------------------------------------------------------------------------------------
+# The REST of the `nothing`-as-EmptyNode-sentinel contract.
+#
+# `node_is_empty(::Nothing)` above established that a null inside a TrieNodeODRc IS the empty
+# node. Only that one method existed, so every OTHER accessor blew up with
+# `MethodError: no method matching node_<x>(::Nothing, …)` the moment a caller reached a null
+# focus — which upstream's type system makes impossible (its `MutNodeStack` hands out a
+# `&mut dyn TrieNode`, never a null), so there is no upstream guard to port and the call sites
+# read as correct.
+#
+# The differential FUZZER found this: SEVEN of its 34 divergences were null-node MethodErrors
+# across `node_get_child`, `node_get_val` and `node_remove_val!` — one contract hole surfacing in
+# three functions, always as "an op empties the trie, then any further access". Fixing the three
+# call sites would have been whack-a-mole; the rule is that EVERY read/removal must treat the
+# sentinel as an empty node ([[feedback_recurring_defect_derive_the_rule]]).
+#
+# ⚠️ Deliberately NOT extended to the mutating constructors (`node_set_val!`, `node_set_branch!`,
+# `node_create_dangling!`): writing INTO a null cannot be a no-op — it has to materialise a node —
+# so those must keep failing loudly, exactly as the EmptyNode methods above do. Reads and removals
+# have a correct empty answer; writes do not.
+#
+# These are behavioural claims, so they are checked by execution rather than argued: the fuzz gate
+# (test/fuzz_gate.jl) compares every one of these paths against the upstream binary.
+node_contains_partial_key(::Nothing, ::AbstractVector{UInt8}) = false
+
+node_contains_val(::Nothing, ::AbstractVector{UInt8}) = false
+
+node_get_val(::Nothing, ::AbstractVector{UInt8}) = nothing
+
+node_get_val_mut(::Nothing, ::AbstractVector{UInt8}) = nothing
+
+node_get_child(::Nothing, ::AbstractVector{UInt8}) = nothing
+
+node_get_child_mut(::Nothing, ::AbstractVector{UInt8}) = nothing
+
+# No value to remove, so nothing was removed.
+node_remove_val!(::Nothing, ::AbstractVector{UInt8}, ::Bool) = nothing
+
+# No branches to remove ⇒ removed nothing.
+node_remove_all_branches!(::Nothing, ::AbstractVector{UInt8}, ::Bool) = false
+
+node_remove_unmasked_branches!(::Nothing, ::AbstractVector{UInt8}, ::ByteMask, ::Bool) = nothing
+
+# Returns the number of bytes pruned; an empty node has none.
+node_remove_dangling!(::Nothing, ::AbstractVector{UInt8}) = 0
+
+node_branches_mask(::Nothing, ::AbstractVector{UInt8}) = ByteMask()
+
+# Nothing to take out of an empty node. (`get_node_at_key` is NOT here: its empty answer is
+# `ANRNone{V,A}()`, which needs type params a bare `::Nothing` method cannot supply, so it is
+# guarded at its call site in WriteZipper.jl instead.)
+take_node_at_key!(::Nothing, ::AbstractVector{UInt8}, ::Bool) = nothing
+
 new_iter_token(::EmptyNode) = UInt128(0)
 
 iter_token_for_path(::EmptyNode, ::AbstractVector{UInt8}) = UInt128(0)
