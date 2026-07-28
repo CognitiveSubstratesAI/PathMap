@@ -52,8 +52,36 @@ The join's value write happens at depth 2 (`node_key="a"`, i.e. inside the child
 only because its root holds a slot keyed `":a"` where ours does not — i.e. **the two engines'
 trie SHAPES differ after the val write**, and `reset`/`remove_val` are innocent.
 
-**Next step:** dump both engines' node structure after the `JOINMAP` step (before `RESET`) and
-diff the shapes. Do NOT start from `reset`.
+### ROOT CAUSE LOCATED (2026-07-28) — and the OBVIOUS FIX IS WRONG, measured
+
+Our structure after `JOINMAP` (from our ported `viz_maps`):
+
+    root = Dense
+      [58 ':'] -> Pair   [97 'a']     -> UnitVal     <- the value at ":a" lives in the CHILD
+                         [97,98 'ab'] -> UnitVal
+      [97 'a'] -> Pair   [98 'b']     -> UnitVal
+      [98 'b'] -> Pair   [98,58 'b:'] -> UnitVal
+
+**The difference is at CONSTRUCTION.** `descend_to_internal` is called upstream only from
+`descend_to` / `set_val` / `graft_internal` and friends (write_zipper.rs:1033, 1231, 1401, 1626,
+1638, 2173, 2259) — **never from a constructor** (`new_with_node_and_path_internal_in`, :1147,
+only builds KeyFields and the stack root). Our `write_zipper_at_path` DOES descend.
+
+Consequence chain, all verified:
+* Descending leaves `prefix_idx` NON-EMPTY, and `_wz_mend_root!` no-ops while that holds — so the
+  origin is never absorbed into `root_key_start` (measured: `rks=0` for the whole sequence).
+* Upstream starts at depth 1, so its first `set_val` DOES trigger `mend_root`, advancing
+  `root_key_start` to 1 and re-pointing the stack root at the child.
+* After `RESET`, upstream is on the child with a ONE-byte `node_key` (`"a"`), which
+  `node_remove_val` can serve. We are on the Dense root with a TWO-byte `node_key` (`":a"`), which
+  NEITHER engine's `node_remove_val` can serve (upstream's DenseByteNode is
+  `if key.len() == 1 { .. } else { None }`, dense_byte_node.rs:847).
+
+⚠️ **Simply deleting the constructor's descend was TRIED AND REVERTED.** It fixes the return value
+but over-removes — `[ab,bb:] vc=2` where upstream gives `[:ab,ab,bb:] vc=3` — and breaks 6 tests.
+Other parts of our port evidently rely on the zipper being pre-descended, so this is a coordinated
+change (constructor + whatever compensates for it), not a deletion. Do not retry the deletion
+alone.
 
 `00177` (RESET + REMPREFIX) is listed with this pair only because it also follows a `RESET`; its
 divergence is upstream emitting a DUPLICATE path, which is a different question. Treat separately.
