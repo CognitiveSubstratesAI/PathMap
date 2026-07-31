@@ -650,6 +650,46 @@ const _PM_TS = @testset "PathMap" begin
         @test get_val_at(m1, b"Xcd") == 2
     end
 
+    # ── join_k_path_into with prune=true must leave NO DANGLING PATH when the drop
+    #    yields nothing. Upstream's tail is `if prune && !result { self.prune_path(); }`
+    #    (write_zipper.rs:1773) — the PUBLIC prune_path, which first runs
+    #    node_remove_dangling(node_key) and only then walks the ancestors (:2179-2190).
+    #    We called the INTERNAL helper instead, from two places, skipping the node-level
+    #    dangling removal entirely.
+    #
+    #    IT IS INVISIBLE TO THE DUMP, which is why nothing caught it: a dangling path
+    #    carries no value, so val_count and path enumeration are identical either way.
+    #    Measured on identical state, old prune vs new:
+    #        old -> pruned=0 bytes, path_exists_at("ab") == true
+    #        new -> pruned=2 bytes, path_exists_at("ab") == false
+    #    path_exists is exactly the observable upstream's prune_path doc names ("may result
+    #    in path_exists subsequently returning false, where it previously returned true").
+    #
+    #    Nor could the differential have caught it: join_k_path_into is not among the 12 ops
+    #    the fuzz generator emits.
+    @testset "join_k_path_into(prune) leaves no dangling path — assert via path_exists" begin
+        for (tag, keys, origin, k) in (
+                ("focus INSIDE a node key", [b"abc"],        b"ab",    5),
+                ("focus at a node boundary", [b"ab", b"ac"],  b"a",     5),
+                ("deep dangling spine",      [b"aaaabc"],     b"aaaab", 9))
+            m = PM{Int}()
+            for key in keys
+                set_val_at!(m, key, 1)
+            end
+            wz = PathMap.write_zipper_at_path(m, origin)
+            @test wz_join_k_path_into!(wz, k, true) == false      # the drop yields nothing
+            @test PathMap.path_exists_at(m, origin) == false      # ← the dangling path is GONE
+            @test val_count(m) == 0
+        end
+
+        # CONTROL: when the drop SUCCEEDS there is nothing to prune and the result stands.
+        m = PM{Int}()
+        set_val_at!(m, b"abcd", 1)
+        wz = PathMap.write_zipper_at_path(m, b"ab")
+        @test wz_join_k_path_into!(wz, 1, true) == true
+        @test get_val_at(m, b"abd") == 1
+    end
+
     # ── Gate B (close-out step 2): shallow clone_self restores STRUCTURAL SHARING.
     #    clone_self used to deepcopy whole subtrees (sharing defeated, PathMap's
     #    reason for existing). After the shallow-clone change a cloned node SHARES

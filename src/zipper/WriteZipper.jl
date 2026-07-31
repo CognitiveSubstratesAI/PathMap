@@ -1395,9 +1395,20 @@ Mirrors `WriteZipperCore::join_k_path_into` (write_zipper.rs:1617).
 function wz_join_k_path_into!(
     z::WriteZipperCore{V, A}, byte_cnt::Int, prune::Bool=true
 ) where {V, A}
+    # ⚠️ PRUNE VIA `wz_prune_path!`, NOT `_wz_prune_path_internal!`. Upstream's body is
+    #
+    #     let result = match self.get_focus().into_option() { Some(..) => {..}, None => false };
+    #     if prune && !result { self.prune_path(); }
+    #
+    # (write_zipper.rs:1762-1775) — the PUBLIC `prune_path`, reached from ONE common tail. We used to
+    # call the INTERNAL helper from two places, which is wrong twice over: `prune_path` first does
+    # `node_remove_dangling(node_key)` and only walks the ancestors when that removed something
+    # (:2179-2190), so we were skipping the node-level dangling removal outright AND running the
+    # ancestor walk unconditionally. Nothing caught it because `join_k_path_into` is not one of the
+    # 12 ops the differential fuzzer generates.
     focus_anr = _wz_get_focus_anr(z)
     if is_none(focus_anr)
-        prune && _wz_prune_path_internal!(z)
+        prune && wz_prune_path!(z)
         return false
     end
     # COW: drop_head_dyn! mutates the focus subtrie IN PLACE. The focus node is
@@ -1413,7 +1424,7 @@ function wz_join_k_path_into!(
     new_node = drop_head_dyn!(self_node, byte_cnt)
     _wz_graft_internal!(z, new_node)
     result = new_node !== nothing
-    prune && !result && _wz_prune_path_internal!(z)
+    prune && !result && wz_prune_path!(z)   # see the note above — public prune_path, not the helper
     result
 end
 
@@ -1753,9 +1764,21 @@ materialises "::::a" — agrees with upstream. Three fuzz cases: 01359, 02038, 0
 Do NOT "fix" `wz_ascend!` instead — it is a faithful port of write_zipper.rs:1036 and the
 `ascend/*` and `prefix/*` tests pin it.
 
-⚠️ OPEN, UNVERIFIED: we call this from SEVEN sites (651, 1400, 1416, 1674, 1718, 1806, 1840) against
-upstream's five. The extras are `wz_remove_branches!` and `wz_remove_unmasked_branches!`; whether
-upstream prunes there at all has not been checked. Recorded rather than silently assumed equivalent.
+⚠️ OPEN, UNVERIFIED: we call this from SEVEN sites against upstream's five. Mapped by hand:
+
+    ours                              upstream write_zipper.rs
+    :651  _wz_remove_branches!        (internal helper — layer above also prunes)
+    :1400 wz_join_k_path_into!        NONE   <- suspect
+    :1416 wz_join_k_path_into!        NONE   <- suspect (two calls in ONE function)
+    :1674 wz_take_focus!              :2219  take_focus
+    :1718 wz_prune_path!              :2185
+    :1820 wz_remove_branches!         :2099  remove_branches
+    :1854 wz_remove_unmasked_branches! :2158 remove_unmasked_branches
+    (we route via wz_prune_path!)     :1415  remove_val
+
+`wz_join_k_path_into!` is the one to look at: upstream appears not to prune there at all, and we have
+just fixed one defect caused by pruning at the wrong moment. NOT yet settled by execution — recorded
+so it is not silently assumed equivalent.
 """
 function _wz_prune_path_internal!(z::WriteZipperCore{V, A},
                                   should_ascend::Bool = false) where {V, A}
