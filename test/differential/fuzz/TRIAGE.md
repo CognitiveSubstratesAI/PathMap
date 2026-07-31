@@ -42,6 +42,58 @@ built at a path, not only the ones whose scripts contained a `RESET`.
 
 The analysis below is retained — it is correct, and it is what located the cause.
 
+## THE REMAINING 33, RE-CLASSIFIED 2026-07-31 (the old grouping is stale)
+
+The 42 closures changed which shapes dominate, so the op-shape table further down no longer
+describes the corpus. Re-run after the fix:
+
+| class | n | meaning |
+|---|---|---|
+| **MORE** | **27** | we retain atoms upstream removes — OVER-RETENTION |
+| STATUS-ONLY | 3 | identical dumps, different `AlgebraicStatus` |
+| SAME-COUNT-DIFF | 3 | same `vc`, different paths |
+| ~~FEWER~~ | **0** | **the data-loss class is EMPTY** |
+
+**That is the headline: there are no data-loss divergences left.** Every remaining case has us
+keeping too much or reporting the wrong status, never dropping an atom. The constructor-descend fix
+closed the entire "fewer atoms" class.
+
+Op shapes are now almost all singletons (only `JOINMAP SUB` ×3 repeats; just 5 of 33 involve
+`RESET`, against 9 of 15 before). Grouping by op shape is no longer informative — group by class.
+Among the 27 MORE cases, `GRAFTMAP` appears in 14, `SETVAL` in 12, `JOINMAP` in 10.
+
+### NEXT ITEM: `00610` — a SINGLE `GRAFTMAP` diverges, and BOTH engines look wrong
+
+The cleanest reproducer in the corpus: one op, no RESET.
+
+    A ::b        AROOTVAL 0
+    S bb::       SROOTVAL 1
+    ORIGIN ::
+    OP GRAFTMAP
+
+    ours      [::,::b,::bb::] vc=3
+    upstream  [::,::b]        vc=2
+
+The harnesses are NOT asymmetric — `_fmk` (run_fuzz.jl:52) and `mk` (gen_fuzz.rs:124) are
+line-for-line the same construction, checked.
+
+`graft_map` (write_zipper.rs:1464) is `into_root()`, then `graft_internal(src_root_node)`, then —
+under the DEFAULT `graft_root_vals` feature — `set_val` if the source had a root value. `into_root`
+(trie_map.rs:205) returns `Some(node)` whenever the root node is non-empty, and S's is, so upstream
+should graft S's content.
+
+**It does not.** `::b` is a DESCENDANT of the graft point `::`, so a graft at `::` should replace it;
+upstream KEEPS `::b` and contains none of S's `bb::`. We add S's content but also fail to clear
+`::b`. So upstream appears not to graft at all at a MULTI-BYTE node key, and we graft without
+clearing.
+
+⚠️ Multi-byte node keys are exactly where the `00174` analysis already found asymmetry ("`node_remove_val`
+cannot serve a multi-byte key on EITHER side"), and after the mend fix a path-rooted zipper sits at
+depth 1 with a multi-byte `node_key` far more often. So this is likely the shared root of much of the
+MORE class — but do NOT assume it: `00020` was once reported as our corruption and turned out to be
+produced by both engines. Read `graft_internal`'s multi-byte-key path on both sides before changing
+anything.
+
 ## 00174 — the divergence is in TRIE SHAPE after `set_val`, not in `reset` (FIXED, see above)
 
 ⚠️ **A PREVIOUS HYPOTHESIS HERE WAS REFUTED — recorded so nobody rebuilds it.** I claimed
