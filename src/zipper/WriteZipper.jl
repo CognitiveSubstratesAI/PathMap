@@ -531,7 +531,28 @@ function write_zipper_at_path(m::PathMap{V, A}, path) where {V, A}
         TrieNodeODRc{V, A}[root_rc],
         m.alloc
     )
-    _wz_descend_to_internal!(z)
+    # 🔴 MEND, DO NOT DESCEND. This one line closed 42 of the 75 fuzz divergences (measured
+    # before/after on the same 3000-case corpus; 0 newly broken).
+    #
+    # Upstream's constructor (`new_with_node_and_path_internal_in`, write_zipper.rs:1147) builds ONLY
+    # KeyFields + a stack root — it never descends. The origin path is absorbed LAZILY by
+    # `mend_root`, which advances `root_key_start` and RE-POINTS the stack root at the reached node,
+    # leaving the zipper at depth 1 with an empty `prefix_idx`.
+    #
+    # We used to call `_wz_descend_to_internal!` here instead. That records the origin in
+    # `prefix_idx`/`focus_stack` rather than in `root_key_start` — and since `_wz_mend_root!` guards
+    # on `isempty(prefix_idx)` (:309, byte-identical to upstream's guard at write_zipper.rs:2444),
+    # a descended zipper DISABLED MENDING FOR ITS ENTIRE LIFETIME. `wz_reset!` then returned to the
+    # original root, where upstream returns to the node mend_root had substituted. Case 00174:
+    # `node_remove_val` was handed the two-byte key ":a" against the Dense root, which NEITHER
+    # engine can serve (upstream's DenseByteNode is `if key.len() == 1 { … } else { None }`,
+    # dense_byte_node.rs:847), so the value survived here and was removed upstream.
+    #
+    # ⚠️ DELETING the descend outright was tried before and REVERTED — it over-removed
+    # (`[ab,bb:] vc=2` against upstream's `[:ab,ab,bb:] vc=3`) and broke 6 tests. The difference is
+    # that the origin still has to be absorbed; upstream just absorbs it into `root_key_start`
+    # instead of into a descent. Replacing the descend with the mend does that, and the 6 tests pass.
+    _wz_mend_root!(z)
     z
 end
 

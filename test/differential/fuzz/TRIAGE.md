@@ -1,4 +1,4 @@
-# Fuzz divergences — triage (81 of 3000 cases)
+# Fuzz divergences — triage (33 of 3000 cases)
 
 Regenerate with `test/differential/shrink.jl` (needs the rustup toolchain): it reduces each failing
 case to a 1–2 op reproducer and re-pins it against the upstream binary.
@@ -23,7 +23,26 @@ subnode at THIS level — so under-reporting made `_wz_graft_internal!` skip its
 `mend_root!`/`descend_to_internal!`, leaving the zipper pointing at the parent while the split had
 moved the value into the new child.
 
-## 00174 — the divergence is in TRIE SHAPE after `set_val`, not in `reset` (NEXT ITEM)
+## ✅ CLOSED 2026-07-31 — `00174` and the whole constructor-descend family: **75 → 33** (42 cases)
+
+**The fix is one line**: `write_zipper_at_path` now calls `_wz_mend_root!` where it used to call
+`_wz_descend_to_internal!`. Measured before/after on the same 3000-case corpus with the same
+harness — 75 divergences → 33, **42 closed, 0 newly broken**, 0 errors. The full PathMap suite
+passes, including the 6 tests the earlier attempt broke.
+
+**Why the earlier attempt failed and this one does not.** Deleting the descend was right about the
+cause and wrong about the remedy: the origin path still has to be absorbed somewhere. Upstream
+absorbs it into `root_key_start` (advancing it and RE-POINTING the stack root), not into a descent.
+So the correct change is a SUBSTITUTION, not a deletion — which is why over-removal
+(`[ab,bb:] vc=2`) disappears.
+
+That also explains the size of the win. The old note projected ~11 cases (the 9 RESET-family plus
+`00174`/`00177`); the actual figure is 42, because the disabled `mend_root` affected every zipper
+built at a path, not only the ones whose scripts contained a `RESET`.
+
+The analysis below is retained — it is correct, and it is what located the cause.
+
+## 00174 — the divergence is in TRIE SHAPE after `set_val`, not in `reset` (FIXED, see above)
 
 ⚠️ **A PREVIOUS HYPOTHESIS HERE WAS REFUTED — recorded so nobody rebuilds it.** I claimed
 `wz_reset!` fails to unwind `_wz_mend_root!`'s `root_key_start` advance, and that fixing it needed
