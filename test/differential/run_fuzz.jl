@@ -149,6 +149,13 @@ function fuzz_run_text(text::AbstractString)
         elseif name == "SUB"
             s = _fmk(s_keys, s_rootval)
             _fstatus(PathMap.wz_subtract_into!(wz, _fanr(s), arg == "1", s.root_val))
+        elseif name == "RESTRICT"
+            # NOT emitted by the generator — `--exec` only, for hand-written scripts. `restrict` was
+            # the one full algebra op with no differential coverage at all. Note it takes no `prune`
+            # and no root value: upstream's `restrict(&read_zipper)` (write_zipper.rs:253) has
+            # neither, so this deliberately does not thread `s.root_val` the way MEET/SUB do.
+            s = _fmk(s_keys, s_rootval)
+            _fstatus(PathMap.wz_restrict!(wz, _fanr(s)))
         elseif name == "TAKEMAP"
             t = PathMap.wz_take_map!(wz, arg == "1")
             t === nothing ? "None" : _fdump(t)

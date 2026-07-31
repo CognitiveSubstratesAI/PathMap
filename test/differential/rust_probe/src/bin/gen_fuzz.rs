@@ -174,6 +174,14 @@ fn run(c: &Case) -> String {
                     let s = mk(&c.s_keys, c.s_rootval);
                     format!("{:?}", wz.subtract_into(&s.read_zipper(), arg == "1"))
                 }
+                // RESTRICT is NOT emitted by the random generator (see `script()`), so adding it
+                // here does not perturb the 3000-case corpus or its ratchet. It exists so that
+                // `--exec` can drive hand-written scripts: `restrict` was the one full algebra op
+                // with ZERO differential coverage, and it turned out to diverge.
+                "RESTRICT" => {
+                    let s = mk(&c.s_keys, c.s_rootval);
+                    format!("{:?}", wz.restrict(&s.read_zipper()))
+                }
                 "TAKEMAP" => match wz.take_map(arg == "1") {
                     Some(m) => dump(&m),
                     None => "None".into(),
