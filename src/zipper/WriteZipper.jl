@@ -377,7 +377,23 @@ function wz_remove_val!(z::WriteZipperCore{V, A}, prune::Bool=false) where {V, A
     _wz_ensure_write_unique!(z)
     focus_node = z.focus_stack[end].node
     old_val = node_remove_val!(focus_node, nk, prune)
-    prune && old_val !== nothing && wz_prune_path!(z)
+    # ⚠️ `_wz_prune_path_internal!`, NOT `wz_prune_path!` — and note this is the OPPOSITE choice from
+    # `wz_join_k_path_into!`, which must use the public one. Upstream really does differ per site:
+    #
+    #     remove_val        `if prune { self.prune_path_internal(false); }`   write_zipper.rs:1415
+    #     join_k_path_into  `if prune && !result { self.prune_path(); }`      write_zipper.rs:1773
+    #
+    # `prune_path` runs `node_remove_dangling(node_key)` first and walks the ancestors ONLY if that
+    # returned > 0. Here it always returns 0: `node_remove_val!(focus_node, nk, prune)` on the line
+    # above has already taken the payload whole, so there is no dangling remnant left for it to trim.
+    # Routing through the public helper therefore meant the gate NEVER OPENED and we never pruned
+    # ancestors at all — a `parent -> empty-child` link that upstream deletes stayed in our trie.
+    #
+    # Observable two ways, both measured against the binary:
+    #   TAKEMAP at that parent   ours `[] vc=0` (an empty map)  vs upstream `None` (nothing there)
+    #   SUB status at that path  ours `Element`                 vs upstream `None`
+    # `wz_take_map!` calls `wz_remove_val!(z, prune)`, so `TAKEMAP 1` inherited this too.
+    prune && old_val !== nothing && _wz_prune_path_internal!(z)
     old_val
 end
 
