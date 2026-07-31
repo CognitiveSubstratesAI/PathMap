@@ -800,6 +800,11 @@ include("test_viz.jl")
 include("test_william_nary.jl")
 include("test_path_exists_at.jl")
 
+# graft_child_maps / graft_masked_branches / meet_2 / split_at_focus + the child-path setters
+# (ported 2026-07-31). Expectations are upstream's OWN tests, transcribed scenario by scenario
+# from write_zipper.rs:5110-5206 and :5340-5429.
+include("test_graft_child_maps.jl")
+
 # Upstream differential ratchet (added 2026-07-27). PathMap previously had NO executable check
 # against upstream Rust — only local tests comparing PathMap to itself, which is how a
 # self-consistent wrong answer (path_exists_at on mid-edge prefixes) survived for months.

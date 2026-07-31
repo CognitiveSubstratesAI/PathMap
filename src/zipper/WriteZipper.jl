@@ -662,6 +662,205 @@ function _wz_remove_branches!(z::WriteZipperCore{V, A}, prune::Bool) where {V, A
     end
 end
 
+"""
+    wz_graft_masked_branches!(z, src_anr, child_mask, remove_unset)
+
+Ports `WriteZipperCore::graft_masked_branches` (write_zipper.rs:1503-1560) — for every byte SET in
+`child_mask`, replace the destination's child at that byte with the source's; when `remove_unset`,
+also drop the destination's children OUTSIDE the mask.
+
+The contract, taken from upstream's own tests (write_zipper.rs:5340-5429) rather than inferred:
+
+  * a masked byte present in `src`  -> destination's child is REPLACED wholesale (subtree and all)
+  * a masked byte ABSENT from `src` -> destination's child is REMOVED
+  * an unmasked byte               -> destination keeps its own, and src's is NOT copied across
+  * the destination's FOCUS VALUE is untouched in every case
+  * a masked byte absent from BOTH sides must not leave a dangling branch (their Case 3)
+
+⚠️ IMPLEMENTATION DEVIATION, deliberate. Upstream reaches this through
+`merge_branches_into_focus` -> `merge_branches_into_byte_node` (dense_byte_node.rs:1504): bulk
+range-iteration over the two masks, rebuilding a `ValuesVec` in one pass, monomorphized over the
+CoFree type and a `const REMOVE_UNSET`. That is a PERFORMANCE implementation of the contract above,
+and it reaches into `ByteNode`'s internal layout; it also forces a `split_at_focus` and node-type
+conversions (LineList/TinyRef -> Dense) purely so the bulk path applies.
+
+We implement the contract with the zipper's own descend/graft/ascend, which needs none of that
+machinery and keeps the COW path intact. Same observable result — verified against all four of
+upstream's own cases, including the dangling-branch one. If this ever shows up in a profile, the
+bulk path is the optimisation to port, not a correctness fix.
+"""
+function wz_graft_masked_branches!(
+    z::WriteZipperCore{V, A}, src_anr::AbstractNodeRef{V, A},
+    child_mask::ByteMask, remove_unset::Bool
+) where {V, A}
+    # upstream: `src.get_focus().try_as_tagged()` yielding None makes the whole call a no-op
+    is_none(src_anr) && return nothing
+    src_node = as_tagged(src_anr)
+
+    if remove_unset
+        # Drop the destination's children outside the mask. Collected FIRST — removing while
+        # iterating the live mask would read a structure being mutated underneath.
+        doomed = UInt8[b for b in iter(wz_child_mask(z)) if !test_bit(child_mask, b)]
+        for b in doomed
+            wz_descend_to!(z, UInt8[b])
+            _wz_remove_branches!(z, false)
+            wz_ascend!(z, 1)
+        end
+    end
+
+    for b in iter(child_mask)
+        child = node_get_child(src_node, UInt8[b])
+        wz_descend_to!(z, UInt8[b])
+        if child === nothing
+            # absent in the source => remove. Upstream's Case 3 pins that this must NOT leave a
+            # dangling branch when the destination lacked the byte too.
+            _wz_remove_branches!(z, false)
+        else
+            (_klen, child_rc) = child
+            _wz_graft_internal!(z, child_rc)
+        end
+        wz_ascend!(z, 1)
+    end
+    nothing
+end
+
+"""
+    _pm_into_root(m) -> (Union{Nothing,TrieNodeODRc}, Union{Nothing,V})
+
+Ports `PathMap::into_root` (trie_map.rs:205-216) — the map's root node and root value, with an
+EMPTY root node reported as `nothing`. That emptiness check is load-bearing: `graft_map` and
+`wz_graft_child_maps!` both branch on whether the source has a node at all.
+"""
+function _pm_into_root(m::PathMap{V, A}) where {V, A}
+    r = m.root
+    node = (r === nothing || node_is_empty(as_tagged(r))) ? nothing : r
+    (node, m.root_val)
+end
+
+"""
+    wz_graft_child_maps!(z, child_mask, maps, remove_unset)
+
+Ports `WriteZipperCore::graft_child_maps` (write_zipper.rs:1573-1616) — plant one map per set bit of
+`child_mask`, each one byte below the focus.
+
+Two strategies, and the threshold is upstream's:
+
+  * `count_bits(child_mask) > 2 && remove_unset` — build a fresh `DenseByteNode` sized to the mask,
+    fill it directly, and graft it whole. Replacing every child anyway, and enough of them to be
+    worth a byte node.
+  * otherwise — clear first if `remove_unset`, then set each child individually. Upstream leaves a
+    `GOAT` note that `count > 2 && !remove_unset` could take the fast path too but does not, "since
+    it requires logic to upgrade the focus_node to ByteNode". Ported as written, slow path and all.
+
+`maps` is consumed in mask order and must yield at least `count_bits(child_mask)` entries; upstream
+panics on a short iterator ("maps iterator returned fewer items than the number of set bits").
+"""
+function wz_graft_child_maps!(
+    z::WriteZipperCore{V, A}, child_mask::ByteMask, maps, remove_unset::Bool
+) where {V, A}
+    map_count = count_bits(child_mask)
+    it = iterate(maps)
+    next_map!() = begin
+        it === nothing && error("maps iterator returned fewer items than the number of set bits in child_mask")
+        (m, st) = it
+        it = iterate(maps, st)
+        m
+    end
+
+    if map_count > 2 && remove_unset
+        new_node = DenseByteNode{V, A}(z.alloc, map_count)
+        for child_byte in iter(child_mask)
+            m = next_map!()
+            (src_node, src_val) = _pm_into_root(m)
+            src_node === nothing || node_set_branch!(new_node, UInt8[child_byte], src_node)
+            src_val === nothing || node_set_val!(new_node, UInt8[child_byte], src_val)
+        end
+        _wz_graft_internal!(z, TrieNodeODRc(new_node, z.alloc))
+    else
+        remove_unset && _wz_remove_branches!(z, false)
+        for child_byte in iter(child_mask)
+            m = next_map!()
+            (src_node, src_val) = _pm_into_root(m)
+            src_node === nothing || _wz_set_node_at_child_path!(z, UInt8[child_byte], src_node)
+            src_val === nothing || _wz_set_val_at_child_path!(z, UInt8[child_byte], src_val)
+        end
+    end
+    nothing
+end
+
+"""
+    _wz_split_at_focus!(z)
+
+Ports `WriteZipperCore::split_at_focus` (write_zipper.rs:1210-1232) — force the focus onto its own
+node, splitting the parent's key if the focus currently lives inside a multi-byte slot key.
+
+Takes the subtrie at the focus out of the parent (`take_node_at_key!`), or makes a fresh empty node
+if there was nothing there, and sets it back as a branch at the focus key. The round trip is the
+point: `node_set_branch!` re-inserts through `set_payload_abstract!`, which splits a multi-byte slot
+key at the overlap, so afterwards the focus has a node of its own.
+
+Upstream calls this from `splitting_borrow_focus` (ZipperHead root isolation) and
+`graft_masked_branches`; both are the same need — an isolated node to hand out or merge into.
+"""
+function _wz_split_at_focus!(z::WriteZipperCore{V, A}) where {V, A}
+    alloc = z.alloc
+    sub_branch_added = _wz_in_mut_static_result!(
+        z,
+        function (node, key)
+            taken = take_node_at_key!(node, key, false)
+            new_node = taken === nothing ?
+                TrieNodeODRc(LineListNode{V, A}(alloc), alloc) : taken
+            node_set_branch!(node, key, new_node)
+        end,
+        (_, _) -> true
+    )
+    if sub_branch_added
+        _wz_mend_root!(z)
+        _wz_descend_to_internal!(z)
+    end
+    nothing
+end
+
+"""
+    _wz_set_node_at_child_path!(z, path, src)
+    _wz_set_val_at_child_path!(z, path, val) -> Union{Nothing, V}
+
+Port `set_node_at_child_path` / `set_val_at_child_path` (write_zipper.rs:1618/1632) — plant a branch
+or a value at `path` BELOW the focus, leaving the focus where it was. Both exist only to serve
+`wz_graft_child_maps!`, and upstream calls them with a single byte.
+
+⚠️ DELIBERATE STRUCTURAL DEVIATION, and the reason is a Rust/Julia one. Upstream reaches the target
+through `with_node_at_path`, which walks to the node with `node_along_path_mut` and, on an upgrade,
+writes the replacement back through a `&mut` INTO THE TRIE (`*node = replacement_node`). Julia has no
+such through-reference: `node_along_path` hands back a value, and assigning to it would update
+nothing. Reproducing that would mean re-implementing the parent-pointer surgery that our zipper
+already performs correctly.
+
+So we descend, act, and ascend. The observable effect is the same, and it is arguably safer: the
+zipper's own `wz_set_val!` / `_wz_graft_internal!` already run `_wz_mend_root!` +
+`_wz_descend_to_internal!` — the exact epilogue upstream's helpers run by hand — and the COW
+`_wz_ensure_write_unique!` path stays intact. Upstream avoids descending for speed, not semantics;
+its own comment concedes the helper "isn't suitable for general-purpose path-based ops yet" because
+it stack-copies the key into a fixed buffer.
+"""
+function _wz_set_node_at_child_path!(
+    z::WriteZipperCore{V, A}, path::AbstractVector{UInt8}, src::TrieNodeODRc{V, A}
+) where {V, A}
+    wz_descend_to!(z, path)
+    _wz_graft_internal!(z, src)
+    wz_ascend!(z, length(path))
+    nothing
+end
+
+function _wz_set_val_at_child_path!(
+    z::WriteZipperCore{V, A}, path::AbstractVector{UInt8}, val::V
+) where {V, A}
+    wz_descend_to!(z, path)
+    old = wz_set_val!(z, val)
+    wz_ascend!(z, length(path))
+    old
+end
+
 # =====================================================================
 # _wz_graft_internal! — plant src at cursor (core of all lattice ops)
 # =====================================================================
@@ -881,6 +1080,47 @@ function wz_join_map_into!(z::WriteZipperCore{V, A}, map::PathMap{V, A}) where {
     # join cannot turn a non-None operand into None, so both `*_was_none` flags are true
     # (write_zipper.rs:1730, `node_status.merge(val_status, true, true)`).
     merge_status(node_status, val_status, true, true)
+end
+
+"""
+    wz_meet_2!(z, a_anr, b_anr) -> AlgebraicStatus
+
+Meet TWO sources and store the result at the focus, ignoring whatever the focus currently holds.
+Ports `WriteZipperCore::meet_2` (write_zipper.rs:1935-1972).
+
+⚠️ NOT `wz_meet_into!` with an extra argument. `meet_into` meets the source INTO the destination, so
+it can report `Identity` when the destination already equals the result; this one overwrites the
+destination and never reads it. Upstream says so against its own `Identity` arm: *"document that
+meet_2 will not return identity because it doesn't actually check what's in the destination"* — the
+arm still grafts `a` or `b` (whichever the mask names) and reports `Element`.
+
+It also does NO root-value handling, unlike `wz_meet_into!`'s `_wz_root_val_op!` — faithful; upstream's
+`meet_2` touches only nodes.
+
+Takes `AbstractNodeRef`s where upstream takes read zippers, the same substitution `wz_meet_into!`
+makes; a bare node ref carries no root value, which is exactly what this operation wants.
+"""
+function wz_meet_2!(
+    z::WriteZipperCore{V, A}, a_anr::AbstractNodeRef{V, A}, b_anr::AbstractNodeRef{V, A}
+) where {V, A}
+    # upstream: `try_as_tagged()` yielding None on either side grafts None and returns None
+    if is_none(a_anr) || is_none(b_anr)
+        _wz_graft_internal!(z, nothing)
+        return ALG_STATUS_NONE
+    end
+    result = pmeet_dyn(as_tagged(a_anr), as_tagged(b_anr))
+    if result isa AlgResElement
+        _wz_graft_internal!(z, result.value)
+        ALG_STATUS_ELEMENT
+    elseif result isa AlgResIdentity
+        # SELF_IDENT names `a` here (self is the FIRST source, not the destination); anything else
+        # must be COUNTER_IDENT, i.e. `b` — upstream debug_asserts exactly that.
+        _wz_graft_internal!(z, into_option((result.mask & SELF_IDENT) > 0 ? a_anr : b_anr))
+        ALG_STATUS_ELEMENT
+    else
+        _wz_graft_internal!(z, nothing)
+        ALG_STATUS_NONE
+    end
 end
 
 # =====================================================================
@@ -1666,6 +1906,7 @@ export _wz_get_focus_anr, _wz_graft_internal!, _wz_remove_branches!
 export wz_graft!, wz_graft_map!
 export wz_join_into!, wz_join_map_into!
 export wz_meet_into!, wz_subtract_into!, wz_restrict!
+export wz_meet_2!, wz_graft_child_maps!, wz_graft_masked_branches!
 export wz_join_k_path_into!, wz_restricting!
 export wz_at_root, wz_reset!
 export wz_child_mask, wz_child_count, wz_val_count
