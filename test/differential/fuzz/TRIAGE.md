@@ -144,7 +144,22 @@ subtracting `{a:b, ab, ba}`, none of which is `bb`. We keep them. **We are on th
 this is the same prefix over-removal the bisect isolated (subtracting `ba` also kills the value at
 its prefix `b`).
 
-⚠️ Still NOT filed as an upstream defect: a bare `SETVAL` over a child does NOT destroy it
+### ✅ SOLVED — minimal reproducer found, FILED in `../UPSTREAM_BUGS.md`
+
+    A bb / S ab ba / ORIGIN b / OP JOINMAP / OP SUB 0
+    upstream  None    []        vc=0        <- removes a value at a PREFIX of a subtracted path
+    ours      Element [bb,bb]   vc=2        <- correct
+
+Found by bisecting the SOURCE in the join+sub setting, which is what the earlier hand-built probes
+never varied. It needs BOTH `ba` (the key sharing a first byte with the existing value-path) AND a
+second source key; every single-key source is correct, and so is the two-key source that omits `ba`.
+That is why six earlier hypotheses all "refuted" on shapes that were too small.
+
+Same rule as our own closed `_bn_psubtract_abstract` defect: a value is removed only when the source
+has a VALUE AT THE SAME PATH, never merely structure below it. Ours is fixed; upstream's is not, so
+we keep the value and the corpus scores it as over-retention. **We are on the correct side.**
+
+⚠️ Also refuted along the way: a bare `SETVAL` over a child does NOT destroy it
 (`A ab / ORIGIN a / OP SETVAL` -> `[a,ab]`, correct at widths 1-2 and at depth), so the "set_val
 wipes the subtrie" generalisation of the `graft_map` defect is REFUTED too. It needs the preceding
 structural op. SIX hypotheses are now dead; see the list above plus this one.

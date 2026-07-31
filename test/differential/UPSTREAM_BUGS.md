@@ -25,6 +25,59 @@ cd test/differential/rust_probe && cargo run --release --quiet --bin gen_fuzz --
 ---
 
 
+
+## `subtract_into` removes a value at a PREFIX of a subtracted path
+
+Found 2026-07-31 by shrinking fuzz case `00175`. **Silent over-removal.**
+
+### Minimal reproducer
+
+```
+A bb
+AROOTVAL 0
+S ab ba
+SROOTVAL 0
+ORIGIN b
+OP JOINMAP
+OP SUB 0
+```
+
+    upstream   Element;None;|[]       vc=0
+    ours       Element;Element;|[bb,bb] vc=2
+
+At origin `b` the target's subtrie holds a VALUE at path `b` (from key `bb`). Joining `S = {ab, ba}`
+adds paths `ab` and `ba`. Subtracting the same `S` must remove exactly those two and leave the value
+at `b` — `b` is a proper PREFIX of `ba`, and the rule (which upstream honours everywhere else) is that
+a value is removed only when the source has a VALUE AT THE SAME PATH, never merely structure below it.
+Upstream removes it.
+
+### Why it took a shrink to find, and what does NOT reproduce it
+
+Every simpler shape behaves CORRECTLY upstream, which is why hand-built probes kept missing it:
+
+    A bb / S ba        / SUB only                 Identity [bb]        value + strict extension: OK
+    A bb bc bd be bf / S ba / SUB only            Identity [bb,…]      node width alone: OK
+    A bb bba / S ba    / SUB only                 Element  [bb]        value + child below: OK
+    A bb bba / S ba    / literal, then SUB        Element  [bb]        OK
+    A bb / S ba        / JOINMAP + SUB            Element  [bb,bb]     ONE source key: OK
+    A bb / S a:b ab    / JOINMAP + SUB            Element  [bb,bb]     two keys, none is `ba`: OK
+    A bb / S ab ba     / JOINMAP + SUB            None     []          ← FAILS
+
+So it needs BOTH the `ba` key — the one sharing a first byte with the existing value-path — AND a
+second source key, which is what grows the post-join node past its small representation. Neither
+alone is enough, and the plain `SUB` path is correct at every width tried.
+
+### What we do
+
+We keep the value, which is what the operation specifies. Our own equivalent bug
+(`_bn_psubtract_abstract`, closed earlier in this corpus — "a value must be removed only when the
+source has a VALUE AT THE SAME PATH, never merely structure below it") was the same rule; ours is
+fixed and upstream's is not.
+
+⚠️ The `[bb,bb]` duplicate in both columns is a SEPARATE, SHARED upstream behaviour: after a join at a
+focus inside a multi-byte slot key, one value is reachable through two slot encodings. Both engines
+produce it identically — verified on three shapes — so it is not part of this defect and not ours.
+
 ## `graft_map` DESTROYS the subtrie it just grafted, when the source has a root value
 
 Found 2026-07-31 while running down fuzz case `00610`. **Silent data loss in a core operation.**
