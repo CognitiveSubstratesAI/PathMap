@@ -1083,6 +1083,94 @@ function wz_join_map_into!(z::WriteZipperCore{V, A}, map::PathMap{V, A}) where {
 end
 
 """
+    wz_descend_first_k_path!(z, k) -> Bool
+    wz_to_next_k_path!(z, k) -> Bool
+
+Port `ZipperIteration::descend_first_k_path` / `to_next_k_path` (zipper.rs:660/675) for the WRITE
+zipper. Upstream gets these free as TRAIT DEFAULTS over `ZipperMoving`; Julia has no trait defaults,
+so our port hand-writes them per type — this is the WriteZipperCore set, alongside the existing
+ProductZipper/ProductZipperG/EmptyZipper ones. The body is `k_path_default_internal` (zipper.rs:686).
+
+`to_next_k_path` returns false outright when the path is shorter than `k` — there is no common root
+`k` steps up to return to. On a false result the zipper is left back at that common root.
+"""
+wz_descend_first_k_path!(z::WriteZipperCore, k::Int)::Bool =
+    _wz_k_path_internal!(z, k, length(wz_path(z)))
+
+function wz_to_next_k_path!(z::WriteZipperCore, k::Int)::Bool
+    n = length(wz_path(z))
+    n >= k || return false
+    _wz_k_path_internal!(z, k, n - k)
+end
+
+function _wz_k_path_internal!(z::WriteZipperCore, k::Int, base_idx::Int)::Bool
+    while true
+        if length(wz_path(z)) < base_idx + k
+            while wz_descend_first_byte!(z)
+                length(wz_path(z)) == base_idx + k && return true
+            end
+        end
+        if wz_to_next_sibling_byte!(z)
+            length(wz_path(z)) == base_idx + k && return true
+            continue
+        end
+        while length(wz_path(z)) > base_idx
+            wz_ascend_byte!(z)
+            length(wz_path(z)) == base_idx && return false
+            wz_to_next_sibling_byte!(z) && break
+        end
+    end
+end
+
+"""
+    wz_meet_k_path_into!(z, byte_cnt, prune=false) -> Bool
+
+Ports `WriteZipperCore::meet_k_path_into` (write_zipper.rs:1778-1802) — intersect every subtrie
+reachable at depth `byte_cnt` below the focus, and replace the focus with that intersection. Returns
+whether anything survived.
+
+Upstream flags its own implementation: *"this is a provisional implementation with the wrong
+performance characteristics, but should have the right behavior"*. It takes each k-deep subtrie out
+with `take_map` and folds them with `meet`. Ported as written, including the early exit the moment
+the accumulator goes empty (an intersection cannot come back).
+
+`temp_map.meet(&other)` becomes `wz_meet_into!` on a zipper over the accumulator: upstream returns a
+new map, but the accumulator is a local we own, so meeting in place is the same value with one less
+allocation. The source's root value is threaded explicitly, as everywhere else our node-ref-based
+algebra meets upstream's zipper-based signatures.
+"""
+function wz_meet_k_path_into!(
+    z::WriteZipperCore{V, A}, byte_cnt::Int, prune::Bool=false
+) where {V, A}
+    _anr_of(m::PathMap{V, A}) =
+        m.root === nothing ? ANRNone{V, A}() : ANRBorrowedRc{V, A}(m.root)
+
+    temp_map = if wz_descend_first_k_path!(z, byte_cnt)
+        acc = something(wz_take_map!(z, false), PathMap{V, A}(nothing, nothing, z.alloc))
+        while wz_to_next_k_path!(z, byte_cnt)
+            if isempty(acc)
+                # an empty intersection stays empty — upstream ascends out and stops
+                wz_ascend!(z, byte_cnt)
+                break
+            end
+            other = something(wz_take_map!(z, false), PathMap{V, A}(nothing, nothing, z.alloc))
+            wz_meet_into!(write_zipper(acc), _anr_of(other), false, other.root_val)
+        end
+        acc
+    else
+        PathMap{V, A}(nothing, nothing, z.alloc)
+    end
+
+    if isempty(temp_map)
+        _wz_remove_branches!(z, prune)
+        false
+    else
+        wz_graft_map!(z, temp_map)
+        true
+    end
+end
+
+"""
     wz_meet_2!(z, a_anr, b_anr) -> AlgebraicStatus
 
 Meet TWO sources and store the result at the focus, ignoring whatever the focus currently holds.
@@ -1907,6 +1995,7 @@ export wz_graft!, wz_graft_map!
 export wz_join_into!, wz_join_map_into!
 export wz_meet_into!, wz_subtract_into!, wz_restrict!
 export wz_meet_2!, wz_graft_child_maps!, wz_graft_masked_branches!
+export wz_meet_k_path_into!, wz_descend_first_k_path!, wz_to_next_k_path!
 export wz_join_k_path_into!, wz_restricting!
 export wz_at_root, wz_reset!
 export wz_child_mask, wz_child_count, wz_val_count

@@ -185,4 +185,44 @@ _mask(bytes...) = foldl((a, b) -> P.ByteMask(a.bits .| P.ByteMask(UInt8(b)).bits
         @test g(dst3, "root:c:new_c") == 30
         @test P.val_count(dst3) == 4
     end
+
+    @testset "meet_k_path_into — upstream's own test1" begin
+        # write_zipper.rs:4040-4059 verbatim. k=4 selects the "abc:"/"def:" subtries below "123:";
+        # their intersection is {Bob, Sue}.
+        m = P.PathMap{Int}()
+        for k in ("123:abc:Bob", "123:abc:Jim", "123:abc:Pam", "123:abc:Sue",
+                  "123:def:Nan", "123:def:Mel", "123:def:Bob", "123:def:Sue")
+            P.set_val_at!(m, Vector{UInt8}(k), 1)
+        end
+        wz = P.write_zipper_at_path(m, Vector{UInt8}("123:"))
+        @test P.wz_meet_k_path_into!(wz, 4, true)
+        @test P.val_count(m) == 2
+        @test P.get_val_at(m, Vector{UInt8}("123:Bob")) == 1
+        @test P.get_val_at(m, Vector{UInt8}("123:Sue")) == 1
+
+        # a disjoint intersection empties the focus and reports false
+        m2 = P.PathMap{Int}()
+        for k in ("123:abc:Bob", "123:def:Nan"); P.set_val_at!(m2, Vector{UInt8}(k), 1); end
+        wz2 = P.write_zipper_at_path(m2, Vector{UInt8}("123:"))
+        @test !P.wz_meet_k_path_into!(wz2, 4, true)
+        @test P.val_count(m2) == 0
+    end
+
+    @testset "descend_first_k_path / to_next_k_path on the write zipper" begin
+        m = P.PathMap{Int}()
+        for k in ("ab", "ac", "bd"); P.set_val_at!(m, Vector{UInt8}(k), 1); end
+        z = P.write_zipper(m)
+        seen = String[]
+        if P.wz_descend_first_k_path!(z, 2)
+            push!(seen, String(copy(P.wz_path(z))))
+            while P.wz_to_next_k_path!(z, 2)
+                push!(seen, String(copy(P.wz_path(z))))
+            end
+        end
+        @test sort(seen) == ["ab", "ac", "bd"]
+        # exhausted -> back at the common root
+        @test isempty(P.wz_path(z))
+        # a path shorter than k has no common root k steps up
+        @test !P.wz_to_next_k_path!(P.write_zipper(m), 5)
+    end
 end

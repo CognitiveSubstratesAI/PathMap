@@ -49,6 +49,21 @@ end
 
 Creates a read-only zipper pre-positioned at `path`.
 """
+# ── `into_read_zipper` / `into_write_zipper` DELIBERATELY NOT PORTED ──────────────────────────────
+#
+# Upstream's `PathMap::into_read_zipper` (trie_map.rs:285) is one line —
+# `ReadZipperOwned::new_with_map(self, path)` — and `ReadZipperOwned` (zipper.rs:1181) is
+# `{ map: MaybeDangling<Box<PathMap>>, z: Box<ReadZipperCore<'static, 'static>> }`. Every field and
+# every comment on it is lifetime plumbing: a Box "fence" so the `&mut` borrows are provably gone
+# before `into_map` touches the map again, and a `'static` core so the type carries no lifetime
+# parameter. Upstream's own doc for the sibling says the point is "when you need to embed the zipper
+# in another struct without a lifetime parameter".
+#
+# Julia has no lifetime to erase. `read_zipper_at_path(m, path)` below already holds `m`, and the GC
+# keeps it alive for exactly as long as the zipper does — which is the guarantee `ReadZipperOwned`
+# is built to reconstruct. Porting it would add a wrapper type with no behaviour, the same call as
+# `new` and the other constructs the port-coverage sweep flags and a reader must filter out.
+
 function read_zipper_at_path(m::PathMap{V, A}, path::AbstractVector{UInt8}) where {V, A}
     _ensure_root!(m)
     root_rc = m.root::TrieNodeODRc{V, A}
