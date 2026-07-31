@@ -805,6 +805,11 @@ include("test_path_exists_at.jl")
 # from write_zipper.rs:5110-5206 and :5340-5429.
 include("test_graft_child_maps.jl")
 
+# The two UPSTREAM defects we deliberately do not reproduce, asserted by SEMANTICS rather than by the
+# fuzz ratchet — a ratchet records THAT cases differ, not WHY, and cannot tell "upstream is wrong"
+# from "we regressed".
+include("upstream_defects.jl")
+
 # Upstream differential ratchet (added 2026-07-27). PathMap previously had NO executable check
 # against upstream Rust — only local tests comparing PathMap to itself, which is how a
 # self-consistent wrong answer (path_exists_at on mid-edge prefixes) survived for months.
