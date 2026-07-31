@@ -1,4 +1,4 @@
-# Fuzz divergences — triage (34 of 3000 cases)
+# Fuzz divergences — triage (30 of 3000 cases)
 
 Regenerate with `test/differential/shrink.jl` (needs the rustup toolchain): it reduces each failing
 case to a 1–2 op reproducer and re-pins it against the upstream binary.
@@ -6,111 +6,126 @@ case to a 1–2 op reproducer and re-pins it against the upstream binary.
 **SHRINK FIRST, THEN ATTRIBUTE.** Case 00020's duplicate path was reported as our structural
 corruption; shrinking showed BOTH engines produce it.
 
-## Closed (34 → 5)
+---
 
-| root cause | cases | commit |
+## 🔴 2026-07-31 — EVERY CASE SHRUNK AND ATTRIBUTED. The previous triage was wrong in a way worth reading.
+
+**All 34 remaining cases were shrunk to minimal reproducers and attributed individually.** Three
+turned out to be OURS. They are now fixed; 34 → 30.
+
+| case | was recorded as | actually |
 |---|---|---|
-| null-sentinel contract only one method wide (all 7 crashes) | 7 | `18647bb` |
-| `set_val_at!(m,"",v)` materialised a spurious root node | 6 | `18647bb` |
-| `wz_take_focus!` was read-then-clear, not upstream's two-branch `take_node_at_key` | 3 | this commit |
-| `join_map_into` early return tested emptiness; upstream tests only `is_none()` | 4 | this commit |
-| **`set_payload_abstract!` child arm forwarded `created_subnode` instead of hardcoding `true`** | **10** | this commit |
+| `01773` | "status only, `Identity` vs `Element`, dumps identical — the lowest-severity class" | **`meet` performed NO intersection.** `{aa,b,baa} ∩ {a,b}` returned `{aa,b,baa}` |
+| `02038` | inside the 27-case "over-retention" class | **`set_val` wrote at the ORIGIN instead of the focus** after a pruning `take_map` |
+| `02979` | inside the "status-only" class | same root cause as `02038`, surfacing as a wrong `ascend` flag |
 
-That last one is the lesson of the batch: a ONE-WORD asymmetry inside a single function closed ten
-divergences. Our value arm hardcoded `true` (matching upstream), the child arm forwarded the
-recursive call's flag. We reach that code only via `split_0`, which by definition just created a
-subnode at THIS level — so under-reporting made `_wz_graft_internal!` skip its
-`mend_root!`/`descend_to_internal!`, leaving the zipper pointing at the parent while the split had
-moved the value into the new child.
+### What went wrong with the reasoning, because the shape of the error is the reusable part
 
-## ⬆️ UPSTREAM UPDATED 2026-07-31 — vendored PathMap `f1279a0` → `52fd9df`, and it exposed 3 OF OUR BUGS
+The corpus was classified by comparing `vc=` counts, and the class where WE have more atoms was
+labelled OVER-RETENTION and reasoned about as a block: *upstream loses data, so we are on the correct
+side.* That produced the headline **"there are no data-loss divergences left"**, which was false when
+it was written. Four compounding mistakes:
 
-22 commits pulled, several landing in exactly the area our two filed defects sit in
-(`Fix nth_child_from_key when a value and a child share a key`, `Fix node_remove_val leaving a second
-child under an existing key`, `line-list-node-graft-fixes`, `Guard line-list node layout`).
+1. **The class was never established per case.** "Attributed to the two upstream defects" meant two
+   cases had been minimised and the rest shared an op name. `01773`'s minimal reproducer is a single
+   `MEET` returning its input unchanged — nothing to do with either filed defect.
+2. **A benign FULL case can hide a severe MINIMAL one.** `01773`'s full script ends with ops that
+   make both dumps converge, so it presented as status-only. The wrong answer is only visible after
+   shrinking. **Severity must be read off the minimal reproducer, never the corpus entry.**
+3. **The classifier had a bug that hid the one FEWER case.** It matched the first `vc=` in the line,
+   which for any script containing a `TAKEMAP` is the taken map's count, not the final dump's. `02038`
+   — the only case where we have FEWER atoms than upstream, the unambiguously-ours class — was
+   therefore filed as "same count, different paths". A triage tool needs the same scrutiny as the
+   code it triages.
+4. **"More atoms" was read as "upstream deleted something".** It equally means WE failed to delete
+   something. `meet` is a shrinking operation; over-retention there is a wrong answer, not a virtue.
 
-**Both of our filed defects STILL REPRODUCE at the new HEAD** — re-verified before reporting:
+### The fixes
 
-    A a b bbba / S bbba / SUB 1        -> [a]        `b` still dropped   (subtract prefix defect)
-    A ::b / S bb:: +rootval / GRAFTMAP -> [::,::b]   source content gone (graft_map defect)
+| cause | fix | cases |
+|---|---|---|
+| upstream `2683d7c` "Fix composite meet/join operand selection in DenseByteNode" **never ported** — `node_get_payloads` treated an exact value-only request as exhaustive even when the same CoFree held an unrequested onward link, so an intersection returned `Identity` and left the input alone | port both hunks | `01773` |
+| **ours**: `_wz_prune_path_internal!` moved the cursor. Upstream's own docstring says *"If `should_ascend` is `false`, then this method does not move the zipper"* (write_zipper.rs:2333) and all FIVE of its call sites pass `false`; we implemented the spine walk with a real `wz_ascend!`, which `resize!`s `prefix_buf`, so the next write landed at the wrong path | add `should_ascend=false`, snapshot/restore `prefix_buf` | `01359` `02038` `02979` |
 
-**Ground truth regenerated. Only 3 of 3000 upstream answers changed — and all 3 are upstream FIXES,
-so all 3 are now OUR divergences.** 33 → 36. Nothing previously divergent resolved.
+⚠️ `01359` is the caution about shrinking: its MINIMAL reproducer is a graft (the upstream family),
+but the FULL corpus case contains a pruning `TAKEMAP` and was fixed by the cursor fix. **The shrinker
+finds *a* minimal diverging program, not necessarily one with the original's root cause.** When a case
+has two independent causes it may land on either. Attribute the minimal case; re-check the full one.
 
-| case | ours | upstream (now fixed) | class |
+**A vendor update is not done when it compiles.** `2683d7c` arrived in the `f1279a0 → 52fd9df` range
+we pulled the same day, alongside three enumeration fixes we did port. The range was never swept for
+fix-bearing commits. It has now been, exhaustively:
+
+| upstream commit | status |
+|---|---|
+| `987bebf`, `5f7fa2a`, `02afb73` | ✅ ported (`e42e3e0`) |
+| `2683d7c` composite meet/join operand selection | ✅ ported (this batch) — was causing `01773` |
+| `c3fc955` `PrefixZipper::descend_until` return value | ✅ ported (this batch) — no fuzz case covers it, found by the sweep |
+| `0c38d2f` Rust compile-time layout assert | N/A in Julia |
+| `a8dce58` malformed serialized offsets | N/A — `experimental/serialization.rs` is not ported |
+| the other 16 | perf, tests, comments, warnings |
+
+`c3fc955` is the argument for sweeping rather than waiting for the fuzzer: nothing in the corpus
+exercises `PrefixZipper`, so it would never have surfaced.
+
+---
+
+## THE REMAINING 30 — all UPSTREAM, each attributed to a minimal reproducer
+
+| n | cause | we are |
+|---|---|---|
+| **25** | an **ambiguous LineListNode is built silently, then clobbered when it overflows to dense** | correct |
+| **5** | `subtract_into` removes a value at a **PREFIX** of a subtracted path | correct |
+| 0 | ours | — |
+
+### The 25 — and why the obvious explanation is wrong
+
+Established by controlled experiment: take each of the 26 minimal reproducers, disable every
+`set_val` at the focus (drop the explicit `SETVAL`; clear `SROOTVAL` so `graft_map`'s and
+`join_map_into`'s internal `set_val(src_root_val)` cannot fire), and re-run both engines.
+
+    set_val DISABLED  ->  the engines agree byte for byte, 26 of 26
+    set_val ENABLED   ->  all 26 diverge, upstream losing the grafted content
+
+That is one controlled variable over 26 independent cases, and it supports the tempting conclusion
+**"`set_val` discards the immediately preceding op"** — which is WRONG. Two upstream defects cooperate:
+
+* **CREATION** — `set_payload_abstract`'s branch that clears a colliding slot before installing a
+  child is guarded on `is_child_ptr::<0>()` (line_list_node.rs:977). When the colliding slot holds a
+  VALUE at a longer key the guard fails, the graft is parked in the free slot, and the node becomes
+  `slot0 = child at K`, `slot1 = payload at K…` — the exact shape upstream's own `validate_node`
+  calls an *"ambiguous path violation"* and panics on (:2784). Nothing on this path calls
+  `validate_node`, so it is built silently and still enumerates correctly.
+* **DETONATION** — the next op needing a third payload overflows the node through
+  `convert_to_dense` (:1086), which transplants both slots with `set_child` keyed on the FIRST BYTE
+  only (:1101, :1121). Both keys share that byte, and `set_child` on an occupied byte is `swap_rec`
+  — a clobber whose returned old child is dropped.
+
+`set_val` is merely the cheapest way to force the overflow. Four discriminators, each predicted from
+the source BEFORE running and all four confirmed on both engines (`test/upstream_defects.jl` pins
+them):
+
+| probe | ours | upstream | |
 |---|---|---|---|
-| `01959` | **`[] vc=3`** | `[::ba,:b] vc=3` | 🔴 **we enumerate ZERO paths while val_count says 3** |
-| `02004` | `[abb] vc=4` | `[aab:a,aaba:aa,aabb,abb] vc=4` | 🔴 **we enumerate 1 of 4** |
-| `01773` | `Identity` | `Element` | status only; dumps identical |
+| graft + `SETVAL` | `[:,::aa,:ab::]` | `[:,::aa]` | loss |
+| graft + `REMOVEVAL` + `SETVAL` | `[:,::aa,:ab::]` | `[:,::aa]` | **still loses** — kills "the preceding op" |
+| parent already **dense** | `[:,:ab::,b,c]` | *identical* | **no loss** |
+| **slot_1 free** | `[:,:ab::]` | *identical* | **no loss** |
 
-✅ **`01959` and `02004` FIXED — ported upstream `02afb73`. 36 → 34.** `01959` went from 0 paths
-enumerated to 3, `02004` from 1 to 4. `01773` (status only, `Identity` vs `Element`, dumps identical)
-remains and is the lowest-severity class in the corpus.
+**We win these for a structural reason, not by luck.** Our `_convert_to_dense!` goes through
+`merge_from_list_node!` → `_bn_join_child_into!`, the JOINING transplant. Upstream's
+`convert_to_dense` cannot call its own `join_child_into`: that method requires `V: Lattice` and the
+impl block at line_list_node.rs:576 does not carry the bound. This is an **undocumented deviation of
+ours that happens to be correct** — do not "restore parity" by making our transplant clobber.
 
-**The single line that mattered**: `node_remove_val!`'s slot-1 branch swapped the removed value for
-an empty sentinel child UNCONDITIONALLY, where slot 0 already guarded on whether the other slot keeps
-the path. If it does, the node ends up with TWO CHILDREN UNDER ONE KEY — not a valid LineListNode —
-and every walk over it is truncated. `graft_map` with a root-value-less source runs
-`remove_val(false)` immediately after planting the child, so the other slot is exactly where the
-fresh child sits; this fired constantly and was invisible.
+### Also found, SHARED, so the fuzzer cannot see it
 
-Also ported, though neither moved these two cases (both are real upstream fixes for real shapes):
-`987bebf` (`nth_child_from_key` when a value and a child share a key — a child in slot 0 was reported
-as "no child", so index-descent left the focus in the parent) and `5f7fa2a`
-(`zipper_descend_first_byte!` descending into a SIBLING when the focus is on a non-existent path,
-because `iter_token_for_path` is a lower-bound cursor).
+After `graft_map` at a focus landing mid-node-key, the pre-existing path below the focus SURVIVES on
+**both** engines (`::aa` survives a graft at `:`), contradicting `graft`'s own doc comment at
+write_zipper.rs:76-80. We ported it faithfully, so it never shows as a divergence. It is real and it
+is not in any report yet.
 
-🔴 THE ORIGINAL FINDING, kept because the lesson outlives the fix — DATA INVISIBILITY.
-The atoms are present and counted, but path enumeration cannot reach them. Every previous class was
-over-retention (we keep too much, upstream loses data); this is the reverse and it is ours. An
-internally inconsistent dump — paths enumerated < `vc` — is the signature; note `01959` shows it
-starkly at 0 vs 3.
-
-The fix is to port upstream's three enumeration commits: `987bebf` (nth_child_from_key when a value
-and a child SHARE A KEY), `5f7fa2a` (ReadZipper::descend_first_byte descending a byte that does not
-exist when the focus is already off-path), `02afb73` (node_remove_val leaving a second child).
-
-⚠️ These are HIGHER PRIORITY than the remaining 33: those are attributed to upstream defects where we
-are on the correct side, whereas these lose visibility of data we are storing.
-
-## ✅ CLOSED 2026-07-31 — `00174` and the whole constructor-descend family: **75 → 33** (42 cases)
-
-**The fix is one line**: `write_zipper_at_path` now calls `_wz_mend_root!` where it used to call
-`_wz_descend_to_internal!`. Measured before/after on the same 3000-case corpus with the same
-harness — 75 divergences → 33, **42 closed, 0 newly broken**, 0 errors. The full PathMap suite
-passes, including the 6 tests the earlier attempt broke.
-
-**Why the earlier attempt failed and this one does not.** Deleting the descend was right about the
-cause and wrong about the remedy: the origin path still has to be absorbed somewhere. Upstream
-absorbs it into `root_key_start` (advancing it and RE-POINTING the stack root), not into a descent.
-So the correct change is a SUBSTITUTION, not a deletion — which is why over-removal
-(`[ab,bb:] vc=2`) disappears.
-
-That also explains the size of the win. The old note projected ~11 cases (the 9 RESET-family plus
-`00174`/`00177`); the actual figure is 42, because the disabled `mend_root` affected every zipper
-built at a path, not only the ones whose scripts contained a `RESET`.
-
-The analysis below is retained — it is correct, and it is what located the cause.
-
-## THE REMAINING 33, RE-CLASSIFIED 2026-07-31 (the old grouping is stale)
-
-The 42 closures changed which shapes dominate, so the op-shape table further down no longer
-describes the corpus. Re-run after the fix:
-
-| class | n | meaning |
-|---|---|---|
-| **MORE** | **27** | we retain atoms upstream removes — OVER-RETENTION |
-| STATUS-ONLY | 3 | identical dumps, different `AlgebraicStatus` |
-| SAME-COUNT-DIFF | 3 | same `vc`, different paths |
-| ~~FEWER~~ | **0** | **the data-loss class is EMPTY** |
-
-**That is the headline: there are no data-loss divergences left.** Every remaining case has us
-keeping too much or reporting the wrong status, never dropping an atom. The constructor-descend fix
-closed the entire "fewer atoms" class.
-
-Op shapes are now almost all singletons (only `JOINMAP SUB` ×3 repeats; just 5 of 33 involve
-`RESET`, against 9 of 15 before). Grouping by op shape is no longer informative — group by class.
-Among the 27 MORE cases, `GRAFTMAP` appears in 14, `SETVAL` in 12, `JOINMAP` in 10.
+---
 
 ### ✅ `00610` SOLVED 2026-07-31 — it is an UPSTREAM defect, and we are on the right side
 

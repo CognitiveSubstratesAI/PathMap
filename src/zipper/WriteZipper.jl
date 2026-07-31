@@ -1720,11 +1720,51 @@ function wz_prune_path!(z::WriteZipperCore{V, A}) where {V, A}
 end
 
 """
-    _wz_prune_path_internal!(z) → Int
+    _wz_prune_path_internal!(z, should_ascend=false) → Int
 
-Ascend and remove empty ancestor nodes.  Internal; mirrors `prune_path_internal`.
+Remove empty ancestor nodes.  Internal; mirrors `prune_path_internal` (write_zipper.rs:2337).
+
+🔴 **PRUNING MUST NOT MOVE THE CURSOR** unless `should_ascend` — and NO caller passes true, here or
+upstream. This is not a stylistic detail; it was a real defect, fixed 2026-07-31.
+
+Upstream says so in the function's own docstring (write_zipper.rs:2333): *"If `should_ascend` is
+`false`, then this method does not move the zipper"*. It walks the dangling spine over a **local
+copy** of the path (`temp_path`, :2350, annotated "leaving the path buffer alone") and truncates the
+live `key.prefix_buf` ONLY inside `if should_ascend` (:2434). All FIVE of its call sites pass `false`
+(:1415, :2099, :2158, :2185, :2219), so upstream's cursor is *never* shortened by a prune. The one
+cursor-moving variant, `prune_ascend` (:2193), does it EXPLICITLY —
+`let bytes = self.prune_path(); self.ascend(bytes);` — which is the proof that the implicit move was
+never intended.
+
+Ours implemented the same walk with a real `wz_ascend!(z, 1)`, which `resize!`s `prefix_buf` (:427).
+The cursor was therefore left at the pruned-back position, and the NEXT write went to the wrong path:
+
+    ORIGIN "::" / DESCEND "::a" / JOINMAP / TAKEMAP 1 / SETVAL
+      ours before   |[::,     :a,:ab,ba]     <- the value landed at the ORIGIN
+      upstream      |[::::a,  :a,:ab,ba]     <- and belongs at the focus
+
+It hid because the prune has to actually *fire* to do damage: `wz_take_focus!` returns early when
+the path does not exist (:1681), so the same script without the preceding JOINMAP — which is what
+materialises "::::a" — agrees with upstream. Three fuzz cases: 01359, 02038, 02979.
+
+`focus_stack`/`prefix_idx` stay popped, which IS upstream's end state (it pops the node stack at
+:2380-2381 while the path buffer stays long). Only `prefix_buf` is restored.
+
+Do NOT "fix" `wz_ascend!` instead — it is a faithful port of write_zipper.rs:1036 and the
+`ascend/*` and `prefix/*` tests pin it.
+
+⚠️ OPEN, UNVERIFIED: we call this from SEVEN sites (651, 1400, 1416, 1674, 1718, 1806, 1840) against
+upstream's five. The extras are `wz_remove_branches!` and `wz_remove_unmasked_branches!`; whether
+upstream prunes there at all has not been checked. Recorded rather than silently assumed equivalent.
 """
-function _wz_prune_path_internal!(z::WriteZipperCore{V, A}) where {V, A}
+function _wz_prune_path_internal!(z::WriteZipperCore{V, A},
+                                  should_ascend::Bool = false) where {V, A}
+    # The loop only ever SHORTENS prefix_buf, so snapshotting it is enough to undo the movement.
+    # Snapshot LAZILY — taken only just before the first cursor move. Most calls prune nothing and
+    # break out of the loop immediately, and upstream allocates nothing at all here (it re-slices),
+    # so an eager `copy` would put an allocation on a hot path that previously had none.
+    saved = UInt8[]
+    snapped = false
     pruned = 0
     while true
         inner = z.focus_stack[end].node
@@ -1732,6 +1772,10 @@ function _wz_prune_path_internal!(z::WriteZipperCore{V, A}) where {V, A}
         is_empty = (inner === nothing) || node_is_empty(inner)
         is_empty || break
         wz_at_root(z) && break
+        if !should_ascend && !snapped
+            saved = copy(z.prefix_buf)   # first cursor move only — see the note above
+            snapped = true
+        end
         old_len = length(z.prefix_buf)
         wz_ascend!(z, 1) || break
         nk = collect(_wz_node_key(z))
@@ -1742,6 +1786,13 @@ function _wz_prune_path_internal!(z::WriteZipperCore{V, A}) where {V, A}
         pruned += old_len - length(z.prefix_buf)
         parent_empty = (parent_inner === nothing) || node_is_empty(parent_inner)
         (parent_empty && !wz_is_val(z)) || break
+    end
+    # Put the cursor back. `pruned` was accumulated inside the loop from the in-loop truncation
+    # delta, so it still reports the same byte count upstream does (`path_buf.len() - temp_path.len()`,
+    # write_zipper.rs:2431) and callers such as a future `prune_ascend` port keep working.
+    if snapped && length(z.prefix_buf) < length(saved)
+        resize!(z.prefix_buf, length(saved))
+        copyto!(z.prefix_buf, saved)
     end
     pruned
 end

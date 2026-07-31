@@ -77,114 +77,73 @@ shared upstream behaviour — after a join at a focus inside a multi-byte slot k
 reachable through two slot encodings — verified identical on both engines. It is not part of this
 defect and not ours.
 
-## `graft_map` DESTROYS the subtrie it just grafted, when the source has a root value
+## An ambiguous `LineListNode` is built silently, then clobbered when it overflows to dense
 
-Found 2026-07-31 while running down fuzz case `00610`. **Silent data loss in a core operation.**
+Found 2026-07-31 running down fuzz `00610`; **root cause corrected 2026-07-31** after every remaining
+divergence was shrunk. **Silent data loss in a core operation — 25 of our 30 remaining divergences.**
 
-`graft_map` (write_zipper.rs:1464) is three steps:
+Full write-up, with the step-by-step mechanism and a two-op Rust reproducer against the public API,
+in `upstream_reports/pathmap-2.md`. In short, two upstream defects cooperate:
 
-```rust
-let (src_root_node, src_root_val) = map.into_root();
-self.graft_internal(src_root_node);
-#[cfg(feature = "graft_root_vals")]                       // DEFAULT feature
-let _ = match src_root_val {
-    Some(src_val) => self.set_val(src_val),
-    None          => self.remove_val(false)
-};
-```
+* **CREATION** — `graft_internal` at a non-root focus calls `node_set_branch`. When the focus node is
+  a `LineListNode` whose *other* slot holds a longer key with the same first byte,
+  `set_payload_abstract`'s slot-clearing shortcut (line_list_node.rs:977) does not fire — it is
+  guarded on `is_child_ptr::<0>()` and that slot holds a VALUE. The graft is parked in the free slot
+  and the node becomes `slot0 = child at K`, `slot1 = payload at K…`, which upstream's own
+  `validate_node` calls an *"ambiguous path violation"* and panics on (:2784). Nothing on this path
+  calls `validate_node`, so it is created silently and still enumerates correctly.
+* **DETONATION** — the next op needing a third payload overflows the node through `convert_to_dense`
+  (:1086), which transplants both slots with `set_child` keyed on the FIRST BYTE only (:1101, :1121).
+  Both keys share that byte and `set_child` on an occupied byte is `swap_rec` — a clobber whose
+  returned old child is discarded.
 
-The trailing `set_val` lands in the same slot the `graft_internal` branch was just written to and
-replaces it, so **the entire grafted subtrie disappears**. Only when the source map carries a root
-value — otherwise `remove_val` runs instead and the graft survives.
+### ⚠️ THIS FILE PREVIOUSLY RECORDED TWO ENTRIES HERE, BOTH WITH THE WRONG MECHANISM
 
-### Settled by a controlled experiment against the release binary
+They are replaced by the one above. Kept visible rather than quietly deleted, because the way they
+were wrong is the reusable part:
 
-Three scripts through `gen_fuzz --exec`, differing only where marked:
+* *"`graft_map`'s trailing `set_val` lands in the slot `graft_internal` just wrote and replaces it"* —
+  no. `set_val` cannot overwrite a child slot: `get_payload_exact_key_mut::<IS_CHILD>`
+  (line_list_node.rs:516-530) type-checks the slot first.
+* *"`set_val` after `insert_prefix` at a mid-edge focus destroys the inserted subtrie"* — the same
+  defect seen through a different caller, not a second bug.
+* A later generalisation, *"`set_val` at the focus discards the immediately preceding op"*, fit all
+  26 cases AND a controlled experiment (disable every `set_val` and the engines agree 26/26) — and
+  was still wrong.
 
-| script | source root value | upstream result |
-|---|---|---|
-| `A ::b / S bb:: / ORIGIN ::` | **yes** | `[::,::b]` — S's `bb::` is **GONE** |
-| same, `SROOTVAL 0` | **no** | `[::b,::bb::]` — S's content **present** |
-| `A :b / S bb:: / ORIGIN :` | **yes** | `[:,:b]` — gone again |
+All three were arrived at by generalising from which ops appeared next to each other. What settled it
+was **predicting outcomes from the Rust source and then running them**, including cases predicted to
+AGREE:
 
-Row 2 is the control that isolates it: with the root value removed and nothing else changed, the
-graft survives. Row 3 rules out the obvious alternative — it is NOT about multi-byte node keys, which
-was the standing hypothesis for this family and is hereby retired.
-
-### What we do
-
-We keep both the grafted subtrie and the root value, which is what the operation says it does. That
-puts this file's rule in play — *reproducing silent data loss is worse than deviating* — and this is
-a clear instance: a caller asked for a subtrie to be planted and upstream drops it on the floor.
-
-Our fuzz corpus therefore reports these as "we have MORE atoms than upstream", and that is the
-correct side to be on. **13 of the 27 remaining over-retention cases** have a source carrying both a
-root value and content together with a source-consuming op (`00111 00607 00610 01137 01449 02234
-02280 02307 02338 02596 02665 02703 02877`) — consistent with this cause, though only `00610` has
-been reduced and confirmed individually. The other 12 have no source root value at all and need a
-separate explanation.
-
-## 1. `set_val` after `insert_prefix` at a MID-EDGE focus silently DESTROYS the inserted subtrie
-
-**Status:** deviation approved 2026-07-28. Fuzz case `00041`.
-
-**What upstream does.** `insert_prefix` succeeds and returns `true`. A dump confirms the inserted
-subtrie is in the map. Then a `set_val` **at that same focus** makes it vanish — and the write
-touched a different slot (the focus VALUE), not the subtrie.
-
-```
-map {ab}, write_zipper_at_path("a"), insert_prefix("x")        -> [ab, axb]     ret true
-   ... then set_val(())                                        -> [a, ab]       ← axb GONE
-```
-
-**Why we call it a bug rather than a contract.** Two reads of the same map disagree depending on an
-intervening, unrelated write. `insert_prefix` reported success and its effect was observable, then
-was silently discarded. There is no return value or error signalling the loss.
-
-**It is specifically `set_val`, and specifically a mid-edge focus** — established by probing every
-other operation in that position, all of which PRESERVE the insert on both engines:
-
-| after `insert_prefix` at a mid-edge focus | upstream | ours |
-|---|---|---|
-| `remove_val` / `descend_to` / `reset` / `ascend` / a second `insert_prefix` | preserved | preserved (agree) |
-| **`set_val`** | **subtrie destroyed** | preserved ← **our deviation** |
-| `set_val` at a BRANCHING focus (not mid-edge) | preserved | preserved (agree) |
-
-**Our behaviour.** The inserted subtrie survives. We keep the data.
-
-**What would change this.** A consumer that depends on the destructive behaviour (none found — the
-only MORK caller of these APIs is HeadSink, which does not use `insert_prefix`), or upstream
-declaring it intentional.
-
-### 1b. The same bug reached through `join_map_into` and `graft_map` — fuzz `00119`, `00111`
-
-**Status:** classified 2026-07-28 by execution. Same deviation, same reasoning; recorded here so
-they are not re-investigated as separate defects.
-
-`insert_prefix` is not special — ANY structural write at a mid-edge focus followed by `set_val`
-loses the structural change. A one-factor-at-a-time probe series, every value pinned against the
-binary:
-
-| probe | upstream | ours | reading |
+| probe | ours | upstream | |
 |---|---|---|---|
-| join only, mid-edge origin `:` | `[::,::,::aa,:ab,:ba] vc=5` | identical | fine |
-| **join + `SETVAL`** (`00119`) | `[:,::] vc=2` — joined content GONE | `…vc=5`, preserved | **the bug** |
-| join + `SETVAL`, origin at the ROOT | `[::,:aa,ab,ba] vc=5` | identical | not mid-edge ⇒ safe |
-| join + `SETVAL`, origin at a FULL KEY | `[::,:::aa,::ab,::ba] vc=4` | identical | node boundary ⇒ safe |
-| join + **`REMOVEVAL`** | content preserved | identical | it is `set_val` specifically |
-| **`graft_map`, source HAS a root value** (`00111`) | `:abb:` dropped | preserved | **the bug** |
-| `graft_map`, source has NO root value | `[:a,:a,:abb:] vc=4` | identical | no internal `set_val` fires |
+| graft + `set_val` | `[:,::aa,:ab::]` | `[:,::aa]` | loss |
+| graft + `remove_val` + `set_val` | `[:,::aa,:ab::]` | `[:,::aa]` | **still loses** — kills "the preceding op" |
+| graft + `set_val`, parent already dense | `[:,:ab::,b,c]` | *identical* | **no loss** |
+| graft + `set_val`, slot_1 free | `[:,:ab::]` | *identical* | **no loss** |
 
-The graft rows are the informative ones: `graft_map` takes no `set_val` op from the caller, but
-under `graft_root_vals` it calls `self.set_val(src_val)` ITSELF when the source has a root value
-(write_zipper.rs:1471). So the destructive path is entered from inside the graft — which is why
-`00111` looked like "upstream drops grafted content" until the source-root-value factor was
-isolated.
+Four predicted, four matched. The two that AGREE carry the information: a hypothesis that only ever
+predicts disagreement cannot be falsified by a corpus of disagreements.
 
-**Net:** we agree with upstream on every probe in that table EXCEPT the two where upstream destroys
-data. We keep the data in all of them.
+### What we do — and it is NOT luck
 
----
+We keep the grafted subtrie, so the corpus reports these as "we have MORE atoms than upstream".
+
+The reason we survive is structural: our `_convert_to_dense!` (LineListNode.jl) routes through
+`merge_from_list_node!` → `_bn_join_child_into!`, the **joining** transplant. Upstream's
+`convert_to_dense` cannot call its own `join_child_into`/`merge_from_list_node` — they require
+`V: Lattice` and the impl block at line_list_node.rs:576 does not carry the bound.
+
+🔴 That makes it an **UNDOCUMENTED DEVIATION of ours that happens to be correct**. Recorded here so
+that nobody "restores parity" by making our transplant clobber too. If upstream fixes this by adding
+the bound, our version already matches.
+
+### Separately, SHARED, and therefore invisible to the fuzzer
+
+After `graft_map` at a focus landing mid-node-key, the pre-existing path below the focus SURVIVES on
+**both** engines — `::aa` survives a graft at `:` — contradicting `graft`'s own doc comment
+(write_zipper.rs:76-80, "replaces the trie below the zipper's focus"). We ported it faithfully, so it
+never shows up as a divergence. Suggested fix (1) in the report removes it as a side effect.
 
 ## 2. Duplicate paths enumerated from a single map — OBSERVED, not yet characterised
 

@@ -424,7 +424,12 @@ function _cf_combine_results(
         if new_mask > 0
             return (new_mask, nothing, nothing)  # caller uses original
         else
-            return (UInt64(0), nothing, deepcopy(a.val))
+            # SELECT THE OPERAND BY THE MASK, do not assume `a`. Identity(mask) says the result
+            # equals SELF, or COUNTER, or both; when the mask has been cleared down to 0 above, the
+            # surviving side is whichever bit was set BEFORE clearing. Copying `a.val`
+            # unconditionally assembles the result from the wrong operand whenever only COUNTER_IDENT
+            # held. Upstream `2683d7c`, dense_byte_node.rs:1914.
+            return (UInt64(0), nothing, deepcopy((vm & SELF_IDENT) != 0 ? a.val : b.val))
         end
     end
 
@@ -436,7 +441,10 @@ function _cf_combine_results(
         if new_mask > 0
             return (new_mask, nothing, nothing)  # caller uses original
         else
-            return (UInt64(0), deepcopy(a.rec), nothing)
+            # Same operand-selection fix as the val branch above (upstream `2683d7c`,
+            # dense_byte_node.rs:1928) — mirrored here because the two branches are symmetric and
+            # fixing only one would leave the rec half assembling from the wrong child.
+            return (UInt64(0), deepcopy((rm & SELF_IDENT) != 0 ? a.rec : b.rec), nothing)
         end
     end
 
@@ -1167,6 +1175,17 @@ function node_get_payloads(
         requested_mask = unset(requested_mask, byte)
         cf = _bn_get(n, byte)
         cf === nothing && continue
+
+        # An exact value-only request does NOT enumerate an onward link stored in the same CoFree,
+        # so the enumeration is not exhaustive and the caller must not treat its answer as covering
+        # this node. The stashed-val fast path above `continue`s, so we only reach here when that
+        # link was not requested separately. Upstream `2683d7c` — omitting this is what let a
+        # left-only chain survive an intersection: `{aa,b,baa} ∩ {a,b}` returned `{aa,b,baa}`
+        # (Identity) instead of `{b}`, because the request for `b`'s VALUE looked exhaustive while
+        # `b`'s child `aa` went unexamined. dense_byte_node.rs:698.
+        if length(key) == 1 && expect_val && cf.rec !== nothing
+            unrequested_cofree_half = true
+        end
 
         # Fill child result for rec requests
         if length(key) > 1 || !expect_val

@@ -284,15 +284,21 @@ pz_descend_first_byte!(pz::PrefixZipper) = pz_descend_indexed_byte!(pz, 0)
 
 function pz_descend_until!(pz::PrefixZipper)
     _pos_is_invalid(pz.position) && return false
-    # Jump through remaining prefix bytes
+    # Jump through remaining prefix bytes.
+    # CONSUMING THE PREFIX REMAINDER IS ITSELF A MOVEMENT, so it must be reflected in the return
+    # value even when the source zipper cannot descend any further — otherwise a caller that loops
+    # `while descend_until()` stops one step early and never sees the prefixed position.
+    # Upstream `c3fc955`, prefix_zipper.rs:437.
+    descended_prefix = false
     if !_pos_is_source(pz.position)
         depth = _pos_prefixed_depth(pz.position)::Int
         rem = view(pz.prefix, (pz.origin_depth + depth + 1):length(pz.prefix))
         append!(pz.path, rem)
         pz.position = PrefixPos_source()
+        descended_prefix = true
     end
     len_before = length(zipper_path(pz.source))
-    zipper_descend_until!(pz.source) || return false
+    zipper_descend_until!(pz.source) || return descended_prefix
     sp = zipper_path(pz.source)
     append!(pz.path, sp[(len_before + 1):end])
     true
