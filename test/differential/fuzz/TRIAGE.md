@@ -85,6 +85,45 @@ rebuild this hypothesis.
 source-consuming op, consistent with this cause; only `00610` has been individually reduced. The
 other **12 have no source root value at all** and remain unexplained — that is the next question.
 
+### `00175` and the OTHER 12 — reduced to SUB, semantic not structural, minimal case NOT yet found
+
+The 12 over-retention cases with NO source root value are not explained by the `graft_map` defect
+above. `00175` (`JOINMAP | SUB 0`) is the simplest and was reduced with 8 discriminating runs against
+the release binary (`gen_fuzz --exec`). What is ESTABLISHED:
+
+1. **Both ops agree in ISOLATION.** `JOINMAP` alone: ours == upstream, `vc=8`, identical dumps.
+   `SUB` alone: ours == upstream, `vc=5`, `Identity`. Only the SEQUENCE diverges (upstream 4, ours 5).
+2. **It is NOT structural.** Rebuilding the post-join content from LITERAL keys and running the same
+   SUB diverges identically (`vc=4` both ways). So the join does not leave a different trie shape —
+   the difference is in SUB's semantics on that content.
+3. **Bisect isolates one source key.** Removing `ba` from `S = {a:b, ab, ba}` makes `bb` AND `bba`
+   survive (`vc=4`). Removing any single A key does not. So subtracting the path `ba` is what also
+   removes the value at `b` — its proper PREFIX.
+
+That is the same defect class as our own `_bn_psubtract_abstract` bug (closed earlier in this file):
+*a value must be removed only when the source has a VALUE AT THE SAME PATH, never merely structure
+below it.* Ours is fixed; upstream's answer here looks like that bug unfixed.
+
+⚠️ **BUT THE MINIMAL CASE DOES NOT REPRODUCE, so this is NOT yet a filed defect.** Every reduced
+shape behaves CORRECTLY upstream:
+
+    A bb          / S ba   ORIGIN b   ->  Identity [bb]              value + strict extension: OK
+    A bb bc       / S ba              ->  Identity [bb,bc]           width 2: OK
+    A bb bc bd    / S ba              ->  Identity [bb,bc,bd]        width 3: OK
+    A bb bc bd be bf / S ba           ->  Identity [bb,…]            width 5: OK  (node width is NOT it)
+    A bb bba      / S ba              ->  Element  [bb]              value + child BELOW it: OK
+    A bba         / S ba              ->  None     []                child only: OK
+    A bb bca      / S ba              ->  Identity [bb,bca]          child elsewhere: OK
+
+So the trigger needs sibling content the reduced cases lack — in `00175` the subtrie also carries
+`ab`, `a:b` and `:a`. Five hypotheses are dead: join-produced structure, general over-removal after a
+join, bare value-vs-extension, value-with-child-below, and node width.
+
+**NEXT STEP: a real delta-debugging minimizer**, not more hand-built cases. The predicate is cheap now
+that arbitrary scripts can be run on both engines (`gen_fuzz --exec` for upstream, `fuzz_run_text` for
+ours), so shrinking A and S jointly until a one-element change flips the answer is mechanical. Build
+that before writing another candidate by hand.
+
 ### (superseded) `00610` — a SINGLE `GRAFTMAP` diverges, and BOTH engines look wrong
 
 The cleanest reproducer in the corpus: one op, no RESET.
