@@ -119,7 +119,37 @@ So the trigger needs sibling content the reduced cases lack — in `00175` the s
 `ab`, `a:b` and `:a`. Five hypotheses are dead: join-produced structure, general over-removal after a
 join, bare value-vs-extension, value-with-child-below, and node width.
 
-**NEXT STEP: a real delta-debugging minimizer**, not more hand-built cases. The predicate is cheap now
+### MINIMISED 2026-07-31 with the EXISTING `shrink.jl` (it already does this — do not rebuild it)
+
+`SHRINK_SHAPE=more SHRINK_N=6 ./tools/run_tests.sh test/differential/shrink.jl`. The minimal `00175`:
+
+    A bb / S a:b ab ba / ORIGIN b / OP JOINMAP / OP SUB 0
+    ours      Element;Element;|[bb,bb] vc=2
+    upstream  Element;None;|[]         vc=0
+
+⚠️ **`[bb,bb]` IS NOT OUR CORRUPTION — UPSTREAM PRODUCES IT TOO.** The `viz_maps` dump shows why: after
+the join the root Pair holds `[98,98]` ("bb") as a slot AND the new Dense node under `[98]` holds a
+value at `[98]`, so one value is reachable through two slot encodings. That looks exactly like our
+bug until you run the join ALONE on both engines:
+
+    A bb / S a:b ab ba / ORIGIN b / OP JOINMAP     both: [ba:b,bab,bb,bb,bba] vc=5
+    A bb / S ba        / ORIGIN b / OP JOINMAP     both: [bb,bb,bba]          vc=3
+    A bb / S a         / ORIGIN b / OP JOINMAP     both: [ba,bb,bb]           vc=3
+
+Ours matches upstream BYTE FOR BYTE on all three. This is the `00020` lesson again, recorded at the
+top of this file — a duplicate path is not evidence of our defect until both engines have been asked.
+
+So the divergence is only in the SUB that follows: upstream removes BOTH copies of `bb` while
+subtracting `{a:b, ab, ba}`, none of which is `bb`. We keep them. **We are on the right side**, and
+this is the same prefix over-removal the bisect isolated (subtracting `ba` also kills the value at
+its prefix `b`).
+
+⚠️ Still NOT filed as an upstream defect: a bare `SETVAL` over a child does NOT destroy it
+(`A ab / ORIGIN a / OP SETVAL` -> `[a,ab]`, correct at widths 1-2 and at depth), so the "set_val
+wipes the subtrie" generalisation of the `graft_map` defect is REFUTED too. It needs the preceding
+structural op. SIX hypotheses are now dead; see the list above plus this one.
+
+(superseded) NEXT STEP: a real delta-debugging minimizer, not more hand-built cases. The predicate is cheap now
 that arbitrary scripts can be run on both engines (`gen_fuzz --exec` for upstream, `fuzz_run_text` for
 ours), so shrinking A and S jointly until a one-element change flips the answer is mechanical. Build
 that before writing another candidate by hand.
