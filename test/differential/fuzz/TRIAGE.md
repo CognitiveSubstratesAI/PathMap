@@ -1,4 +1,4 @@
-# Fuzz divergences — triage (36 of 3000 cases)
+# Fuzz divergences — triage (34 of 3000 cases)
 
 Regenerate with `test/differential/shrink.jl` (needs the rustup toolchain): it reduces each failing
 case to a 1–2 op reproducer and re-pins it against the upstream binary.
@@ -43,7 +43,24 @@ so all 3 are now OUR divergences.** 33 → 36. Nothing previously divergent reso
 | `02004` | `[abb] vc=4` | `[aab:a,aaba:aa,aabb,abb] vc=4` | 🔴 **we enumerate 1 of 4** |
 | `01773` | `Identity` | `Element` | status only; dumps identical |
 
-🔴 **`01959`/`02004` ARE A NEW DEFECT CLASS FOR US, AND THE WORST KIND SO FAR: DATA INVISIBILITY.**
+✅ **`01959` and `02004` FIXED — ported upstream `02afb73`. 36 → 34.** `01959` went from 0 paths
+enumerated to 3, `02004` from 1 to 4. `01773` (status only, `Identity` vs `Element`, dumps identical)
+remains and is the lowest-severity class in the corpus.
+
+**The single line that mattered**: `node_remove_val!`'s slot-1 branch swapped the removed value for
+an empty sentinel child UNCONDITIONALLY, where slot 0 already guarded on whether the other slot keeps
+the path. If it does, the node ends up with TWO CHILDREN UNDER ONE KEY — not a valid LineListNode —
+and every walk over it is truncated. `graft_map` with a root-value-less source runs
+`remove_val(false)` immediately after planting the child, so the other slot is exactly where the
+fresh child sits; this fired constantly and was invisible.
+
+Also ported, though neither moved these two cases (both are real upstream fixes for real shapes):
+`987bebf` (`nth_child_from_key` when a value and a child share a key — a child in slot 0 was reported
+as "no child", so index-descent left the focus in the parent) and `5f7fa2a`
+(`zipper_descend_first_byte!` descending into a SIBLING when the focus is on a non-existent path,
+because `iter_token_for_path` is a lower-bound cursor).
+
+🔴 THE ORIGINAL FINDING, kept because the lesson outlives the fix — DATA INVISIBILITY.
 The atoms are present and counted, but path enumeration cannot reach them. Every previous class was
 over-retention (we keep too much, upstream loses data); this is the reverse and it is ours. An
 internally inconsistent dump — paths enumerated < `vc` — is the signature; note `01959` shows it

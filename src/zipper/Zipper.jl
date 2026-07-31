@@ -605,8 +605,19 @@ function zipper_descend_first_byte!(z::ReadZipperCore{V, A}) where {V, A}
     new_tok, key_bytes, child_rc, _value = next_items(_zfnode(z), z.focus_iter_token)
     new_tok == NODE_ITER_FINISHED && return false
 
-    byte_idx = length(_znode_key(z)) + 1  # 1-indexed byte in key_bytes
+    node_key = _znode_key(z)
+    byte_idx = length(node_key) + 1  # 1-indexed byte in key_bytes
     byte_idx > length(key_bytes) && return false
+    # 🔴 THE ITEM MAY BELONG TO A SIBLING — ports upstream `5f7fa2a`.
+    # `iter_token_for_path` positions a LOWER-BOUND cursor, so when the focus sits on a path that
+    # does not exist, the item handed back is the next one at or after it — which can be a sibling
+    # rather than a continuation. Descending into it splices a FOREIGN byte onto the focus, and the
+    # zipper then reports a path the trie never contained.
+    #
+    # Only descend when the item actually continues the path we are on. Upstream's regression test
+    # is keys {"b","bqqq"} descended to "bb": `bq…` is the lower bound for `bb`, but does not
+    # continue it, so `descend_first_byte` must agree with `descend_indexed_byte(0)` and refuse.
+    slice_starts_with(key_bytes, node_key) || return false
 
     z.focus_iter_token = new_tok
     push!(z.prefix_buf, key_bytes[byte_idx])

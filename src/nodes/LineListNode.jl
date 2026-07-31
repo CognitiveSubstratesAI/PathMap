@@ -928,8 +928,28 @@ function node_remove_val!(
         if prune
             return into_val(take_slot1_payload!(n))
         else
-            old = swap_slot1_payload!(n, ValOrChild(TrieNodeODRc{V, A}()))
-            return into_val(old)
+            # 🔴 THE SAME GUARD THE SLOT-0 BRANCH ABOVE ALREADY HAD — ports upstream `02afb73`.
+            # `prune=false` keeps the path alive for a positioned write zipper by turning the removed
+            # value into an EMPTY SENTINEL CHILD. That is only safe when the other slot does not
+            # already keep this path: if it does, the node ends up holding TWO CHILDREN UNDER ONE
+            # KEY, which is not a valid LineListNode, and everything walking it downstream sees a
+            # truncated trie.
+            #
+            # Reached constantly, because `graft_map` with a source that has NO root value runs
+            # `remove_val(false)` immediately after planting the child (write_zipper.rs:1473) — so the
+            # other slot is exactly where the freshly grafted child sits.
+            #
+            # Fuzz 02004 is the witness: after this ran, `val_count` said 4 while enumeration reached
+            # ONE path. The values were still counted and no longer reachable. Only slot 0 was
+            # guarded here; slot 1 swapped unconditionally.
+            k0 = n.key0
+            overlap = find_prefix_overlap(n.key1, k0)
+            if length(n.key1) == overlap
+                return into_val(take_slot1_payload!(n))
+            else
+                old = swap_slot1_payload!(n, ValOrChild(TrieNodeODRc{V, A}()))
+                return into_val(old)
+            end
         end
     end
     nothing
@@ -1165,6 +1185,26 @@ function nth_child_from_key(
                     return (k0[klen + 1], nothing)
                 end
             end
+            # 🔴 BOTH SLOTS HOLD THE SAME KEY — ports upstream `987bebf`.
+            # A LineListNode keeps the VALUE at a path and the ONWARD CHILD at that same path in its
+            # two slots, under one key. We used to fall straight THROUGH this branch and then look
+            # for the child in slot 1 only, so a child sitting in slot 0 was reported as "no child"
+            # — where `node_get_child` checks both slots and finds it.
+            #
+            # The damage is not local: `wz_descend_indexed_byte!`/`ez_descend_indexed_byte!` descend
+            # BY INDEX through here, so the zipper's focus stayed in the PARENT node. The position
+            # then reports child_count 0 and an empty child mask, which silently TRUNCATES anything
+            # walking the trie that way — path enumeration, and upstream notes the cached
+            # catamorphisms and `PathMap::hash` too.
+            #
+            # Caught by fuzz cases 01959 (`[] vc=3` — zero paths enumerated where three exist) and
+            # 02004 (one of four), which only became visible once the vendored upstream was updated:
+            # the old ground truth had this same bug baked in on BOTH sides.
+            if klen + 1 == length(k0)
+                is_child_0(n) && return (k0[klen + 1], as_tagged(into_child(n.slot0)))
+                is_child_1(n) && return (k0[klen + 1], as_tagged(into_child(n.slot1)))
+            end
+            return (k0[klen + 1], nothing)
         end
         if slice_starts_with(k1, key) && length(k1) > klen
             if klen + 1 == length(k1) && is_child_1(n)
