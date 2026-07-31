@@ -146,9 +146,13 @@ its prefix `b`).
 
 ### ✅ SOLVED — minimal reproducer found, FILED in `../UPSTREAM_BUGS.md`
 
-    A bb / S ab ba / ORIGIN b / OP JOINMAP / OP SUB 0
-    upstream  None    []        vc=0        <- removes a value at a PREFIX of a subtracted path
-    ours      Element [bb,bb]   vc=2        <- correct
+    A a b bbba / S bbba / ORIGIN - / OP SUB 1        <- ONE op, NO join, at the root
+    upstream  Element |[a]    vc=1        <- removes `b`, a PREFIX of the subtracted path
+    ours      Element |[a,b]  vc=2        <- correct
+
+Reduced further from `01357`, which reaches the same defect with no join at all. The conditions are
+(1) the node holding the value must be DENSE — three or more DISTINCT FIRST BYTES, not a Pair — and
+(2) a value must sit at a proper prefix of a subtracted path. `prune` is irrelevant.
 
 Found by bisecting the SOURCE in the join+sub setting, which is what the earlier hand-built probes
 never varied. It needs BOTH `ba` (the key sharing a first byte with the existing value-path) AND a

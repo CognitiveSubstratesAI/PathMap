@@ -26,57 +26,56 @@ cd test/differential/rust_probe && cargo run --release --quiet --bin gen_fuzz --
 
 
 
-## `subtract_into` removes a value at a PREFIX of a subtracted path
+## `subtract_into` removes a value at a PREFIX of a subtracted path, on DENSE nodes
 
-Found 2026-07-31 by shrinking fuzz case `00175`. **Silent over-removal.**
+Found 2026-07-31 by shrinking fuzz cases `00175` and `01357`. **Silent over-removal.**
 
-### Minimal reproducer
+### Minimal reproducer — one op, no join, at the root
 
 ```
-A bb
+A a b bbba
 AROOTVAL 0
-S ab ba
+S bbba
 SROOTVAL 0
-ORIGIN b
-OP JOINMAP
-OP SUB 0
+ORIGIN -
+OP SUB 1
 ```
 
-    upstream   Element;None;|[]       vc=0
-    ours       Element;Element;|[bb,bb] vc=2
+    upstream   Element;|[a]    vc=1     <- `b` is GONE
+    ours       Element;|[a,b]  vc=2     <- correct
 
-At origin `b` the target's subtrie holds a VALUE at path `b` (from key `bb`). Joining `S = {ab, ba}`
-adds paths `ab` and `ba`. Subtracting the same `S` must remove exactly those two and leave the value
-at `b` — `b` is a proper PREFIX of `ba`, and the rule (which upstream honours everywhere else) is that
-a value is removed only when the source has a VALUE AT THE SAME PATH, never merely structure below it.
-Upstream removes it.
+Subtracting `{bbba}` must remove exactly `bbba`. `b` is a proper PREFIX of it, and the rule upstream
+honours everywhere else is that a value is removed only when the source has a VALUE AT THE SAME PATH,
+never merely structure below it.
 
-### Why it took a shrink to find, and what does NOT reproduce it
+### Three conditions, each shown NECESSARY
 
-Every simpler shape behaves CORRECTLY upstream, which is why hand-built probes kept missing it:
+    A b bbba       / S bbba   ->  [b]        agree      2 distinct first bytes: node is a Pair, OK
+    A a b bbba     / S bbba   ->  [a]        DIVERGE    3 -> the node is DENSE
+    A a c b bbba   / S bbba   ->  [a,c]      DIVERGE    4, still dense
+    A a c bbba     / S bbba   ->  [a,c]      agree      no value at a prefix of the subtracted path
+    A a b bbba     / SUB 0    ->  [a]        DIVERGE    prune is IRRELEVANT
 
-    A bb / S ba        / SUB only                 Identity [bb]        value + strict extension: OK
-    A bb bc bd be bf / S ba / SUB only            Identity [bb,…]      node width alone: OK
-    A bb bba / S ba    / SUB only                 Element  [bb]        value + child below: OK
-    A bb bba / S ba    / literal, then SUB        Element  [bb]        OK
-    A bb / S ba        / JOINMAP + SUB            Element  [bb,bb]     ONE source key: OK
-    A bb / S a:b ab    / JOINMAP + SUB            Element  [bb,bb]     two keys, none is `ba`: OK
-    A bb / S ab ba     / JOINMAP + SUB            None     []          ← FAILS
+So it needs (1) the node holding the value to be DENSE — three or more distinct first bytes, not a
+Pair/LineList — and (2) a value at a proper prefix of a subtracted path. `prune` makes no difference.
 
-So it needs BOTH the `ba` key — the one sharing a first byte with the existing value-path — AND a
-second source key, which is what grows the post-join node past its small representation. Neither
-alone is enough, and the plain `SUB` path is correct at every width tried.
+⚠️ **Why this took so long to isolate, worth reading before hand-building probes for this file.** Six
+earlier hypotheses were "refuted" on shapes that could not reach the dense path: value+strict
+extension, value-with-child-below, literal rebuild, join-produced structure, `set_val`-wipes-subtrie,
+and a width test that added keys `bb bc bd be bf` — those share the first byte `b`, so they widened a
+SUBTREE while leaving the ROOT a Pair. Widening the node that holds the value is the thing that
+matters, and it takes distinct first bytes.
 
 ### What we do
 
 We keep the value, which is what the operation specifies. Our own equivalent bug
-(`_bn_psubtract_abstract`, closed earlier in this corpus — "a value must be removed only when the
-source has a VALUE AT THE SAME PATH, never merely structure below it") was the same rule; ours is
-fixed and upstream's is not.
+(`_bn_psubtract_abstract`, closed earlier in this corpus — the same rule, stated the same way) was
+found and fixed; upstream's is not. This is why the corpus scores these as "we have MORE atoms".
 
-⚠️ The `[bb,bb]` duplicate in both columns is a SEPARATE, SHARED upstream behaviour: after a join at a
-focus inside a multi-byte slot key, one value is reachable through two slot encodings. Both engines
-produce it identically — verified on three shapes — so it is not part of this defect and not ours.
+⚠️ Some cases in this family also show a `[bb,bb]` duplicate in BOTH columns. That is a SEPARATE,
+shared upstream behaviour — after a join at a focus inside a multi-byte slot key one value is
+reachable through two slot encodings — verified identical on both engines. It is not part of this
+defect and not ours.
 
 ## `graft_map` DESTROYS the subtrie it just grafted, when the source has a root value
 
