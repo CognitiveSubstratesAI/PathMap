@@ -510,11 +510,19 @@ psubtract(::Nothing, ::Nothing) = AlgResNone()
 # Rust: `impl Lattice for u64` implements pjoin as max, pmeet as min.
 # DistributiveLattice (psubtract) is implemented for some integer types.
 #
-# DELIBERATE DIVERGENCE (PathMap audit 2026-06-02, close-out step 5): upstream
-# tags several of its integer/bool lattice impls as `//GOAT trash` placeholders.
-# This port implements the *intended* algebra instead — real max/min for join/meet,
-# saturating subtraction for unsigned psubtract, equal→None for signed, and proper
-# &/| for Bool. This is intentionally MORE correct, NOT an accidental drift.
+# DELIBERATE DIVERGENCE (PathMap audit 2026-06-02, close-out step 5), SCOPE CORRECTED 2026-07-31:
+# upstream tags several of its INTEGER lattice impls as `//GOAT trash` placeholders. This port
+# implements the *intended* algebra instead — real max/min for join/meet, saturating subtraction for
+# unsigned psubtract, equal→None for signed. That part is intentionally MORE correct, not drift.
+#
+# ⚠️ THE `Bool` CLAIM WAS FALSE AND HAS BEEN REVERTED TO PARITY. This block used to say the deviation
+# also covered "proper &/| for Bool" on the grounds that upstream's Bool impl was a placeholder too.
+# It is not. `impl Lattice for bool` (ring.rs:891) and `impl DistributiveLattice for bool` (:881)
+# carry NO `//GOAT trash` tag — the tags sit on `usize` (:831), `u64` (:837, :844), `u32` (:851) and
+# `u16` (:857, :864), and in Rust the comment precedes the item it annotates, so the tag at :830 is
+# `usize`'s, not `()`'s. Upstream's Bool section even opens with a design NOTE explaining WHY bool
+# gets a real default impl: "there are fewer states, and therefore fewer meanings for a bool".
+# So the premise for deviating on Bool never existed. See the Bool block below for what changed.
 #   • Latent + SAFE for the current stack: MORK / TensorNetworks / Supercompiler /
 #     Core / WILLIAM use `PathMap{UnitVal}` exclusively for algebraic merges
 #     (66× UnitVal, a few ThinBytes/MorkSymbol, ZERO Int/Bool/Float at the consumer
@@ -576,37 +584,39 @@ end
 # Blanket impls — Bool
 # =====================================================================
 
+# 1:1 with upstream `impl Lattice for bool` / `impl DistributiveLattice for bool`
+# (ring.rs:881-905). These are BYTE-FOR-BYTE ports, not re-derivations — see the scope correction at
+# the top of the integer block for why the old "proper &/| for Bool" deviation was withdrawn.
+#
+# WHAT ACTUALLY CHANGED, because "our version computes the same booleans" hides it:
+#
+#  * `pjoin`/`pmeet` returned `Identity(SELF_IDENT | COUNTER_IDENT)` when the operands were EQUAL;
+#    upstream returns `Identity(SELF_IDENT)` alone. Both are legal — the contract (ring.rs:16) says
+#    setting two bits ASSERTS the arguments are identities of each other, which is true here — but
+#    THE MASK WIDTH IS OBSERVABLE, so "both legal" does not mean "interchangeable".
+#    `combine_algebraic_results` computes `rec_mask & val_mask` (dense_byte_node.rs:1934) and
+#    `AlgebraicResult::merge` computes `self_mask & b_mask` (ring.rs:254): a mask of 3 where upstream
+#    has 1 keeps COUNTER_IDENT alive through those ANDs and a DIFFERENT ARM FIRES downstream. That is
+#    the exact failure shape of upstream commit 2683d7c, which we had just finished porting.
+#
+#  * `psubtract` differed in VALUE, not merely in mask, at one input:
+#        a=false, b=true   upstream Identity(SELF_IDENT) -> KEEPS the stored `false`
+#                          ours     None                 -> DELETED the entry
+#    Upstream's rule is simply `self == other ? None : Identity(SELF)`. A stored `false` is a present
+#    value in a PathMap{Bool}, so dropping it loses data relative to upstream.
+#
+# No consumer merges PathMap{Bool} today (ZipperTracking.jl:127 uses plain get/set), so this was
+# latent — which is why it survived an audit that looked at the boolean results and not at the masks.
 function pjoin(a::Bool, b::Bool)::AlgebraicResult{Bool}
-    r = a | b
-    if r == a && r == b
-        return AlgResIdentity(SELF_IDENT | COUNTER_IDENT)
-    elseif r == a
-        return AlgResIdentity(SELF_IDENT)
-    else
-        return AlgResIdentity(COUNTER_IDENT)
-    end
+    (!a && b) ? AlgResIdentity(COUNTER_IDENT) : AlgResIdentity(SELF_IDENT)
 end
 
 function pmeet(a::Bool, b::Bool)::AlgebraicResult{Bool}
-    r = a & b
-    if r == a && r == b
-        return AlgResIdentity(SELF_IDENT | COUNTER_IDENT)
-    elseif r == a
-        return AlgResIdentity(SELF_IDENT)
-    else
-        return AlgResIdentity(COUNTER_IDENT)
-    end
+    (a && !b) ? AlgResIdentity(COUNTER_IDENT) : AlgResIdentity(SELF_IDENT)
 end
 
 function psubtract(a::Bool, b::Bool)::AlgebraicResult{Bool}
-    if !a
-        return AlgResNone()
-    elseif !b
-        return AlgResIdentity(SELF_IDENT)
-    else
-        # a=true, b=true → a - b = 0 = None
-        return AlgResNone()
-    end
+    (a == b) ? AlgResNone() : AlgResIdentity(SELF_IDENT)
 end
 
 # =====================================================================
