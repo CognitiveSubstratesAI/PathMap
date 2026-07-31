@@ -1771,7 +1771,7 @@
 01770	-;false;false;-;|[ab,abba] vc=3
 01771	Identity;[:,a] vc=2;-;false;Element;|[:aaa,:b,a,b:aaa,b:aaa:,b:aaa::bb,b:aaaa] vc=7
 01772	-;|[:] vc=2
-01773	Identity;-;false;-;|[a,b] vc=2
+01773	Element;-;false;-;|[a,b] vc=2
 01774	true;false;-;-;None;|[:] vc=1
 01775	true;None;-;None;|[a:] vc=1
 01776	-;false;-;true;None;-;|[bb:] vc=1
@@ -1957,7 +1957,7 @@
 01956	false;|[abaa,abb:,ba] vc=3
 01957	Element;-;None;None;-;-;|[:,a:bb,aa,b:b,baa,bbabb] vc=6
 01958	-;|[:bb,a::,b,b:] vc=5
-01959	true;false;true;Element;-;None;|[] vc=3
+01959	true;false;true;Element;-;None;|[::ba,:b] vc=3
 01960	-;false;true;[b::b] vc=1;|[] vc=0
 01961	false;[a] vc=2;-;|[b::] vc=1
 01962	-;-;|[a:,b:a] vc=2
@@ -2002,7 +2002,7 @@
 02001	false;Element;-;|[:::,b,b:,baaa] vc=4
 02002	false;false;-;[:ab,a:a,ab] vc=3;None;false;|[] vc=0
 02003	false;Identity;[:::,a,b:a,bb] vc=4;|[] vc=0
-02004	-;false;Identity;false;-;false;|[abb] vc=4
+02004	-;false;Identity;false;-;false;|[aab:a,aaba:aa,aabb,abb] vc=4
 02005	-;true;|[a,bb:] vc=2
 02006	-;-;|[a] vc=1
 02007	true;-;|[] vc=1

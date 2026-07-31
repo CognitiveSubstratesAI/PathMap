@@ -1,4 +1,4 @@
-# Fuzz divergences — triage (33 of 3000 cases)
+# Fuzz divergences — triage (36 of 3000 cases)
 
 Regenerate with `test/differential/shrink.jl` (needs the rustup toolchain): it reduces each failing
 case to a 1–2 op reproducer and re-pins it against the upstream binary.
@@ -22,6 +22,39 @@ recursive call's flag. We reach that code only via `split_0`, which by definitio
 subnode at THIS level — so under-reporting made `_wz_graft_internal!` skip its
 `mend_root!`/`descend_to_internal!`, leaving the zipper pointing at the parent while the split had
 moved the value into the new child.
+
+## ⬆️ UPSTREAM UPDATED 2026-07-31 — vendored PathMap `f1279a0` → `52fd9df`, and it exposed 3 OF OUR BUGS
+
+22 commits pulled, several landing in exactly the area our two filed defects sit in
+(`Fix nth_child_from_key when a value and a child share a key`, `Fix node_remove_val leaving a second
+child under an existing key`, `line-list-node-graft-fixes`, `Guard line-list node layout`).
+
+**Both of our filed defects STILL REPRODUCE at the new HEAD** — re-verified before reporting:
+
+    A a b bbba / S bbba / SUB 1        -> [a]        `b` still dropped   (subtract prefix defect)
+    A ::b / S bb:: +rootval / GRAFTMAP -> [::,::b]   source content gone (graft_map defect)
+
+**Ground truth regenerated. Only 3 of 3000 upstream answers changed — and all 3 are upstream FIXES,
+so all 3 are now OUR divergences.** 33 → 36. Nothing previously divergent resolved.
+
+| case | ours | upstream (now fixed) | class |
+|---|---|---|---|
+| `01959` | **`[] vc=3`** | `[::ba,:b] vc=3` | 🔴 **we enumerate ZERO paths while val_count says 3** |
+| `02004` | `[abb] vc=4` | `[aab:a,aaba:aa,aabb,abb] vc=4` | 🔴 **we enumerate 1 of 4** |
+| `01773` | `Identity` | `Element` | status only; dumps identical |
+
+🔴 **`01959`/`02004` ARE A NEW DEFECT CLASS FOR US, AND THE WORST KIND SO FAR: DATA INVISIBILITY.**
+The atoms are present and counted, but path enumeration cannot reach them. Every previous class was
+over-retention (we keep too much, upstream loses data); this is the reverse and it is ours. An
+internally inconsistent dump — paths enumerated < `vc` — is the signature; note `01959` shows it
+starkly at 0 vs 3.
+
+The fix is to port upstream's three enumeration commits: `987bebf` (nth_child_from_key when a value
+and a child SHARE A KEY), `5f7fa2a` (ReadZipper::descend_first_byte descending a byte that does not
+exist when the focus is already off-path), `02afb73` (node_remove_val leaving a second child).
+
+⚠️ These are HIGHER PRIORITY than the remaining 33: those are attributed to upstream defects where we
+are on the correct side, whereas these lose visibility of data we are storing.
 
 ## ✅ CLOSED 2026-07-31 — `00174` and the whole constructor-descend family: **75 → 33** (42 cases)
 
