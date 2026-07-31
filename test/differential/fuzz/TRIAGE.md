@@ -87,6 +87,33 @@ upstream KEEPS `::b` and contains none of S's `bb::`. We add S's content but als
 `::b`. So upstream appears not to graft at all at a MULTI-BYTE node key, and we graft without
 clearing.
 
+#### What the 00610 dig RULED OUT (2026-07-31) — recorded so it is not repeated
+
+Correlation over the whole corpus, then a targeted code read. Neither located the cause; both
+narrowed it, and the negative results are the point.
+
+*Correlation.* "origin is a proper prefix of an A key" holds for 13 of the 14 diverging `GRAFTMAP`
+cases — but **214 cases with that same property PASS**, so it is not the condition. Adding "exactly
+one A key strictly extends the origin" (true for 13/13) and "the origin is not itself a key" gives a
+predicate matching 593 cases corpus-wide of which only 20 diverge: ~3% precision. **Correlation has
+been taken as far as it usefully goes here** — the answer needs code, not statistics.
+
+*Code read of the slot-0 overlap branch* (`set_payload_abstract`, line_list_node.rs:963-980 vs our
+LineListNode.jl:692-711), which is the path `node_set_branch` takes for a prefix key:
+
+* The branch is FAITHFUL — same `find_prefix_overlap`, same `IS_CHILD && is_child_ptr && overlap ==
+  key.len()` total-replacement arm, same `overlap -= 1` adjustment, same `split_0` + recurse.
+* Our `set_recursive(child_rc, sub_key)` looks like it drops upstream's third argument. It does not:
+  it is a local closure capturing `payload` and `is_child`. Not a bug.
+* `child_mut = as_tagged(child_rc)` (LineListNode.jl:708) is DEAD — `set_recursive` recomputes it.
+  Harmless, but delete it when next in the file.
+
+*The one candidate this surfaced.* Upstream recurses into
+`self.child_in_slot_mut::<0>().make_mut()` — `make_mut()` is the COW ensure-unique. Ours recurses
+into `into_child(n.slot0)` with no visible equivalent. If the child can be SHARED at that point, the
+two engines differ in whether the mutation is isolated. ⚠️ Verify with an actual REFCOUNT check
+before believing it — a COW-isolation claim from reading alone has been wrong here before.
+
 ⚠️ Multi-byte node keys are exactly where the `00174` analysis already found asymmetry ("`node_remove_val`
 cannot serve a multi-byte key on EITHER side"), and after the mend fix a path-rooted zipper sits at
 depth 1 with a multi-byte `node_key` far more often. So this is likely the shared root of much of the
