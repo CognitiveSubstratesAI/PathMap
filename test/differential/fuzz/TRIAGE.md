@@ -62,7 +62,30 @@ Op shapes are now almost all singletons (only `JOINMAP SUB` ×3 repeats; just 5 
 `RESET`, against 9 of 15 before). Grouping by op shape is no longer informative — group by class.
 Among the 27 MORE cases, `GRAFTMAP` appears in 14, `SETVAL` in 12, `JOINMAP` in 10.
 
-### NEXT ITEM: `00610` — a SINGLE `GRAFTMAP` diverges, and BOTH engines look wrong
+### ✅ `00610` SOLVED 2026-07-31 — it is an UPSTREAM defect, and we are on the right side
+
+**`graft_map`'s trailing `set_val` destroys the subtrie `graft_internal` just planted**, whenever the
+source map carries a root value. Full write-up, with the controlled experiment, in
+`../UPSTREAM_BUGS.md`. Three scripts through the release binary, differing only where marked:
+
+    A ::b / S bb:: / ORIGIN ::   SROOTVAL 1  ->  [::,::b]        S's content GONE
+    (same)                       SROOTVAL 0  ->  [::b,::bb::]    S's content PRESENT
+    A :b  / S bb:: / ORIGIN :    SROOTVAL 1  ->  [:,:b]          gone again
+
+Row 2 isolates the cause. Row 3 **retires the multi-byte-node-key hypothesis** that this section had
+been built on — it happens at a single-byte origin too.
+
+⚠️ **THE `make_mut` COW CANDIDATE IS REFUTED.** The note below proposed that our `into_child` recursion
+lacks upstream's `child_in_slot_mut::<0>().make_mut()`. Measured, not argued: instrumenting that exact
+site across the whole 3000-case corpus gives **1074 visits, 0 shared, max refcount 1**. The
+post-`split_0` child is never shared, so `make_mut` is a no-op there and cannot be the cause. Do not
+rebuild this hypothesis.
+
+13 of the 27 over-retention cases carry a source with BOTH a root value and content plus a
+source-consuming op, consistent with this cause; only `00610` has been individually reduced. The
+other **12 have no source root value at all** and remain unexplained — that is the next question.
+
+### (superseded) `00610` — a SINGLE `GRAFTMAP` diverges, and BOTH engines look wrong
 
 The cleanest reproducer in the corpus: one op, no RESET.
 

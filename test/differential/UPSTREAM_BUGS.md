@@ -24,6 +24,54 @@ cd test/differential/rust_probe && cargo run --release --quiet --bin gen_fuzz --
 
 ---
 
+
+## `graft_map` DESTROYS the subtrie it just grafted, when the source has a root value
+
+Found 2026-07-31 while running down fuzz case `00610`. **Silent data loss in a core operation.**
+
+`graft_map` (write_zipper.rs:1464) is three steps:
+
+```rust
+let (src_root_node, src_root_val) = map.into_root();
+self.graft_internal(src_root_node);
+#[cfg(feature = "graft_root_vals")]                       // DEFAULT feature
+let _ = match src_root_val {
+    Some(src_val) => self.set_val(src_val),
+    None          => self.remove_val(false)
+};
+```
+
+The trailing `set_val` lands in the same slot the `graft_internal` branch was just written to and
+replaces it, so **the entire grafted subtrie disappears**. Only when the source map carries a root
+value — otherwise `remove_val` runs instead and the graft survives.
+
+### Settled by a controlled experiment against the release binary
+
+Three scripts through `gen_fuzz --exec`, differing only where marked:
+
+| script | source root value | upstream result |
+|---|---|---|
+| `A ::b / S bb:: / ORIGIN ::` | **yes** | `[::,::b]` — S's `bb::` is **GONE** |
+| same, `SROOTVAL 0` | **no** | `[::b,::bb::]` — S's content **present** |
+| `A :b / S bb:: / ORIGIN :` | **yes** | `[:,:b]` — gone again |
+
+Row 2 is the control that isolates it: with the root value removed and nothing else changed, the
+graft survives. Row 3 rules out the obvious alternative — it is NOT about multi-byte node keys, which
+was the standing hypothesis for this family and is hereby retired.
+
+### What we do
+
+We keep both the grafted subtrie and the root value, which is what the operation says it does. That
+puts this file's rule in play — *reproducing silent data loss is worse than deviating* — and this is
+a clear instance: a caller asked for a subtrie to be planted and upstream drops it on the floor.
+
+Our fuzz corpus therefore reports these as "we have MORE atoms than upstream", and that is the
+correct side to be on. **13 of the 27 remaining over-retention cases** have a source carrying both a
+root value and content together with a source-consuming op (`00111 00607 00610 01137 01449 02234
+02280 02307 02338 02596 02665 02703 02877`) — consistent with this cause, though only `00610` has
+been reduced and confirmed individually. The other 12 have no source root value at all and need a
+separate explanation.
+
 ## 1. `set_val` after `insert_prefix` at a MID-EDGE focus silently DESTROYS the inserted subtrie
 
 **Status:** deviation approved 2026-07-28. Fuzz case `00041`.
