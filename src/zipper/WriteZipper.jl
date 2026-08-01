@@ -1061,23 +1061,17 @@ end
 
 Join self's subtrie with `map`. Result written to self.
 
-🔴 **`map` IS CONSUMED. DO NOT USE IT AFTERWARDS.** The join mutates it — measured:
+`map` is READ-ONLY: it survives the call unchanged, and so does any other map sharing its nodes.
+Pinned in `test/test_join_preserves_source.jl`, in both handover modes.
 
-    A = {ab:, b, b:a}   join   S = {a:a, aa, ab}
-      A after  [a:a,aa,ab,ab:,b,b:a] vc=6      correct
-      S after  [a:a,aa,ab,ab:]       vc=4      <- S GAINED "ab:" FROM A
-
-This is faithful to upstream, whose signature is
-`pub fn join_map_into(&mut self, map: PathMap<V, A>)` (write_zipper.rs:1680) — it takes the map
-**BY VALUE**, so the source is MOVED and no caller can observe what the join does to it. Julia has
-no move, so the same mutation is visible here. Same asymmetry as `clone_payload`: the Rust is sound
-because of a guarantee the port cannot express, so the guarantee has to become a documented contract
-instead.
-
-⚠️ It does NOT depend on sharing. Passing a freshly built, unshared map mutates it just the same, so
-this is not a copy-on-write gap and cloning the argument first does not make it "safe" — it makes it
-a different operation. If a caller genuinely needs the source afterwards, hand over a copy and treat
-the one you passed as gone. Pinned in `test/test_join_consumes_source.jl`.
+🔄 **This docstring used to say the opposite** — "`map` IS CONSUMED, DO NOT USE IT AFTERWARDS",
+justified by upstream taking the map BY VALUE (`pub fn join_map_into(&mut self, map: PathMap<V, A>)`,
+write_zipper.rs:1680) and therefore being free to mutate it. By-value means upstream MAY; it does
+not mean upstream DOES, and it does not — its node-level joins clone the operand
+(`line_list_node.rs:2515-2532`) or `make_mut()` before touching it (`dense_byte_node.rs:1306-1334`),
+and it emits no source change on any of the 3000 fuzz cases. Ours mutated the source because
+`LineListNode::join_into_dyn!` merged into its RIGHT-HAND operand; fixing that one write removed the
+behaviour for shared AND unshared sources alike. See the test header and fuzz case `00324`.
 """
 function wz_join_map_into!(z::WriteZipperCore{V, A}, map::PathMap{V, A}) where {V, A}
     # graft_root_vals (DEFAULT): the map's ROOT value joins into the FOCUS value, and upstream

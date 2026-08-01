@@ -851,10 +851,14 @@ include("test_path_exists_at.jl")
 # from write_zipper.rs:5110-5206 and :5340-5429.
 include("test_graft_child_maps.jl")
 
-# The two UPSTREAM defects we deliberately do not reproduce, asserted by SEMANTICS rather than by the
-# fuzz ratchet — a ratchet records THAT cases differ, not WHY, and cannot tell "upstream is wrong"
-# from "we regressed".
-include("test_join_consumes_source.jl")
+# A join never writes into its source operand — asserted by SEMANTICS rather than by the fuzz
+# ratchet, which records THAT cases differ, not WHY. This file used to assert the exact opposite
+# ("the join CONSUMES its source", 8fe6319); read its header before touching it, because the
+# reversal is the whole lesson.
+include("test_join_preserves_source.jl")
+
+# The UPSTREAM defects we deliberately do not reproduce — same reasoning: a ratchet cannot tell
+# "upstream is wrong" from "we regressed".
 include("test_cow_at_path.jl")
 include("test_cow_join_map.jl")
 include("test_value_algebra.jl")

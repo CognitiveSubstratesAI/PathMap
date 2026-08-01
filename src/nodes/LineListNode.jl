@@ -1808,10 +1808,39 @@ function join_into_dyn!(self::LineListNode{V, A}, other::TrieNodeODRc{V, A}) whe
             return (ALG_STATUS_NONE, nothing)
         end
     elseif other_tag == DENSE_BYTE_NODE_TAG || other_tag == CELL_BYTE_NODE_TAG
-        # Merge self (LineListNode) into the DenseByteNode
+        # Merge self (LineListNode) into a CLONE of the byte node — never into the operand.
+        #
+        # ⚠️ `other` is the RIGHT-HAND operand: this is `self.join_into(other)`, so only `self` is
+        # the mutable target. Writing into `other`'s node is visible to every OTHER trie sharing
+        # it, and that is exactly how `wz_join_map_into!` leaked into a third party (fuzz 00324):
+        #   pjoin_dyn(dest_byte, src_list) → merge_from_list_node!(dest_clone, src_list)
+        #     → _bn_join_payload_into!(dest_clone, 'a', SRC's payload)
+        #       → join_into_dyn!(dest_child_rc, SRC's child rc) → here, with `other` = the SOURCE's
+        #         byte node → merge_from_list_node! wrote dest's key straight into the source.
+        # The source node's refcount was 1 at that point (it hangs off a root the clone DOES share),
+        # so no `make_unique!` anywhere on the path could have caught it — the write must simply not
+        # target `other`.
+        #
+        # Upstream clones and never touches the operand (line_list_node.rs:2515-2532):
+        #     let other_dense_node = unsafe{ other_node.as_dense_unchecked() };
+        #     let mut new_node = other_dense_node.clone();
+        #     let status = new_node.merge_from_list_node(self);
+        #     debug_assert!(!status.is_none());
+        #     (AlgebraicStatus::Element, Err(TrieNodeODRc::new_in(new_node, self.alloc.clone())))
+        # `DenseByteNode::clone()` is the shallow, Arc-sharing clone — `deepcopy_bn` here.
+        #
+        # The returned STATUS is upstream's `Element`, not `merge_from_list_node!`'s. That status
+        # says whether the BYTE NODE absorbed `self` unchanged; the caller reads it as "was the
+        # LEFT operand changed", i.e. it is the counter-identity. Returning it made
+        # `_bn_join_child_into!` answer Identity while it swapped its child for a different node.
+        #
+        # Upstream's `debug_assert!(!status.is_none())` is deliberately NOT ported as a runtime
+        # `@assert`: a debug assertion is not a runtime contract, and in release upstream ignores
+        # `status` entirely. Throwing where upstream proceeds would be a new divergence.
         other_node = as_tagged(other)
-        status = merge_from_list_node!(other_node, self)
-        return (status, other)   # Err(other): caller replaces node with dense
+        new_node = deepcopy_bn(other_node)
+        merge_from_list_node!(new_node, self)
+        return (ALG_STATUS_ELEMENT, TrieNodeODRc(new_node, self.alloc))
     else
         error("LineListNode::join_into_dyn! — unknown node tag $other_tag")
     end

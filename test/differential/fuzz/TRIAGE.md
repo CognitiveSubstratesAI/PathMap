@@ -1,4 +1,4 @@
-# Fuzz divergences — triage (31 of 3000 cases)
+# Fuzz divergences — triage (30 of 3000 cases)
 
 Regenerate with `test/differential/shrink.jl` (needs the rustup toolchain): it reduces each failing
 case to a 1–2 op reproducer and re-pins it against the upstream binary.
@@ -8,7 +8,10 @@ corruption; shrinking showed BOTH engines produce it.
 
 ---
 
-## 🆕 2026-08-01 — THE CORPUS CAN NOW SEE SOURCE CORRUPTION (30 → 31)
+## 🆕 2026-08-01 — THE CORPUS CAN NOW SEE SOURCE CORRUPTION (30 → 31 → 30)
+
+*(The new check found exactly one real case, `00324`; it is now FIXED — see below — so the ratchet
+is back at 30 with one more defect class permanently covered.)*
 
 Every case now also checks that the SOURCE map `S` survived. It could not before, and that blindness
 was structural, not incidental: each op built its own throwaway `S`, the run dumped only `A`, and `S`
@@ -42,21 +45,52 @@ can perturb the run. `val_count` and `deepcopy` were measured non-perturbing; `r
 observes.** Same family as an equivalent mutant — a measurement that cannot distinguish the outcomes
 it exists to separate.
 
-### The one real case: `00324`
+### ✅ The one real case: `00324` — FIXED, 31 → 30
 
     A={aab, ab:, b, b::b, b:a}  S={a:a, aa, ab}+rootval   RESET · ASCEND 4 · RESET · JOINMAP
-      ours      …|[…] vc=9|SRC-CHANGED:[a:a,aa,aab,ab,ab:] vc=6    S GAINED "aab","ab:" FROM A
-      upstream  …|[…] vc=9                                          S untouched
+      ours (was)  …|[…] vc=9|SRC-CHANGED:[a:a,aa,aab,ab,ab:] vc=6   S GAINED "aab","ab:" FROM A
+      upstream    …|[…] vc=9                                         S untouched
+      ours (now)  …|[…] vc=9                                         matches
 
-`wz_join_map_into!` CONSUMES its source — documented in `8fe6319`, and faithful to upstream's
-by-value `join_map_into(&mut self, map: PathMap<V,A>)`. But upstream consumes SAFELY: its mutations
-go through `Rc::make_mut`, so a map sharing those nodes is protected. Ours mutates through the shared
-nodes and the third party sees it. That is the divergence, and it is why this sits in the ratchet
-rather than being written off as "documented behaviour".
+**The defect was one line: `LineListNode::join_into_dyn!` merged into its RIGHT-HAND OPERAND.**
+At `68ac9a1`, `src/nodes/LineListNode.jl:1810-1814`:
 
-Reduced minimal (no cursor ops needed): `A={ab:, b, b:a}` join `S={a:a, aa, ab}` → S gains `ab:`.
-Pinned in `test/test_join_consumes_source.jl`, including the discriminator that an UNSHARED source
-is mutated identically — so this is a contract issue on top of a COW gap, not one or the other.
+    elseif other_tag == DENSE_BYTE_NODE_TAG || other_tag == CELL_BYTE_NODE_TAG
+        # Merge self (LineListNode) into the DenseByteNode
+        other_node = as_tagged(other)
+        status = merge_from_list_node!(other_node, self)   # ← :1813, writes into `other`
+        return (status, other)                             # ← and hands `other`'s Rc OBJECT back
+
+`self.join_into(other)` may only write `self`. Upstream never touches the operand
+(`line_list_node.rs:2515-2532`): it takes `other_dense_node.clone()`, merges into the CLONE, and
+returns it as `Err(TrieNodeODRc::new_in(new_node, …))`.
+
+**It was NOT a copy-on-write gap, and no `make_unique!` could have caught it.** The corrupted node's
+refcount was **1** at the moment of the write — it hangs off a root LineListNode that the sharing
+clone does share, but the byte node itself had a single referrer. Measured, by snapshotting every
+source node object's shallow signature before and after:
+
+    MUTATED S/s0  before: BN n=3 [(child,-)(-,Unit)(-,Unit)]        rc=1
+                  after : BN n=3 [(child,-)(-,Unit)(child,Unit)]    rc=1   ← child ADDED IN PLACE
+
+so "clone the source first" and "uniquify before writing" both address the wrong thing. The write
+simply must not target `other`.
+
+**The reversal this forces.** `8fe6319` recorded "`wz_join_map_into!` CONSUMES its source" as a
+DOCUMENTED CONTRACT faithful to upstream's by-value `join_map_into(&mut self, map: PathMap<V,A>)`,
+and cited "an UNSHARED source is mutated identically" as the discriminator proving it was a contract
+issue rather than a COW gap. The discriminator was sound; the conclusion drawn from it was not.
+By-value in Rust means upstream *may* mutate the map — it does not mean upstream *does*, and it
+does not. Both halves of the observed behaviour, shared and unshared, came from the same operand
+write, and both are gone. The suite now pins the opposite guarantee in
+`test/test_join_preserves_source.jl`.
+
+Sibling ops were MEASURED, not argued: 1200 random (A, S, prefix) cases per op × both handover modes
+(source passed directly / passed as a sharing clone). Pre-fix the sweep found `JOINMAP` and
+`JOININTO` at 6/1200 each — that is its proof of detection power — and `GRAFTMAP`, `MEET`, `MEET
+prune`, `SUB`, `SUB prune`, `RESTRICT` at 0/1200. Post-fix every op is 0/1200. `pmeet_dyn`,
+`psubtract_dyn` and `prestrict_dyn` never had the hole: they build new nodes and never call a
+mutating `*_into!` on their operand.
 
 ---
 
