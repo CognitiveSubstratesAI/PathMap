@@ -38,6 +38,22 @@
 # variants — the DUMP is the discriminator, so a harness that rendered values only in the trace
 # would have missed it.
 #
+# ── COVERAGE, MEASURED BY MUTATION (tools/mutation_check.jl) ─────────────────────────────────────
+# Of the SIX operand-selection sites in `_cf_combine_results`, five are now covered:
+#
+#     413 KILLED   414 KILLED   432 KILLED   455 KILLED   463 KILLED   447 SURVIVES
+#
+# 🔴 `447` IS NOT AN OVERSIGHT — its COUNTER alternative appears to be UNREACHABLE, and the argument
+# is worth keeping because it is easy to "fix" this by weakening the probe type. That branch needs
+# `is_rec_ident && is_val_none` AND `new_mask` cleared to 0, which requires `b.val !== nothing`.
+# A val result of None with BOTH values present means the value lattice ANNIHILATED. Neither
+# upstream's `()` nor our `Bits` annihilates on meet or join (Bits deliberately does not: an
+# all-zero bitset is a live value, not an absent one). Subtract DOES annihilate — but subtract is
+# non-commutative, so `ring.rs:21` forbids it from ever setting COUNTER_IDENT, which makes
+# `(rm & SELF_IDENT) != 0` always true there and the mutant equivalent. So reaching 447's `b.rec`
+# needs a value type whose MEET or JOIN annihilates. The code stays because it mirrors upstream
+# exactly, which is what parity requires; it is simply not exercisable by this probe type.
+#
 # PROVENANCE: every expected string below is `gen_fuzz --exec` output against the upstream checkout
 # at 52fd9df, not our output recorded after the fact.
 using Test
@@ -64,6 +80,44 @@ const _VALUE_CASES = Tuple{String, String, String}[
     ("SETVAL takes its argument as the payload",
      "VT bits\nA a=3\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN -\nOP DESCEND a\nOP SETVAL c\n",
      "-;true;|[a=c] vc=1"),
+
+    # ── ONE PROBE PER OPERAND-SELECTION SITE in `_cf_combine_results` ────────────────────────────
+    # Established by MUTATION TESTING (tools/mutation_check.jl), not by reading: each site was
+    # rewritten to always take `a` and the suite re-run. A site whose mutant SURVIVES is not covered.
+    #
+    # ⚠️ THE MIRROR MATTERS. v6/v9 reach lines 413/455 with SELF_IDENT set, where `a` IS the correct
+    # operand — so mutating to `a` is an EQUIVALENT MUTANT and survives for a reason that has
+    # nothing to do with coverage. v10/v11 are the same shapes with the surviving side flipped to
+    # COUNTER, and they are what actually kill those mutants. A probe set built only from the
+    # "natural" direction looks thorough and tests half the branch.
+    #
+    # Three distinct first bytes (a, b, :) force a DENSE root, which is what routes through
+    # `_cf_combine_results` at all.
+
+    # line 413/414 — rec and val Identity with DISAGREEING masks (rm & vm == 0).
+    #   val 3&1=1 == S -> COUNTER   |   rec {':'=5} meet {':'=7} = 5 == A -> SELF
+    ("413/414 masks disagree (rec SELF, val COUNTER)",
+     "VT bits\nA a=3 a:=5 b=1 :=1\nAROOTVAL 0\nS a=1 a:=7 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
+     "Element;|[:=1,a=1,a:=5,b=1] vc=4"),
+    ("413 mirror (rec COUNTER, val SELF) — kills the equivalent mutant",
+     "VT bits\nA a=1 a:=7 b=1 :=1\nAROOTVAL 0\nS a=3 a:=5 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
+     "Element;|[:=1,a=1,a:=5,b=1] vc=4"),
+
+    # line 447 — rec Identity, val None. Reached, but only ever with SELF set; see the note below.
+    ("447 rec Identity + val None (subtract annihilates the value)",
+     "VT bits\nA a=3 a:=5 b=1 :=1\nAROOTVAL 0\nS a=3 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP SUB 0\n",
+     "Element;|[a:=5] vc=1"),
+
+    # lines 455/463 — the tail arm, where at least one side is Element.
+    ("463 tail with val Identity (rec is Element: 6&3=2)",
+     "VT bits\nA a=3 a:=5 ab=6 b=1 :=1\nAROOTVAL 0\nS a=1 a:=5 ab=3 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
+     "Element;|[:=1,a=1,a:=5,ab=2,b=1] vc=5"),
+    ("455 tail with rec Identity SELF|COUNTER (val is Element: 3&6=2)",
+     "VT bits\nA a=3 a:=5 b=1 :=1\nAROOTVAL 0\nS a=6 a:=5 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
+     "Element;|[:=1,a=2,a:=5,b=1] vc=4"),
+    ("455 mirror (rec COUNTER only) — kills the equivalent mutant",
+     "VT bits\nA a=3 a:=7 b=1 :=1\nAROOTVAL 0\nS a=6 a:=5 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
+     "Element;|[:=1,a=2,a:=5,b=1] vc=4"),
 
     # ── CONTROL: no VT header ⇒ the unit path, byte-identical to before this file existed ─────────
     # Without this a future change could silently switch the DEFAULT value type and every generated
