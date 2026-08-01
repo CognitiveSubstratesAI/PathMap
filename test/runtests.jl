@@ -850,6 +850,10 @@ include("test_graft_child_maps.jl")
 # from "we regressed".
 include("test_bool_lattice.jl")
 include("test_prune_call_sites.jl")
+# `restrict`'s AlgebraicStatus, pinned against the upstream binary. Same reason as the two above:
+# the divergence was in the STATUS only — every trie dump already matched — so nothing that
+# asserts contents could see it. See the file header.
+include("test_restrict.jl")
 
 include("upstream_defects.jl")
 

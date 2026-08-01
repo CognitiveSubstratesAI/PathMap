@@ -1940,6 +1940,194 @@ function pmeet_dyn(self::LineListNode{V, A}, other::AbstractTrieNode{V, A}) wher
     )
 end
 
+# =====================================================================
+# Per-slot RESTRICT
+# =====================================================================
+#
+# Ports line_list_node.rs `follow_path_to_value` (:1642), `restrict_slot_contents`
+# (:1175) and `combine_slot_results_into_node_result` (:1206).
+#
+# 🔴 WHY THIS EXISTS AS ITS OWN PATH RATHER THAN "UPGRADE TO DENSE AND DELEGATE".
+# `prestrict_dyn` used to build a DenseByteNode from `self` and hand the problem to
+# `ByteNode::prestrict`. The two are NOT interchangeable, because the two implementations
+# compute IDENTITY differently:
+#
+#   * `ByteNode::prestrict` (dense_byte_node.rs:2342) decides identity by MASK EQUALITY —
+#     `is_identity = self.mask == mm && other.mask == mm`, i.e. it also requires `other`
+#     to have EXACTLY the same set of child bytes as `self`.
+#   * The per-slot version below decides identity PER SLOT — a slot is Identity when the
+#     restriction did not remove anything FROM THAT SLOT — and never looks at what else
+#     `other` contains.
+#
+# Restrict is non-commutative: `A restrict S` keeps the paths of A that S covers, so extra
+# paths in S are irrelevant to whether A came back unchanged. The dense identity test folds
+# them in anyway, so `{a,b} restrict {a,b,c}` reported Element where upstream reports
+# Identity. The trie DUMP agreed in every measured case — only the returned AlgebraicStatus
+# differed — but that is not cosmetic: a caller that loops "until Identity" (the standard
+# saturation idiom) never terminates if the answer is permanently Element.
+# Measured before/after on six scripts in test/test_restrict.jl.
+
+"""
+    _as_tagged_or_empty(rc) → AbstractTrieNode
+
+`as_tagged` on a `TrieNodeODRc` yields `nothing` for the empty sentinel (TrieNode.jl:360);
+upstream's `TrieNodeODRc::as_tagged()` yields a `TaggedNodeRef::EmptyNode` there, which
+answers every `TrieNode` query as empty. Substituting the `EmptyNode` singleton is what makes
+the ports below literally 1:1 instead of needing `nothing` branches everywhere.
+"""
+@inline function _as_tagged_or_empty(rc::TrieNodeODRc{V, A}) where {V, A}
+    t = as_tagged(rc)
+    t === nothing ? EmptyNode{V, A}() : t
+end
+
+"""
+    _follow_path_to_value(node, key) → (found_val::Bool, onward)
+
+Follows `key` down from `node`. Returns `(true, nothing)` if a VALUE was encountered
+anywhere along the path, `(false, (rest_key, node))` if the path continues below the
+returned node, and `(false, nothing)` if the path does not descend from `node` at all.
+
+1:1 port of the free function `follow_path_to_value` (line_list_node.rs:1642). Julia is
+1-based, so upstream's `&key[consumed..]` is `@view key[(consumed + 1):end]`. The key is
+made a view up front so its type does not change between the first and later iterations.
+"""
+function _follow_path_to_value(
+    node::AbstractTrieNode{V, A}, key::AbstractVector{UInt8}
+) where {V, A}
+    k = @view key[1:end]
+    while true
+        r = node_get_child(node, k)
+        r === nothing && break
+        (consumed, next_rc) = r
+        # Path ran out inside this node's edge — the caller continues from HERE, holding the
+        # node that owns the child, not the child itself. (Upstream returns `node`, not
+        # `next_node`, in this arm; that is deliberate, not a typo.)
+        consumed >= length(k) && return (false, (k, node))
+        node = _as_tagged_or_empty(next_rc)
+        k = @view k[(consumed + 1):end]
+    end
+    node_first_val_depth_along_key(node, k) !== nothing && return (true, nothing)
+    node_contains_partial_key(node, k) && return (false, (k, node))
+    (false, nothing)
+end
+
+"""
+    _lln_clone_payload_shared(n, slot) → Union{Nothing, ValOrChild{V,A}}
+
+Ports `clone_payload::<SLOT>` (line_list_node.rs:908): a CHILD payload is cloned by bumping
+the refcount (structural sharing), a VALUE payload by cloning the value. Deliberately NOT
+`_lln_clone_payload`, which `deepcopy`s the whole subtree — that both defeats sharing and
+duplicates the node's `@atomic refcnt` field into the copy.
+"""
+@inline function _lln_clone_payload_shared(n::LineListNode{V, A}, slot::Int) where {V, A}
+    _lln_is_used(n, slot) || return nothing
+    _shallow_clone_slot(slot == 0 ? n.slot0 : n.slot1)
+end
+
+"""
+    _lln_restrict_slot_contents(self, slot, other) → AlgebraicResult{ValOrChild{V,A}}
+
+Restrict the contents of `slot` by the contents of `other`.
+1:1 port of `restrict_slot_contents::<SLOT>` (line_list_node.rs:1175); Rust's const-generic
+slot index becomes an explicit `Int` argument, as everywhere else in this file.
+"""
+function _lln_restrict_slot_contents(
+    self::LineListNode{V, A}, slot::Int, other::AbstractTrieNode{V, A}
+) where {V, A}
+    _lln_is_used(self, slot) || return AlgResNone()
+    path = _lln_key(self, slot)
+    (found_val, onward) = _follow_path_to_value(other, path)
+    # `other` holds a VALUE at or above this slot's key, so `other` covers the ENTIRE subtrie
+    # hanging off the slot and nothing is removed from it. Identity of SELF only — restrict is
+    # non-commutative, so COUNTER_IDENT must never be set (ring.rs invariant).
+    found_val && return AlgResIdentity(SELF_IDENT)
+    # The path does not descend from `other` at all ⇒ nothing in this slot is covered.
+    onward === nothing && return AlgResNone()
+    (onward_key, onward_node) = onward
+    # A VALUE slot that `other` did not cover with a value of its own (that case returned
+    # Identity above) is not kept: restrict retains covered paths, and a partial path is
+    # not coverage.
+    _lln_is_child(self, slot) || return AlgResNone()
+    self_onward_link = _lln_get_child(self, slot)
+    r = if isempty(onward_key)
+        prestrict_dyn(_as_tagged_or_empty(self_onward_link), onward_node)
+    else
+        other_onward = get_node_at_key(onward_node, onward_key)
+        # Upstream calls `.as_tagged()` here, which PANICS on `AbstractNodeRef::None`,
+        # because its `follow_path_to_value` guarantees the remaining path exists. Ours can
+        # additionally land on the `nothing`-inside-a-`TrieNodeODRc` empty sentinel (e.g. a
+        # value-only byte in a dense node, DenseByteNode.jl:1504). The correct answer for
+        # "restrict by a subtrie that is not there" is None — exactly what
+        # `prestrict_dyn(child, EmptyNode)` returns — so we answer it directly rather than
+        # throwing. Same shape as `_bn_prestrict_abstract`'s `try_as_tagged` guard.
+        onward_tagged = try_as_tagged(other_onward)
+        if onward_tagged === nothing
+            AlgResNone()
+        else
+            prestrict_dyn(_as_tagged_or_empty(self_onward_link), onward_tagged)
+        end
+    end
+    # `map` leaves Identity/None untouched and only rewraps an Element — same as Rust's
+    # `AlgebraicResult::map`, so an unmodified child stays Identity(SELF_IDENT) here.
+    Base.map(node -> ValOrChild(node), r)
+end
+
+"""
+    _lln_combine_slot_results_into_node_result(self, slot0_result, slot1_result)
+        → AlgebraicResult{TrieNodeODRc{V,A}}
+
+Combine per-slot results of a **non-commutative** op into one node-level result.
+1:1 port of `combine_slot_results_into_node_result` (line_list_node.rs:1206).
+
+Written against the op-agnostic slot contract, so `psubtract_dyn` can adopt it unchanged if
+its own per-slot port lands (upstream shares this helper between subtract and restrict).
+"""
+function _lln_combine_slot_results_into_node_result(
+    self::LineListNode{V, A}, slot0_result::AlgebraicResult, slot1_result::AlgebraicResult
+) where {V, A}
+    slot0_payload::Union{Nothing, ValOrChild{V, A}} = nothing
+    slot1_payload::Union{Nothing, ValOrChild{V, A}} = nothing
+
+    if slot0_result isa AlgResIdentity && slot1_result isa AlgResIdentity
+        # Neither slot lost anything ⇒ the whole node is unchanged.
+        @assert slot0_result.mask == SELF_IDENT
+        @assert slot1_result.mask == SELF_IDENT
+        return AlgResIdentity(SELF_IDENT)
+    elseif slot0_result isa AlgResNone && slot1_result isa AlgResNone
+        return AlgResNone()
+    elseif slot0_result isa AlgResIdentity && slot1_result isa AlgResNone
+        # slot1 was never occupied ⇒ "slot1 annihilated" removed nothing, so still Identity.
+        if !_lln_is_used(self, 1)
+            @assert slot0_result.mask == SELF_IDENT
+            return AlgResIdentity(SELF_IDENT)
+        end
+        # slot1 WAS occupied and is now gone ⇒ a new single-slot node carrying slot0 as-is.
+        slot0_payload = _lln_clone_payload_shared(self, 0)
+        slot1_payload = nothing
+    else
+        # NOTE (upstream): there is deliberately no (None, Identity) arm. slot1 cannot hold
+        # contents while slot0 is empty, so if slot0 is None and we did not match (None, None)
+        # above, this arm is the correct handler.
+        slot0_payload = map_into_option(
+            slot0_result, function (arg_idx)
+                @assert arg_idx == 0
+                _lln_clone_payload_shared(self, 0)
+            end
+        )
+        slot1_payload = map_into_option(
+            slot1_result, function (arg_idx)
+                @assert arg_idx == 0
+                _lln_clone_payload_shared(self, 1)
+            end
+        )
+    end
+
+    @assert slot0_payload !== nothing || slot1_payload !== nothing
+    new_n = clone_with_updated_payloads(self, slot0_payload, slot1_payload)
+    @assert new_n !== nothing "combine_slot_results: both payloads None (handled above)"
+    AlgResElement(TrieNodeODRc(new_n, self.alloc))
+end
+
 function psubtract_dyn(self::LineListNode{V, A}, other::AbstractTrieNode{V, A}) where {V, A}
     tag = node_tag(other)
     if tag == EMPTY_NODE_TAG
@@ -1960,20 +2148,13 @@ function psubtract_dyn(self::LineListNode{V, A}, other::AbstractTrieNode{V, A}) 
 end
 
 function prestrict_dyn(self::LineListNode{V, A}, other::AbstractTrieNode{V, A}) where {V, A}
-    tag = node_tag(other)
-    if tag == EMPTY_NODE_TAG
-        return AlgResNone()
-    elseif tag == DENSE_BYTE_NODE_TAG || tag == CELL_BYTE_NODE_TAG
-        dense = DenseByteNode{V, A}(self.alloc, 2)
-        merge_from_list_node!(dense, self)
-        return prestrict_dyn(dense, other)
-    elseif tag == LINE_LIST_NODE_TAG || tag == TINY_REF_NODE_TAG
-        dense = DenseByteNode{V, A}(self.alloc, 2)
-        merge_from_list_node!(dense, self)
-        return prestrict_dyn(dense, other)
-    else
-        error("LineListNode::prestrict_dyn — unknown tag $tag")
-    end
+    # 1:1 with line_list_node.rs:2718. No dispatch on `node_tag(other)`: the per-slot walk
+    # goes through the TrieNode interface, so an EmptyNode `other` falls out as
+    # (None, None) → AlgResNone by itself, and a node type this file does not enumerate
+    # (BridgeNode) no longer hits an `error`.
+    slot0_result = _lln_restrict_slot_contents(self, 0, other)
+    slot1_result = _lln_restrict_slot_contents(self, 1, other)
+    _lln_combine_slot_results_into_node_result(self, slot0_result, slot1_result)
 end
 
 # Shallow clone of one slot payload: SHARE a child subtrie via copy() (bumps the
