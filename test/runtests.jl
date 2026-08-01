@@ -854,6 +854,7 @@ include("test_graft_child_maps.jl")
 # The two UPSTREAM defects we deliberately do not reproduce, asserted by SEMANTICS rather than by the
 # fuzz ratchet — a ratchet records THAT cases differ, not WHY, and cannot tell "upstream is wrong"
 # from "we regressed".
+include("test_value_algebra.jl")
 include("test_bool_lattice.jl")
 include("test_prune_call_sites.jl")
 # `restrict`'s AlgebraicStatus, pinned against the upstream binary. Same reason as the two above:
