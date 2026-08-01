@@ -1060,6 +1060,24 @@ end
     wz_join_map_into!(z, map) -> AlgebraicStatus
 
 Join self's subtrie with `map`. Result written to self.
+
+🔴 **`map` IS CONSUMED. DO NOT USE IT AFTERWARDS.** The join mutates it — measured:
+
+    A = {ab:, b, b:a}   join   S = {a:a, aa, ab}
+      A after  [a:a,aa,ab,ab:,b,b:a] vc=6      correct
+      S after  [a:a,aa,ab,ab:]       vc=4      <- S GAINED "ab:" FROM A
+
+This is faithful to upstream, whose signature is
+`pub fn join_map_into(&mut self, map: PathMap<V, A>)` (write_zipper.rs:1680) — it takes the map
+**BY VALUE**, so the source is MOVED and no caller can observe what the join does to it. Julia has
+no move, so the same mutation is visible here. Same asymmetry as `clone_payload`: the Rust is sound
+because of a guarantee the port cannot express, so the guarantee has to become a documented contract
+instead.
+
+⚠️ It does NOT depend on sharing. Passing a freshly built, unshared map mutates it just the same, so
+this is not a copy-on-write gap and cloning the argument first does not make it "safe" — it makes it
+a different operation. If a caller genuinely needs the source afterwards, hand over a copy and treat
+the one you passed as gone. Pinned in `test/test_join_consumes_source.jl`.
 """
 function wz_join_map_into!(z::WriteZipperCore{V, A}, map::PathMap{V, A}) where {V, A}
     # graft_root_vals (DEFAULT): the map's ROOT value joins into the FOCUS value, and upstream
