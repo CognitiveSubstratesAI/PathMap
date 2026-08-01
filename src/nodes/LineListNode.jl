@@ -197,16 +197,54 @@ end
 
 """
     clone_slot0_payload(n) → Union{Nothing, ValOrChild{V,A}}
+
+Ports `clone_payload::<0>` (line_list_node.rs:908): a CHILD payload is cloned by BUMPING THE
+REFCOUNT (structural sharing), a VALUE payload by cloning the value — exactly upstream's
+`unsafe{ &*self.val_or_child0.child }.clone()` on an `Rc`.
+
+These used to `deepcopy` the slot, copying the ENTIRE SUBTREE below it. The 2026-06-02 audit
+removed that pattern and added `_shallow_clone_slot` for it — "deep-copied whole subtrees and
+defeated sharing, PathMap's reason for existing" — but missed this pair, which is where the whole
+join/merge path (`_try_merge`, `_merge_guts`, `merge_list_nodes`) gets its payloads. Found by
+profiling a 20k-key workload: `deepcopy` was the hottest frame AND the top `Memory{Any}` source
+(its internal `IdDict` is `Vector{Any}`-backed, which this project bans — the ban was being
+violated indirectly, through a stdlib call, which is why grepping never found it).
+
+    join   574,106 -> 42 allocs      ~208 ms -> ~0 ms     structural sharing: a disjoint join
+                                                          attaches the subtrie with one refcount
+                                                          bump instead of copying it
+    sub  2,473,618 -> 984,782 allocs ~580 ms -> ~60 ms
+    meet   515,971 -> unchanged      unchanged            CONTROL: meet does not use this path
+
+🔴 THIS WAS SHIPPED ONCE AND REVERTED (`8c3f9b0` -> `0c81445`), and the reason it is safe NOW is not
+that the change improved — it is that a DIFFERENT defect was fixed underneath it. Sharing here made
+`wz_join_map_into!` hand the target nodes it did not own; a later write through
+`write_zipper_at_path` then mutated them in place and CORRUPTED THE SOURCE MAP. That write path was
+missing its copy-on-write entirely (regression `6d3fd84`, fixed in `38dcfbd` by porting
+`node_along_path_mut!`). So the corruption was never caused by cloning shallowly; shallow cloning
+merely made an already-broken COW observable.
+
+Proven, not assumed — with the COW fix removed, both gates go red again:
+
+    deepcopy + at-path COW   cow_join_map PASS   cow_at_path PASS
+    shallow  + at-path COW   cow_join_map PASS   cow_at_path PASS   <- this configuration
+    shallow  + COW REMOVED   cow_join_map FAIL   cow_at_path FAIL   <- the control
+
+⚠️ DO NOT re-introduce `deepcopy` here to "be safe". It would hide a COW bug rather than fix one,
+exactly as it did between 2026-07-31 and 2026-08-01, and it costs a whole-subtree copy per merged
+payload. If a sharing bug appears, the fault is in the write path's COW, not here.
 """
 function clone_slot0_payload(n::LineListNode{V, A}) where {V, A}
-    is_used_0(n) ? deepcopy(n.slot0) : nothing
+    is_used_0(n) ? _shallow_clone_slot(n.slot0) : nothing
 end
 
 """
     clone_slot1_payload(n) → Union{Nothing, ValOrChild{V,A}}
+
+Slot-1 twin of [`clone_slot0_payload`] — see there for why this shares rather than deep-copies.
 """
 function clone_slot1_payload(n::LineListNode{V, A}) where {V, A}
-    is_used_1(n) ? deepcopy(n.slot1) : nothing
+    is_used_1(n) ? _shallow_clone_slot(n.slot1) : nothing
 end
 
 # =====================================================================

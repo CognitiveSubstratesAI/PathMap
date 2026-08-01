@@ -66,6 +66,27 @@ end
         @test PathMap.val_count(b) == 500
     end
 
+    @testset "structural sharing is ON — the join must not copy the subtrie" begin
+        # ⚠️ THIS ASSERTS THE OPPOSITE OF A BUG FIX, deliberately. `clone_slot{0,1}_payload` shares a
+        # child subtrie by refcount instead of `deepcopy`-ing it, which is what makes a disjoint
+        # join 574,106 allocations -> 42. That optimisation was reverted once (`8c3f9b0` ->
+        # `0c81445`) because it corrupted the source — but the real fault was a MISSING
+        # copy-on-write in `write_zipper_at_path` (`38dcfbd`), and reinstating `deepcopy` here would
+        # HIDE such a bug rather than fix it.
+        #
+        # So this test exists to stop a future reader from "fixing" a sharing symptom by making the
+        # clone deep again. If it goes red alongside the source-preservation tests above, the COW is
+        # broken; if it goes red ALONE, someone reintroduced the deepcopy.
+        a = _build(2_000, "a")
+        b = _build(2_000, "b")
+        z = PathMap.write_zipper(deepcopy(a))
+        allocs = @allocated PathMap.wz_join_map_into!(z, b)
+        @test PathMap.val_count(z.pathmap) == 4_000
+        # A deep copy of a 2000-key source runs to hundreds of thousands of allocations; sharing is
+        # a handful. Two orders of magnitude of headroom, so this is a shape check, not a ratchet.
+        @test allocs < 100_000
+    end
+
     @testset "the source can be joined again afterwards" begin
         # If the first join left `b` structurally damaged, a second join would produce the wrong
         # count even without any explicit mutation — an independent way to catch the same defect.
