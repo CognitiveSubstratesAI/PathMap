@@ -207,7 +207,11 @@ end
 
 function _fuzz_run(::Type{V}, c) where {V}
     (; a_keys, a_rootval, a_rootval_tok, s_keys, s_rootval, s_rootval_tok, origin, ops) = c
-    _smk() = _fmk(V, s_keys, s_rootval, s_rootval_tok)
+    # Source built ONCE; consuming ops get a refcount-sharing clone, mirroring `s.clone()` in
+    # gen_fuzz.rs. See the tail of this function for why the baseline is never taken up front.
+    _shared = _fmk(V, s_keys, s_rootval, s_rootval_tok)
+    _smk() = FPMT{V, PathMap.GlobalAlloc}(
+        _shared.root === nothing ? nothing : copy(_shared.root), _shared.root_val, _shared.alloc)
     a = _fmk(V, a_keys, a_rootval, a_rootval_tok)
     trace = IOBuffer()
     wz = origin == "-" ? PathMap.write_zipper(a) :
@@ -255,7 +259,15 @@ function _fuzz_run(::Type{V}, c) where {V}
         end
         print(trace, out, ";")
     end
-    String(take!(trace)) * "|" * _fdump(a)
+    # SOURCE-PRESERVATION CHECK — see gen_fuzz.rs for the full reasoning. Compare the END state
+    # against a freshly built reference; NEVER dump `_shared` before the ops. `read_zipper`
+    # materialises a root node on a map whose root is `nothing`, which is observable (fuzz 00074),
+    # so an up-front baseline changes the input and manufactures divergences — it produced 162
+    # phantom ones before that was understood.
+    _s_now = _fdump(_shared)
+    _s_ref = _fdump(_fmk(V, s_keys, s_rootval, s_rootval_tok))
+    String(take!(trace)) * "|" * _fdump(a) *
+        (_s_now == _s_ref ? "" : "|SRC-CHANGED:" * _s_now)
 end
 
 """

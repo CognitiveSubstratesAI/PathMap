@@ -1,10 +1,62 @@
-# Fuzz divergences — triage (30 of 3000 cases)
+# Fuzz divergences — triage (31 of 3000 cases)
 
 Regenerate with `test/differential/shrink.jl` (needs the rustup toolchain): it reduces each failing
 case to a 1–2 op reproducer and re-pins it against the upstream binary.
 
 **SHRINK FIRST, THEN ATTRIBUTE.** Case 00020's duplicate path was reported as our structural
 corruption; shrinking showed BOTH engines produce it.
+
+---
+
+## 🆕 2026-08-01 — THE CORPUS CAN NOW SEE SOURCE CORRUPTION (30 → 31)
+
+Every case now also checks that the SOURCE map `S` survived. It could not before, and that blindness
+was structural, not incidental: each op built its own throwaway `S`, the run dumped only `A`, and `S`
+was discarded. A copy-on-write regression corrupted **17 op shapes for two days** while this corpus
+sat at 30 mismatches / 0 errors and MORK stayed at 2959/2959.
+
+`S` is now built ONCE and handed to the consuming ops as a **refcount-sharing clone**
+(`s.clone()` upstream, `copy(root)` here). Sharing is the whole point — it is the only configuration
+in which a write that should have copied-on-write becomes observable.
+
+**`expected.tsv` and `cases.txt` are BYTE-IDENTICAL** (verified by regenerating and diffing), and
+upstream emits the marker on **0 of 3000** cases. So the check costs the corpus nothing and every
+occurrence is ours.
+
+### 🔴 THE INSTRUMENTATION LIED FIRST — 162 phantom divergences
+
+The first attempt dumped `S` BEFORE the ops to get a baseline. `read_zipper` **materialises a root
+node** on a map whose `root === nothing`, and that difference is observable — `set_val_at!`'s own
+comment cites fuzz case `00074` for exactly it. So the baseline dump silently changed the input for
+every empty-source-with-root-value case and manufactured **162 divergences**, which were then
+reported as a separate "sharing-sensitivity" defect class. They were not a class; they were the
+probe.
+
+Two hypotheses died on the way to that, both by measurement rather than argument: "the 162 come from
+sharing" (refuted — sharing alone gives NEW=0) and "the 162 come from the join consuming its source"
+(refuted — independent deep copies still gave 162). The fix is to never touch `S` before the ops:
+compare its END state against a FRESHLY BUILT reference, so both dumps happen afterwards and neither
+can perturb the run. `val_count` and `deepcopy` were measured non-perturbing; `read_zipper` is not.
+
+**Lesson worth more than the check: an observing probe must be proven not to change what it
+observes.** Same family as an equivalent mutant — a measurement that cannot distinguish the outcomes
+it exists to separate.
+
+### The one real case: `00324`
+
+    A={aab, ab:, b, b::b, b:a}  S={a:a, aa, ab}+rootval   RESET · ASCEND 4 · RESET · JOINMAP
+      ours      …|[…] vc=9|SRC-CHANGED:[a:a,aa,aab,ab,ab:] vc=6    S GAINED "aab","ab:" FROM A
+      upstream  …|[…] vc=9                                          S untouched
+
+`wz_join_map_into!` CONSUMES its source — documented in `8fe6319`, and faithful to upstream's
+by-value `join_map_into(&mut self, map: PathMap<V,A>)`. But upstream consumes SAFELY: its mutations
+go through `Rc::make_mut`, so a map sharing those nodes is protected. Ours mutates through the shared
+nodes and the third party sees it. That is the divergence, and it is why this sits in the ratchet
+rather than being written off as "documented behaviour".
+
+Reduced minimal (no cursor ops needed): `A={ab:, b, b:a}` join `S={a:a, aa, ab}` → S gains `ab:`.
+Pinned in `test/test_join_consumes_source.jl`, including the discriminator that an UNSHARED source
+is mutated identically — so this is a contract issue on top of a COW gap, not one or the other.
 
 ---
 

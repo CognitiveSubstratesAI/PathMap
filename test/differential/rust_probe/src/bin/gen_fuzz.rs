@@ -271,6 +271,11 @@ fn dump<V: ProbeVal>(m: &PathMap<V>) -> String {
 /// algebra ops return an AlgebraicStatus that callers branch on.
 fn run<V: ProbeVal>(c: &Case) -> String {
     let mut a = mk::<V>(&c.a_keys, c.a_rootval, &c.a_rootval_tok);
+    // Build the source ONCE and hand the consuming ops a `clone()` — a REFCOUNT BUMP
+    // (trie_map.rs:38-44), not a copy. Sharing is the point: it is the only configuration in which
+    // a write that should have copied-on-write becomes visible, and the corpus could not reach it
+    // while every op built its own throwaway map.
+    let s = mk::<V>(&c.s_keys, c.s_rootval, &c.s_rootval_tok);
     let mut trace = String::new();
     {
         let mut wz = if c.origin == "-" {
@@ -287,24 +292,15 @@ fn run<V: ProbeVal>(c: &Case) -> String {
                 "ASCEND" => format!("{}", wz.ascend(arg.parse().unwrap())),
                 "SETVAL" => format!("{}", wz.set_val(V::parse(arg)).is_some()),
                 "REMOVEVAL" => format!("{}", wz.remove_val(arg == "1").is_some()),
-                "GRAFTMAP" => { wz.graft_map(mk::<V>(&c.s_keys, c.s_rootval, &c.s_rootval_tok)); "-".into() }
-                "JOINMAP" => format!("{:?}", wz.join_map_into(mk::<V>(&c.s_keys, c.s_rootval, &c.s_rootval_tok))),
-                "MEET" => {
-                    let s = mk::<V>(&c.s_keys, c.s_rootval, &c.s_rootval_tok);
-                    format!("{:?}", wz.meet_into(&s.read_zipper(), arg == "1"))
-                }
-                "SUB" => {
-                    let s = mk::<V>(&c.s_keys, c.s_rootval, &c.s_rootval_tok);
-                    format!("{:?}", wz.subtract_into(&s.read_zipper(), arg == "1"))
-                }
+                "GRAFTMAP" => { wz.graft_map(s.clone()); "-".into() }
+                "JOINMAP" => format!("{:?}", wz.join_map_into(s.clone())),
+                "MEET" => format!("{:?}", wz.meet_into(&s.read_zipper(), arg == "1")),
+                "SUB" => format!("{:?}", wz.subtract_into(&s.read_zipper(), arg == "1")),
                 // RESTRICT is NOT emitted by the random generator (see `script()`), so adding it
                 // here does not perturb the 3000-case corpus or its ratchet. It exists so that
                 // `--exec` can drive hand-written scripts: `restrict` was the one full algebra op
                 // with ZERO differential coverage, and it turned out to diverge.
-                "RESTRICT" => {
-                    let s = mk::<V>(&c.s_keys, c.s_rootval, &c.s_rootval_tok);
-                    format!("{:?}", wz.restrict(&s.read_zipper()))
-                }
+                "RESTRICT" => format!("{:?}", wz.restrict(&s.read_zipper())),
                 "TAKEMAP" => match wz.take_map(arg == "1") {
                     Some(m) => dump(&m),
                     None => "None".into(),
@@ -317,7 +313,20 @@ fn run<V: ProbeVal>(c: &Case) -> String {
             let _ = write!(trace, "{};", out);
         }
     }
-    format!("{}|{}", trace, dump(&a))
+    // SOURCE-PRESERVATION CHECK. Compare `s`'s END state against a FRESHLY BUILT reference of what
+    // it should still be — NEVER dump `s` before the ops. `read_zipper` MATERIALISES a root node on
+    // a map whose root is `None`, and that difference is observable (fuzz case 00074 is cited in
+    // PathMap's own `set_val_at!` for exactly this). A baseline dump taken up front silently
+    // changes the input and manufactures divergences: it produced 162 phantom ones before this was
+    // understood. Both dumps here happen AFTER the ops, so neither can perturb the run.
+    //
+    // Emitted only on a change, so `expected.tsv` stays byte-identical in the healthy case and
+    // every existing consumer keeps working (shrink.jl's `split(out,'|')[end]`, the pinned strings
+    // in test_restrict.jl / test_value_algebra.jl).
+    let s_now = dump(&s);
+    let s_ref = dump(&mk::<V>(&c.s_keys, c.s_rootval, &c.s_rootval_tok));
+    let src_note = if s_now != s_ref { format!("|SRC-CHANGED:{}", s_now) } else { String::new() };
+    format!("{}|{}{}", trace, dump(&a), src_note)
 }
 
 /// Inverse of `script()` — lets this binary act as an ORACLE FOR ARBITRARY SCRIPTS, not just ones
