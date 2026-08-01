@@ -197,16 +197,42 @@ end
 
 """
     clone_slot0_payload(n) → Union{Nothing, ValOrChild{V,A}}
+
+Ports `clone_payload::<0>` (line_list_node.rs:908). A CHILD payload is cloned by BUMPING THE
+REFCOUNT (structural sharing), a VALUE payload by cloning the value — exactly what upstream's
+`unsafe{ &*self.val_or_child0.child }.clone()` does on an `Rc`.
+
+🔴 THESE USED TO `deepcopy` THE SLOT, which copies the ENTIRE SUBTREE hanging off it. The
+2026-06-02 audit (close-out step 2) removed that pattern and introduced `_shallow_clone_slot`
+precisely because "it defeats sharing — PathMap's reason for existing" — but it fixed the sites it
+found and MISSED this pair, which is where the join/merge path (`_try_merge`, `_merge_guts`,
+`merge_list_nodes`) gets all of its payloads. Found by profiling, not by reading: `deepcopy` was
+simultaneously the hottest frame in a 20k-key join/meet/subtract workload (3096 samples) and the
+top source of `Memory{Any}` allocations (7184 allocs / 439 KB — `deepcopy` keeps an `IdDict`,
+whose backing store is a `Vector{Any}`, which this project bans outright).
+
+Measured on that workload, 3 runs each, allocation counts identical every run:
+
+    join  861,156 -> 287,092 allocs (-67%)   ~315 ms -> ~108 ms   2.9x
+    sub 2,760,668 -> 1,271,832 allocs (-54%)  ~700 ms -> ~170 ms   4.2x
+    meet  803,021 -> 803,021 (unchanged)      ~155 ms -> ~157 ms   CONTROL — meet does not
+                                                                   route through this path
+
+Sharing is kept sound by the same COW discipline upstream relies on: `make_unique!` before any
+in-place mutation of a possibly-shared node. `deepcopy` also duplicated the node's `@atomic refcnt`
+field into the copy, which the sharing discipline never wanted.
 """
 function clone_slot0_payload(n::LineListNode{V, A}) where {V, A}
-    is_used_0(n) ? deepcopy(n.slot0) : nothing
+    is_used_0(n) ? _shallow_clone_slot(n.slot0) : nothing
 end
 
 """
     clone_slot1_payload(n) → Union{Nothing, ValOrChild{V,A}}
+
+Slot-1 twin of [`clone_slot0_payload`] — see there for why this is a shallow clone.
 """
 function clone_slot1_payload(n::LineListNode{V, A}) where {V, A}
-    is_used_1(n) ? deepcopy(n.slot1) : nothing
+    is_used_1(n) ? _shallow_clone_slot(n.slot1) : nothing
 end
 
 # =====================================================================
