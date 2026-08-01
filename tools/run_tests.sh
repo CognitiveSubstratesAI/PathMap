@@ -27,11 +27,26 @@
 # the environment: default-stdio spawn OK, explicit-stdio spawn EINVAL, explicit-stdio spawn under
 # `< /dev/null` OK (stdin is then an open IOStream).
 #
-# KNOWN GAP, recorded here deliberately: PathMap has NO differential oracle against upstream, though
-# the Rust source sits at ~/JuliaAGI/dev-zone/PathMap-upstream. Every test here checks our port
-# against expectations we wrote ourselves, which cannot catch a silently-wrong value we did not
-# anticipate — the exact class MORK's upstream_conformance.jl exists to catch. Do not read a green
-# PathMap suite as "conforms to upstream"; it means "self-consistent".
+# ✅ CLOSED — this header used to say "PathMap has NO differential oracle against upstream, so a green
+# suite means self-consistent, not conformant". That has not been true since 2026-07-27 and the note
+# was actively misleading by 2026-08-01. There are now THREE upstream-graded gates, all wired into
+# the suite and all run by this script:
+#
+#   test/differential/run_differential.jl   42 curated scenarios, ours vs the Rust probe
+#   test/differential/run_fuzz.jl           3000 generated cases, byte-compared; ratcheted at 30
+#                                           KNOWN_DIVERGENT, each attributed to a named upstream
+#                                           defect in fuzz/TRIAGE.md
+#   test/test_restrict.jl                   28 hand-written RESTRICT cases, expectations taken
+#                                           verbatim from `gen_fuzz --exec`
+#
+# The oracle is `test/differential/rust_probe`, which depends on the upstream checkout BY PATH, so
+# it grades against whatever is vendored (currently 52fd9df) rather than a snapshot of it.
+#
+# ⚠️ WHAT A GREEN SUITE STILL DOES NOT MEAN. The fuzz corpus generates 12 ops and UNIT values only,
+# so value-payload algebra is unexercised (run_fuzz.jl's header explains why), and ops outside that
+# vocabulary — join_k_path_into, restrict, graft_child_maps, meet_k_path_into, join_into_take — are
+# reached only by hand-written cases. Two real defects hid in exactly that gap this week. Read a
+# green suite as "conforms on the covered surface", and check the surface before trusting it.
 #
 # Usage:  tools/run_tests.sh            # whole suite
 #         tools/run_tests.sh path.jl    # one file

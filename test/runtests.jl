@@ -1,7 +1,13 @@
 using Test
 using PathMap
-# Aqua is test-only [extras]: present under Pkg.test/CI but NOT in a plain
-# `julia --project=. test/runtests.jl` run (no sandbox). Load optionally.
+# Aqua is test-only [extras]. The optional load stays, but the reason recorded here was WRONG:
+# it claimed Aqua is "present under Pkg.test/CI but NOT in a plain `julia --project=.` run".
+# Measured 2026-08-01 — `using Aqua` succeeds under `--project=.` because the default LOAD_PATH is
+# ["@", "@v#.#", "@stdlib"] and Aqua is installed in the v1.12 shared environment. So Aqua DOES run
+# under tools/run_tests.sh (9/9 green when invoked directly). It does not appear in the suite log
+# only because Julia collapses passing nested testsets into the parent line — verified by grepping
+# the same log for `basic CRUD` / `write zipper` / `morphisms`, which are also absent.
+# The try/catch is still correct: it covers an environment where the shared env lacks Aqua.
 const _HAS_AQUA = try
     ;
     @eval using Aqua;
