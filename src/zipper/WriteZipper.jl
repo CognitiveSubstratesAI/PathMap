@@ -1443,18 +1443,41 @@ function wz_join_k_path_into!(
     # (:2179-2190), so we were skipping the node-level dangling removal outright AND running the
     # ancestor walk unconditionally. Nothing caught it because `join_k_path_into` is not one of the
     # 12 ops the differential fuzzer generates.
+    # 🔴 TWO DIFFERENT COW STEPS ARE NEEDED HERE, AND NEITHER SUBSTITUTES FOR THE OTHER.
+    #
+    # (1) THE ANCESTOR CHAIN, on `focus_stack` — this call. Every other mutating op does it
+    #     (:230 set_val, :386 remove_val, :671, :1707 take_focus, :1874, :1909); this one did not,
+    #     and that omission let a write reach a map SHARING our ancestors:
+    #
+    #         a  = {":b"=>101, ":a"=>102};  ac = share(a)      # copy(root) -> refcount 2
+    #         z = write_zipper(a); descend ":"; join_k_path_into!(z, 1, prune)
+    #           a  -> []   intended
+    #           ac -> []   *** THE SHARED CLONE WAS EMPTIED ***
+    #
+    #     Independent of `prune` and of `byte_cnt`. AT THE ROOT it does not reproduce — with no
+    #     descent the shared root IS `focus_stack[1]`, and step (2)'s `make_unique!` happens to
+    #     cover it. That is exactly why the existing COW test (runtests.jl:639, which shares a
+    #     subtrie BELOW the focus) stayed green: it never descends past the shared node.
+    #
+    #     Same signature as the `write_zipper_at_path` hole fixed in `38dcfbd` — the node being
+    #     written has refcount 1, the sharing is ONE LEVEL UP, so no amount of uniquifying the
+    #     focus can find anything to fork. Upstream is safe because it reaches the focus through
+    #     `&mut self` (write_zipper.rs:1762), whose `make_mut` walk covers the whole chain.
+    #
+    #     ORDER MATTERS: this must run BEFORE `_wz_get_focus_anr`, because it may CLONE stack
+    #     nodes; a focus reference taken first would point into the pre-clone parent.
+    #
+    # (2) THE FOCUS NODE ITSELF — the `make_unique!(focus_rc)` below. `drop_head_dyn!` mutates the
+    #     focus subtrie IN PLACE, and that node is reached via `get_node_at_key` and is NOT on
+    #     `focus_stack`, so (1) cannot see it. Mirrors `self_node.make_mut().drop_head_dyn(...)`
+    #     (write_zipper.rs:1620). Without it, dropping the head of a shared subtrie corrupts the
+    #     SOURCE map — reachable via MorkL OP_DROP_HEAD on a shared space.
+    _wz_ensure_write_unique!(z)
     focus_anr = _wz_get_focus_anr(z)
     if is_none(focus_anr)
         prune && wz_prune_path!(z)
         return false
     end
-    # COW: drop_head_dyn! mutates the focus subtrie IN PLACE. The focus node is
-    # reached via get_node_at_key and is NOT on focus_stack, so the stack-only
-    # _wz_ensure_write_unique! does not cover it. If that borrowed node is SHARED
-    # (e.g. grafted in via copy(), refcount>1), make it unique first — mirroring
-    # Rust `self_node.make_mut().drop_head_dyn(...)` (write_zipper.rs:1620).
-    # Without this, dropping the head of a shared subtrie corrupts the SOURCE map
-    # (live bug, reachable via MorkL OP_DROP_HEAD on a shared space).
     focus_rc = borrow(focus_anr)
     focus_rc !== nothing && make_unique!(focus_rc)
     self_node = as_tagged(focus_anr)

@@ -859,6 +859,7 @@ include("test_join_preserves_source.jl")
 
 # The UPSTREAM defects we deliberately do not reproduce — same reasoning: a ratchet cannot tell
 # "upstream is wrong" from "we regressed".
+include("test_cow_k_path.jl")
 include("test_cow_at_path.jl")
 include("test_cow_join_map.jl")
 include("test_value_algebra.jl")
