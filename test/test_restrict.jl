@@ -36,6 +36,18 @@
 #
 # Note `OP RESTRICT` is `--exec`-only — the corpus generator never emits it, which is why
 # `restrict` had no differential coverage at all before this file.
+#
+# ✅ PROVENANCE RE-VERIFIED 2026-08-01, mechanically rather than by trusting the note above: every
+# script here was extracted from this file, replayed through `gen_fuzz --exec`, and diffed against
+# its expected string. All matched. Worth doing because the failure mode is silent — an expectation
+# transcribed from OUR output instead of the binary's would pin the port to itself and still look
+# green forever.
+#
+# ✅ AND THE RECURSIVE BRANCH IS ACTUALLY REACHED, also measured rather than assumed. Wrapping
+# `prestrict_dyn` in a depth counter shows `A={a,b}` (the shape the defect was first found with)
+# reaches nesting depth 1 — a slot holding a VALUE bails at `_lln_is_child` and never recurses —
+# while `A={aa,ab,b}` and `A={a:b,a::,b}` reach depth 2. A suite built only from the first shape
+# would leave `_lln_restrict_slot_contents`' whole recursive arm unexecuted.
 using Test
 
 # run_fuzz.jl gives us the harness that BOTH engines drive, so the expectations below are
@@ -88,6 +100,21 @@ const _RESTRICT_CASES = Tuple{String, String, String}[
     ("value slot under a covering path", "A ab\nS a\nOP RESTRICT\n", "Identity;|[ab] vc=1"),
     ("value + child at the same key", "A a ab\nS a\nOP RESTRICT\n", "Identity;|[a,ab] vc=2"),
     ("value + child, only child covered", "A a ab\nS ab\nOP RESTRICT\n", "Element;|[ab] vc=1"),
+
+    # ── added 2026-08-01 while re-verifying the port: shapes the set above did not reach ──────
+    # An EMPTY `other` is the one input that exercises `_lln_restrict_slot_contents`'s
+    # `onward === nothing` exit for BOTH slots at once, and it is also the arm where the new
+    # `prestrict_dyn` no longer dispatches on `node_tag` — an EmptyNode now falls out as
+    # (None, None) rather than hitting the old `error`.
+    ("empty S ⇒ None", "A a b\nS \nOP RESTRICT\n", "None;|[] vc=0"),
+    # S carries ONLY a root value. `restrict` takes no root value (upstream's signature has no
+    # such parameter), so the root value must not rescue anything.
+    ("S root value only ⇒ None", "A a b\nS \nSROOTVAL 1\nOP RESTRICT\n", "None;|[] vc=0"),
+    # ':' (0x3a) sorts BELOW 'a'/'b', so these exercise slot ordering and multi-byte node keys
+    # together — the `should_swap_keys` invariant, not just the algebra.
+    ("':' alphabet, equal", "A a:b a:: b\nS a:b a:: b\nOP RESTRICT\n",
+        "Identity;|[a::,a:b,b] vc=3"),
+    ("':' alphabet, partial", "A a:b a:: b\nS a:b b\nOP RESTRICT\n", "Element;|[a:b,b] vc=2"),
 ]
 
 @testset "restrict is 1:1 with upstream (STATUS, not just contents)" begin
