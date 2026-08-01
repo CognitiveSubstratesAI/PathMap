@@ -313,8 +313,17 @@ function _wz_mend_root!(z::WriteZipperCore{V, A}) where {V, A}
     nks >= length(root_prefix) && return nothing
     root_slice = view(root_prefix, (nks + 1):length(root_prefix))
     root_rc = z.focus_stack[1]
-    # Traverse root_slice to find the deepest reachable node
-    (final_rc, remaining, _) = node_along_path(root_rc, root_slice, nothing, true)
+    # Traverse root_slice to find the deepest reachable node, COPY-ON-WRITING every node on the way.
+    #
+    # 🔴 THE `_mut!` IS LOad-BEARING. This used to call the read-only `node_along_path`, matching
+    # neither of upstream's two mend/construct sites — both use `node_along_path_mut` precisely so
+    # the origin chain is made unique BEFORE the zipper exists (write_zipper.rs:2452 and :1141).
+    # Mending records the origin in `root_key_start`, so afterwards there is NOTHING above
+    # `focus_stack[1]` for `_wz_ensure_write_unique!` to walk — its `for k in 2:n` loop goes
+    # downward only. A shared ancestor absorbed by the mend was therefore never uniquified, and any
+    # write through the zipper wrote into a node another map still reached. See the header on
+    # `node_along_path_mut!` for the 17 corrupting op shapes and the bisect.
+    (final_rc, remaining, _) = node_along_path_mut!(root_rc, root_slice, nothing, true)
     if length(remaining) < length(root_slice)
         z.root_key_start += length(root_slice) - length(remaining)
     end

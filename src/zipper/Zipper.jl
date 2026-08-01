@@ -102,6 +102,92 @@ function node_along_path(
     (node, key, val)
 end
 
+"""
+    _cow_in_place!(rc, inner) -> narrowed inner (possibly a fresh clone)
+
+Copy-on-write one node: if `inner` is shared, clone it and re-point `rc` at the clone.
+
+Equivalent to `make_unique!(rc)` but takes the ALREADY-NARROWED `inner` from `_fnode`, which is the
+whole point. `make_unique!` reads `rc.node`, an abstract
+`Union{Nothing,AbstractTrieNode}`, and its `_has_refcnt`/`_node_refcount` helpers are
+`@nospecialize` — so every call is a dynamic dispatch. Measured on the naive version of this fix:
+`remove_val_at!` x20_000 over an UNSHARED map went 42 ms -> 76 ms with BYTE-IDENTICAL allocations,
+i.e. nothing was cloned and the entire 1.8x was dispatch. Passing the narrowed union lets
+`hasfield` constant-fold per concrete type and keeps the unshared path free.
+"""
+@inline function _cow_in_place!(rc::TrieNodeODRc{V, A}, inner) where {V, A}
+    if hasfield(typeof(inner), :refcnt) && Int(getfield(inner, :refcnt, :acquire)) > 1
+        _node_dec_refcnt!(inner)                        # one fewer referrer to the shared node
+        rc.node = (clone_self(inner)::TrieNodeODRc{V, A}).node
+        return _fnode(_rc_inner(rc), V, A)              # re-narrow: the clone is a different object
+    end
+    inner
+end
+
+# =====================================================================
+# node_along_path_mut!
+# =====================================================================
+#
+# 1:1 with upstream `node_along_path_mut` (trie_node.rs:2461). The ONLY difference from
+# `node_along_path` above is that this one COPY-ON-WRITES every node it steps through, exactly as
+# upstream's `node.make_mut().node_into_child_mut(key)` (trie_node.rs:2468) does.
+#
+# 🔴 WHY IT EXISTS. Upstream calls the MUTATING walker from both `mend_root` (write_zipper.rs:2452)
+# and `new_with_node_and_path_in` (:1141); we called the read-only twin at both sites, and the
+# mutating twin was never ported. That is not a theoretical gap — it silently corrupted any map
+# sharing nodes with another:
+#
+#     s = {"x:1","x:2","x:3"};  graft s into t at "g:";  then write to t through
+#     write_zipper_at_path(t, "g:x:1")  ->  S LOSES THE VALUE TOO
+#
+# 17 op shapes corrupt this way (set_val, remove_val, take_map/take_focus, remove_branches,
+# insert_prefix, graft, graft_map, join_into, join_map_into, join_into_take, meet_into, restrict,
+# restricting, join_k_path_into, meet_k_path_into, …), plus the ZipperHead tracked API.
+#
+# ⚠️ IT IS A REGRESSION, NOT AN ANCIENT GAP — bisected to `6d3fd84` ("MEND the root at
+# construction, do not DESCEND — 75 -> 33 divergences"). Before it `write_zipper_at_path` used
+# `_wz_descend_to_internal!`, which built the FULL ancestor stack, so `_wz_ensure_write_unique!`'s
+# `for k in 2:n` loop happened to cover the chain. Mending records the origin in `root_key_start`
+# instead, leaving nothing above `focus_stack[1]` to walk — the 42 fuzz divergences that fix closed
+# and the corruption it opened are the same trade. Reverting to descend is not the answer; adding
+# the make_mut upstream always had is.
+#
+# ORDER MATTERS: COW the node FIRST, then re-read its children. `clone_self` gives the clone its OWN
+# child wrappers, so a child fetched before the clone belongs to the pre-clone parent and writing
+# through it would leak straight back into whoever still shares that parent.
+function node_along_path_mut!(
+    root_rc::TrieNodeODRc{V, A}, path, root_val::Union{Nothing, V}, stop_short::Bool=false
+) where {V, A}
+    node = root_rc
+    key = path
+    val = root_val
+    inner = _cow_in_place!(node, _fnode(_rc_inner(node), V, A))
+
+    if !isempty(key)
+        while true
+            result = node_get_child(inner, key)
+            result === nothing && break
+            consumed, next_rc = result
+            if consumed < length(key)
+                node = next_rc
+                key = view(key, (consumed + 1):length(key))
+                inner = _cow_in_place!(node, _fnode(_rc_inner(node), V, A))
+            else
+                if !stop_short
+                    val = node_get_val(inner, key)
+                    node = next_rc
+                    key = view(key, 1:0)
+                else
+                    val = nothing
+                end
+                break
+            end
+        end
+    end
+
+    (node, key, val)
+end
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Allocation-free read hot path (docs/PERF_VS_UPSTREAM_2026-06-24.md, optimization #1).
 #

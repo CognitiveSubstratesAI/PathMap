@@ -53,9 +53,28 @@ if _HAS_ALLOCCHECK
         # closure) and insert 5662 → ~2650 ns/key (−53%). Lock the floor so a future write-path
         # type-instability regression is caught. (Full elimination of the remaining 17 needs the
         # ADR-001 isbits node slab — the `.node` field is abstract; the rest are node mutations.)
+        # RE-BASELINED 17 -> 21 (2026-08-01) for a CORRECTNESS fix, on the same principle as the
+        # `path_exists_at` 8 -> 11 note above: a correct answer at 21 beats a wrong one at 17.
+        #
+        # `_wz_mend_root!` now walks the origin chain with `node_along_path_mut!`, which
+        # copy-on-writes each node instead of only reading it. Without it, every write through a
+        # zipper built by `write_zipper_at_path` corrupted any map SHARING those nodes — 17 op
+        # shapes, `remove_val_at!` among them. Regression from `6d3fd84`; see the header on
+        # `node_along_path_mut!` (src/zipper/Zipper.jl).
+        #
+        # ⚠️ THE COUNT WENT UP; THE RUNTIME WENT DOWN. These are static dispatch SITES, and the new
+        # ones are union-split over `TrieNodeVariant`, so they cost nothing at run time. Measured
+        # `remove_val_at!` x20_000 over an UNSHARED map, 3 runs, build excluded via `setup=`:
+        #     with the fix   86.2 / 88.8 / 89.9 ms
+        #     without it     97.4 / 101.7 / 108.1 ms
+        #     allocations    807,981 in BOTH — nothing clones on the unshared path
+        # A naive version of the same fix (calling `make_unique!` on the abstract `rc.node`, whose
+        # `@nospecialize` helpers force a real dynamic dispatch) measured 42 -> 76 ms instead. The
+        # difference is passing the already-narrowed `inner` from `_fnode`; that is what this
+        # ratchet is really protecting, so do not "fix" the count by reverting to the abstract call.
         set_dyn = count(a -> a isa AllocCheck.DynamicDispatch,
                         AllocCheck.check_allocs(PathMap.set_val_at!, (typeof(m), Vector{UInt8}, Int32); ignore_throw = true))
-        @test set_dyn <= 17
+        @test set_dyn <= 21
     end
 else
     @info "AllocCheck not loadable (plain julia --project=.) — read-path alloc guard runs under Pkg.test/CI"
