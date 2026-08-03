@@ -64,6 +64,28 @@ misfires it is on a shape they do not reach. The next step is a probe that walks
 the dependent stack changes depth and checks whether the last-factor guard still selects correctly —
 NOT deleting the accessor and seeing what breaks.
 
+⚠️ **AND THIS SURFACE HAS NO DIFFERENTIAL COVERAGE AT ALL — verified 2026-08-03.** `rust_probe`
+(`test/differential/rust_probe/src/`) contains **zero** references to `DependentProductZipper`,
+`ProductZipper` or `dependent_zipper`. The 3000-case corpus exercises trie ops — join/meet/subtract/
+graft — and never the zipper-composition layer.
+
+Two consequences, and they compound:
+
+1. It is why the risk above is INVISIBLE. There is no oracle that could see a wrong last-factor
+   selection, so "the differential is green" says nothing about it. Same shape as the 2026-08-01 COW
+   class: 3000 green cases and not one could observe source corruption because the harness only
+   dumped the destination.
+2. It is why moving the vendored checkout `52fd9df` → `143ecd1` (2026-08-03) did NOT invalidate the
+   30 known divergences — upstream's changes were confined to `dependent_zipper.rs` and
+   `product_zipper.rs`, neither of which the corpus touches. Checked BEFORE relying on it, rather
+   than assuming the green run meant anything.
+
+**So the honest statement is not "the differential covers PathMap"** — it covers the trie algebra.
+The zipper-composition layer, which is where `CmpSource` and the `==`/`!=` source live, is
+unmeasured. Upstream ships a 39-function type-generic zipper conformance battery
+(`zipper_moving_tests` + `zipper_iteration_tests`) that we have never run; that is the ready-made
+oracle for exactly this gap.
+
 ---
 
 ## Not in this file
