@@ -1,5 +1,9 @@
 # Deliberate deviations from upstream — where "match the binary" is the WRONG goal
 
+> **Companion:** `ADAPTATIONS.md` (same directory) records where upstream is RIGHT and we built
+> it differently anyway — `debug_assert!` not ported as a throw, and `dpz_factor_count` retained
+> where upstream deleted it (with its open risk).
+
 Every other divergence in this directory is a bug of OURS to close. The ones recorded here are
 different: **upstream is wrong, and we deliberately do not reproduce it.** Each entry carries the
 probe that demonstrates it, so the claim is settled by execution rather than by argument.
