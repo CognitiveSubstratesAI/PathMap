@@ -24,19 +24,80 @@ const PM = PathMap.PathMap   # module and type share the name (same alias runtes
 const ZIPPER_MOVING_BASIC_TEST_KEYS =
     ["romane", "romanus", "romulus", "rubens", "ruber", "rubicon", "rubicundus", "rom'i"]
 
-"Build a PathMap over `keys` and return a read zipper at its root."
-function battery_zipper(keys::Vector{String})
+# ── RUN THE BATTERY AGAINST MORE THAN ONE ZIPPER TYPE, as upstream does ──────────────────────────
+# Upstream's macro is invoked once per zipper type (product_zipper.rs:1791-1828 applies it to
+# ProductZipper AND ProductZipperG; arena_compact.rs:2856 and overlay_zipper.rs:362 to two more),
+# with a `$make_z` closure that builds the zipper from a map + root path. `BATTERY_MAKE_Z` is that
+# closure, swapped by the loop at the bottom of this file, so every test below runs unchanged
+# against each type — no test is written twice.
+# NB the empty-path case must use `read_zipper`, not `read_zipper_at_path(m, [])` — they return
+# DIFFERENT types (ReadZipperCore vs ReadZipperUntracked) and only the former carries the full
+# zipper_* method set. Measured: routing everything through read_zipper_at_path errors with
+# `no method matching zipper_reset!(::ReadZipperUntracked)`.
+const BATTERY_MAKE_Z = Ref{Function}(
+    (m, path) -> isempty(path) ? read_zipper(m) : read_zipper_at_path(m, path))
+
+battery_map(keys::Vector{String}) = begin
     m = PM{UnitVal}()
     for k in keys
         set_val_at!(m, Vector{UInt8}(k), UNIT_VAL)
     end
-    (m, read_zipper(m))
+    m
 end
+
+"Build a PathMap over `keys` and return a zipper at its root (type per BATTERY_MAKE_Z)."
+function battery_zipper(keys::Vector{String})
+    m = battery_map(keys)
+    (m, BATTERY_MAKE_Z[](m, UInt8[]))
+end
+
+"Zipper rooted at `path` — upstream's `run_test` third argument."
+battery_zipper_at(m, path) = BATTERY_MAKE_Z[](m, path)
+
+# ── forwarding so the `zipper_*` calls in the tests reach ProductZipperG's `pzg_*` ───────────────
+# Adding methods to the existing generics, rather than rewriting 26 testsets to call pzg_* — the
+# tests stay a faithful transcription of upstream and the dispatch does the work.
+# EXTEND the existing generics — do not shadow them. Writing `zipper_path(z::PZG) = ...` at Main
+# scope defines a NEW `zipper_path` that HIDES the imported one, and every call on any other zipper
+# type then fails with a MethodError. Measured: 53 errors across the base run. `import` is what
+# makes these additional methods rather than a replacement function.
+import PathMap: zipper_descend_to!, zipper_descend_to_byte!, zipper_descend_to_existing!,
+    zipper_descend_first_byte!, zipper_descend_indexed_byte!, zipper_descend_until!,
+    zipper_descend_until_max_bytes!, zipper_ascend!, zipper_ascend_byte!, zipper_ascend_until!,
+    zipper_ascend_until_branch!, zipper_to_next_sibling_byte!, zipper_to_prev_sibling_byte!,
+    zipper_to_next_val!, zipper_to_next_step!, zipper_reset!, zipper_path, zipper_path_exists,
+    zipper_child_mask, zipper_child_count, zipper_is_val, zipper_val, zipper_at_root
+
+const PZG = PathMap.ProductZipperG
+zipper_descend_to!(z::PZG, k)            = PathMap.pzg_descend_to!(z, k)
+zipper_descend_to_byte!(z::PZG, b)       = PathMap.pzg_descend_to_byte!(z, b)
+zipper_descend_to_existing!(z::PZG, k)   = PathMap.pzg_descend_to_existing!(z, k)
+zipper_descend_first_byte!(z::PZG)       = PathMap.pzg_descend_first_byte!(z)
+zipper_descend_indexed_byte!(z::PZG, i)  = PathMap.pzg_descend_indexed_byte!(z, i)
+zipper_descend_until!(z::PZG)            = PathMap.pzg_descend_until!(z)
+zipper_descend_until_max_bytes!(z::PZG, n) = PathMap.pzg_descend_until_max_bytes!(z, n)
+zipper_ascend!(z::PZG, n)                = PathMap.pzg_ascend!(z, n)
+zipper_ascend_byte!(z::PZG)              = PathMap.pzg_ascend_byte!(z)
+zipper_ascend_until!(z::PZG)             = PathMap.pzg_ascend_until!(z)
+zipper_ascend_until_branch!(z::PZG)      = PathMap.pzg_ascend_until_branch!(z)
+zipper_to_next_sibling_byte!(z::PZG)     = PathMap.pzg_to_next_sibling_byte!(z)
+zipper_to_prev_sibling_byte!(z::PZG)     = PathMap.pzg_to_prev_sibling_byte!(z)
+zipper_to_next_val!(z::PZG)              = PathMap.pzg_to_next_val!(z)
+zipper_to_next_step!(z::PZG)             = PathMap.pzg_to_next_step!(z)
+zipper_reset!(z::PZG)                    = PathMap.pzg_reset!(z)
+zipper_path(z::PZG)                      = PathMap.pzg_path(z)
+zipper_path_exists(z::PZG)               = PathMap.pzg_path_exists(z)
+zipper_child_mask(z::PZG)                = PathMap.pzg_child_mask(z)
+zipper_child_count(z::PZG)               = PathMap.pzg_child_count(z)
+zipper_is_val(z::PZG)                    = PathMap.pzg_is_val(z)
+zipper_val(z::PZG)                       = PathMap.pzg_val(z)
+zipper_at_root(z::PZG)                   = PathMap.pzg_at_root(z)
 
 mask_bytes(z) = sort!(collect(zipper_child_mask(z)))
 pathstr(z) = String(copy(collect(zipper_path(z))))
 
-@testset "upstream zipper conformance battery (ported)" begin
+function run_battery(kind::String)
+@testset "upstream zipper conformance battery — $kind" begin
 
     @testset "zipper_moving_basic_test (upstream zipper.rs:3230)" begin
         _, z = battery_zipper(ZIPPER_MOVING_BASIC_TEST_KEYS)
@@ -88,7 +149,7 @@ pathstr(z) = String(copy(collect(zipper_path(z))))
     @testset "zipper_with_root_path (upstream zipper.rs:3277)" begin
         ks = ["romane", "romanus", "romulus", "rubens", "ruber", "rubicon", "rubicundus", "rom'i"]
         m, _ = battery_zipper(ks)
-        z = read_zipper_at_path(m, b"ro")     # ZIPPER_WITH_ROOT_PATH_PATH
+        z = battery_zipper_at(m, b"ro")     # ZIPPER_WITH_ROOT_PATH_PATH
 
         # Test `descend_to` and `ascend_until`
         @test pathstr(z) == ""
@@ -732,7 +793,7 @@ pathstr(z) = String(copy(collect(zipper_path(z))))
                   UInt8[3, 193, 4, 193])
             set_val_at!(m, k, UNIT_VAL)
         end
-        z = read_zipper_at_path(m, UInt8[2, 194])
+        z = battery_zipper_at(m, UInt8[2, 194])
 
         @test zipper_descend_first_byte!(z) == true
         @test collect(UInt8, zipper_path(z)) == UInt8[1]
@@ -747,7 +808,7 @@ pathstr(z) = String(copy(collect(zipper_path(z))))
                   UInt8[3, 193, 4, 193, 5, 2, 193, 6, 255])
             set_val_at!(m, k, UNIT_VAL)
         end
-        z = read_zipper_at_path(m, UInt8[3, 193, 4, 193, 5, 2, 193])
+        z = battery_zipper_at(m, UInt8[3, 193, 4, 193, 5, 2, 193])
 
         @test collect(UInt8, zipper_path(z)) == UInt8[]
         @test zipper_descend_first_byte!(z) == true
@@ -795,7 +856,7 @@ pathstr(z) = String(copy(collect(zipper_path(z))))
         for k in keys
             set_val_at!(m, k, UNIT_VAL)
         end
-        z = read_zipper(m)
+        z = battery_zipper_at(m, UInt8[])
 
         # `i` is kept 0-based, exactly as upstream, so the two exempt depths read identically
         for i in 0:(length(keys[1]) - 1)
@@ -844,7 +905,7 @@ pathstr(z) = String(copy(collect(zipper_path(z))))
             set_val_at!(m, vcat(Vector{UInt8}("in"), be8(i)), UNIT_VAL)
         end
         # Test iterating using a zipper that has a root that is not the map root
-        z = read_zipper_at_path(m, Vector{UInt8}("in"))
+        z = battery_zipper_at(m, Vector{UInt8}("in"))
 
         count = 0
         while zipper_to_next_val!(z)
@@ -856,4 +917,17 @@ pathstr(z) = String(copy(collect(zipper_path(z))))
         @test count == ZIPPER_ITER_TEST2_COUNT
     end
 
-end
+end  # @testset
+end  # function run_battery
+
+# ── the two invocations. Base read zipper, then the COMPOSITION — which is the point: upstream
+# applies this battery to ProductZipperG too, and until 2026-08-03 ours could not run it at all
+# (five ops absent). A ProductZipperG with ZERO secondaries is exactly upstream's own harness
+# (product_zipper.rs:1817-1828), and it still routes every operation through the composition
+# wrapper's delegation and factor bookkeeping.
+run_battery("base read zipper")
+
+BATTERY_MAKE_Z[] = (m, path) -> PathMap.ProductZipperG(
+    isempty(path) ? read_zipper(m) : read_zipper_at_path(m, path),
+    PathMap.ReadZipperCore{UnitVal, PathMap.GlobalAlloc}[])
+run_battery("ProductZipperG (0 secondaries)")
