@@ -928,5 +928,11 @@ include("differential_gate.jl")
 # only find what someone thought to write down; this searches. See test/fuzz_gate.jl.
 include("fuzz_gate.jl")
 
+# UPSTREAM'S OWN zipper conformance battery, ported (src/zipper.rs:3037+). Covers the ONE layer the
+# two gates above do not: rust_probe references no zipper composition, and the fuzz corpus exercises
+# the trie ALGEBRA (join/meet/subtract/graft) only. Upstream applies this battery to ProductZipper,
+# ProductZipperG, ArenaCompactZipper and OverlayZipper; we had never run it at all.
+include("test_upstream_zipper_battery.jl")
+
 # Post-suite: a testset that asserted NOTHING must fail the build, not read as green.
 assert_no_inert_testsets(_PM_TS)
