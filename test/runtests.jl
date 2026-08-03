@@ -543,6 +543,52 @@ const _PM_TS = @testset "PathMap" begin
         @test n <= 5
     end
 
+    @testset "DependentZipper — factor_paths and secondary stay IN STEP (upstream 143ecd1)" begin
+        # Upstream PathMap `815eed1`/`143ecd1` (PR #56, "dependent_zipper_factor_fixes") fixed
+        # `DependentProductZipperG` by popping `secondary` alongside `factor_paths` — the two had
+        # drifted apart — and added `debug_assert_eq!(factor_paths.len(), secondary.len(),
+        # "factor_paths and secondary must stay in step")` to pin it.
+        #
+        # WE ALREADY HAD THE FIX: both pop sites in DependentZipper.jl pop `secondary` in step, and
+        # `dpz_reset!` empties it. So this pins an invariant we satisfy rather than fixing anything.
+        #
+        # It is a TEST and NOT an `@assert`, deliberately. `debug_assert!` is compiled out in
+        # release, so upstream PROCEEDS on violation; throwing here would be a new divergence. That
+        # is the exact reasoning already recorded at `src/nodes/LineListNode.jl:1837` for upstream's
+        # `debug_assert!(!status.is_none())`, and it is the standing rule: a debug assertion is not
+        # a runtime contract.
+        #
+        # ⚠️ Upstream also DELETED the inherent `factor_count()` on DependentProductZipperG. That is
+        # NOT adopted: it is a refactor of their trait layout (`factor_count` survives on the
+        # ProductZipper trait, product_zipper.rs:806), while ours is live — `ProductZipperG.jl:227`
+        # computes `dpz_factor_count(src) - 1`. Removing it would break working code to mirror a
+        # change that does not apply here.
+        m_primary = PM{UnitVal}()
+        for k in (b"X", b"Y", b"Z"); set_val_at!(m_primary, k, UNIT_VAL); end
+        m_ext = PM{UnitVal}()
+        for k in (b"!", b"?"); set_val_at!(m_ext, k, UNIT_VAL); end
+
+        rz = read_zipper(m_primary)
+        enroll_cb(payload, path::AbstractVector{UInt8}, factor_idx::Int) =
+            (payload, path == b"X" ? read_zipper(m_ext) : nothing)
+
+        dpz = PathMap.DependentZipper(rz, nothing, enroll_cb)
+        in_step = true
+        steps = 0
+        while PathMap.dpz_to_next_val!(dpz)
+            in_step &= (length(dpz.factor_paths) == length(dpz.secondary))
+            steps += 1
+            steps > 100 && break
+        end
+        @test steps > 0                       # the walk actually moved — not a vacuous pass
+        @test in_step
+
+        # reset must clear BOTH, not just factor_paths (upstream's `secondary.clear()`).
+        PathMap.dpz_reset!(dpz)
+        @test isempty(dpz.factor_paths)
+        @test isempty(dpz.secondary)
+    end
+
     @testset "ZipperHead — cleanup_write_zipper prunes the right spine" begin
         # Previously: cleanup used wz_path (relative) where it should have
         # used the absolute origin path. So pruning operated on the wrong
