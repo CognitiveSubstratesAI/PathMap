@@ -26,6 +26,14 @@ _zpg_is_val(z::ReadZipperCore) = zipper_is_val(z)
 _zpg_is_val(z::PrefixZipper) = pz_is_val(z)
 _zpg_is_val(z::DependentZipper) = dpz_is_val(z)
 
+# `val` was missing from this dispatch table until 2026-08-03 — `_zpg_is_val` was here but nothing
+# read the VALUE, so `pzg_val` could not exist. Found by porting upstream's own zipper conformance
+# battery, which could not run against the composition without it (upstream ProductZipperG has
+# `val`, product_zipper.rs:558-564).
+_zpg_val(z::ReadZipperCore) = zipper_val(z)
+_zpg_val(z::PrefixZipper) = pz_val(z)
+_zpg_val(z::DependentZipper) = dpz_val(z)
+
 _zpg_child_count(z::ReadZipperCore) = zipper_child_count(z)
 _zpg_child_count(z::PrefixZipper) = pz_child_count(z)
 _zpg_child_count(z::DependentZipper) = dpz_child_count(z)
@@ -358,19 +366,72 @@ end
 pzg_ascend_until!(prz::ProductZipperG) = _pzg_ascend_cond!(prz, true)
 pzg_ascend_until_branch!(prz::ProductZipperG) = _pzg_ascend_cond!(prz, false)
 
-function pzg_to_next_sibling_byte!(prz::ProductZipperG)::Bool
+# ── the sibling pair. Upstream is `to_next_sibling_byte() = to_sibling_byte(true)` and
+# `to_prev_sibling_byte() = to_sibling_byte(false)` (product_zipper.rs:752-758) — one helper with a
+# direction flag. Ours had only the forward one until 2026-08-03, so `to_prev_sibling_byte` was
+# ABSENT on the composition while present on the base zipper.
+function _pzg_to_sibling_byte!(prz::ProductZipperG, forward::Bool)::Bool
     isempty(pzg_path(prz)) && return false
     cur_byte = last(pzg_path(prz))
     pzg_ascend!(prz, 1) || return false
     mask = pzg_child_mask(prz)
-    nb = next_bit(mask, cur_byte)
+    nb = forward ? next_bit(mask, cur_byte) : prev_bit(mask, cur_byte)
     if nb !== nothing
         pzg_descend_to_byte!(prz, nb)
         return true
     else
-        pzg_descend_to_byte!(prz, cur_byte)
+        pzg_descend_to_byte!(prz, cur_byte)   # no sibling that way: restore the focus
         return false
     end
+end
+
+pzg_to_next_sibling_byte!(prz::ProductZipperG)::Bool = _pzg_to_sibling_byte!(prz, true)
+pzg_to_prev_sibling_byte!(prz::ProductZipperG)::Bool = _pzg_to_sibling_byte!(prz, false)
+
+# ── descend_indexed_byte. Upstream product_zipper.rs:716-722:
+#     let mask = self.child_mask();
+#     let Some(byte) = mask.indexed_bit::<true>(child_idx) else { return false };
+#     self.descend_to_byte(byte); true
+# `pzg_descend_first_byte!` above is already this with child_idx = 0 (upstream defines it exactly so,
+# product_zipper.rs:724-727), so the two now share one body rather than drifting apart.
+function pzg_descend_indexed_byte!(prz::ProductZipperG, child_idx::Int)::Bool
+    mask = pzg_child_mask(prz)
+    b = indexed_bit(mask, child_idx, true)
+    b === nothing && return false
+    pzg_descend_to_byte!(prz, b)
+    true
+end
+
+# ── val. Upstream product_zipper.rs:558-564 dispatches on the FOCUS factor, truncating up:
+#     if let Some(idx) = self.factor_idx(true) { self.secondary[idx].val() } else { self.primary.val() }
+function pzg_val(prz::ProductZipperG)
+    idx = _pzg_factor_idx(prz, true)
+    idx === nothing ? _zpg_val(prz.primary) : _zpg_val(prz.secondary[idx])
+end
+
+# ── to_next_step and descend_until_max_bytes are TRAIT DEFAULTS upstream (ZipperMoving,
+# zipper.rs:426-440 and :326-337), so upstream's ProductZipperG inherits them for free and its
+# forwarding macro passes them straight through (zipper.rs:849). We have no trait system, so they
+# were simply absent on the composition. Ported from the default bodies verbatim.
+function pzg_to_next_step!(prz::ProductZipperG)::Bool
+    if pzg_child_count(prz) == 0
+        # at a leaf: ascend until moving to a sibling succeeds
+        while !pzg_to_next_sibling_byte!(prz)
+            pzg_ascend_byte!(prz) || return false
+        end
+    else
+        return pzg_descend_first_byte!(prz)
+    end
+    true
+end
+
+function pzg_descend_until_max_bytes!(prz::ProductZipperG, max_bytes::Int)::Bool
+    max_bytes == 0 && return false
+    target_len = length(pzg_path(prz)) + max_bytes
+    descended = pzg_descend_until!(prz)
+    cur_len = length(pzg_path(prz))
+    cur_len > target_len && pzg_ascend!(prz, cur_len - target_len)
+    descended
 end
 
 # The naive product DFS has NO coreferential pruning (the coref join was ported only to MORK's
@@ -505,3 +566,7 @@ export pzg_descend_until!, pzg_ascend_byte!, pzg_ascend!, pzg_ascend_until!
 export pzg_to_next_sibling_byte!, pzg_to_next_val!
 export pzg_descend_to_existing_byte!, pzg_descend_to_check!
 export pzg_descend_first_k_path!, pzg_to_next_k_path!
+# added 2026-08-03: five ops upstream's ProductZipperG has and ours did not — found by porting
+# upstream's own zipper conformance battery, which could not run against the composition without them.
+export pzg_to_prev_sibling_byte!, pzg_descend_indexed_byte!, pzg_val
+export pzg_to_next_step!, pzg_descend_until_max_bytes!

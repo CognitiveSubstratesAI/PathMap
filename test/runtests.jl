@@ -934,5 +934,9 @@ include("fuzz_gate.jl")
 # ProductZipperG, ArenaCompactZipper and OverlayZipper; we had never run it at all.
 include("test_upstream_zipper_battery.jl")
 
+# The five ops ProductZipperG was MISSING, which the battery revealed by being unable to run
+# against the composition type at all. Upstream applies the battery to ProductZipperG; we could not.
+include("test_pzg_battery_ops.jl")
+
 # Post-suite: a testset that asserted NOTHING must fail the build, not read as green.
 assert_no_inert_testsets(_PM_TS)
