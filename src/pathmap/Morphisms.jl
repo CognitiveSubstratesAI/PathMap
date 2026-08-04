@@ -76,8 +76,23 @@ function _cata_ascend_to_fork!(
             (cc != 1 || zipper_at_root(z)) && return w
 
             z_children = [w]
-            byte =
-                length(origin_path) >= old_path_len - jump_len ? origin_path[end] : UInt8(0)
+            # ⚠️ THE BYTE COMES FROM THE **PRE-ASCEND** PATH, NOT THE CURRENT ONE.
+            # Upstream (morphisms.rs:571):
+            #     let byte = *unsafe{ z.origin_path_assert_len(old_path_len-jump_len) }.last().unwrap();
+            # `origin_path_assert_len` reaches back into the path buffer, which STILL HOLDS the bytes
+            # above the current focus after ascending — that is what the `unsafe` is for — and takes
+            # the byte at index `old_path_len - jump_len`. `.unwrap()` means upstream never
+            # substitutes a placeholder; if it were absent that would be a bug, not a default.
+            #
+            # We read the POST-ascend `origin_path[end]` and fell back to `UInt8(0)` whenever the
+            # ascended path was shorter. That fallback SILENTLY CORRUPTED DATA: it is taken exactly
+            # when a valued node has a single child, so the child's edge byte was written as 0x00.
+            #     {"band"=>1, "bandana"=>2}  round-tripped through ACT as  "band", "band\0na"
+            # No test could see it — every existing round-trip used keys with no shared prefix
+            # ("alpha"/"beta"/"gamma"), and the trie is only walked in the corrupted direction on the
+            # way OUT, so the in-memory map stayed correct while the persisted file did not.
+            idx = old_path_len - jump_len
+            byte = old_path[idx]
             child_mask = ByteMask(byte)
         end
     else

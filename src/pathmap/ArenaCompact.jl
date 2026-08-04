@@ -427,15 +427,128 @@ end
 # Tiny helper so the code above compiles cleanly (optional child wrapping)
 Some_NodeId(id::ACT_NodeId) = id
 
-"""
-    act_save(tree::ArenaCompactTree, path::AbstractString)
+# =====================================================================
+# Integrity — DELIBERATELY OUT-OF-BAND. Read this before changing it.
+# =====================================================================
+#
+# SURVEYED 2026-08-04 across upstream PathMap/MORK, CeTTa, JeTTa, hyperon-experimental and PeTTa.
+# The conclusion that shapes every choice below: THE ACTree03 HEADER CANNOT CARRY A CHECKSUM.
+#
+# Upstream's layout is `[MAGIC 8][root_id u64 LE][arena]` (arena_compact.rs:15-27,59-62,141-145) —
+# byte-identical to ours, with no length field, no checksum, and no version field beyond the digits
+# in the magic. Its versioning is a hard magic bump with no migrator (ACTree01 -> 02 relative
+# offsets, 02 -> 03 branchless varint), so ANY header change makes our files unreadable by upstream
+# AND upstream's unreadable by us. Integrity therefore lives in a SIDECAR, never in the file.
+#
+# What the other implementations do, since it is the reason this is worth having at all:
+#   * upstream PathMap  — magic check only; the ACT reader trusts every node offset, so in-bounds
+#                         corruption is a SILENT MISPARSE. `NodeId`'s own doc concedes a bad id "can
+#                         catastrophically break the implementation" (arena_compact.rs:98-107).
+#   * upstream MORK     — three persistence paths, and the two that DO detect corruption get it by
+#                         accident: `.paths` inherits zlib's Adler-32, symbols inherit ZIP's CRC-32.
+#                         `.act`, the main one, gets nothing.
+#   * hyperon-experimental — no binary space persistence at all; `.metta` source re-parse only.
+#   * PeTTa            — same; its one disk cache (`.qlf`) is gated on `exists_file` alone.
+#   * CeTTa            — delegates ACT to MORK. But it writes via a staged temp path + atomic
+#                         rename, which is strictly better than what we did, and is adopted below.
+#   * JeTTa            — the only one with a real digest: SHA-256 over a canonical sorted rendering.
+#                         But it is computed at COMPILE time and compared as an opaque string; it is
+#                         never recomputed from the bytes read off disk, so it catches a stale build
+#                         artifact and not corruption. `act_verify` below closes exactly that gap.
+#
+# The implied upstream threat model is "trusted, self-produced input". `verify` is opt-in so the
+# default stays byte-compatible and free.
 
-Write the compact tree to a file.
+"Path of the digest sidecar for `path` — `sha256sum -c`-compatible, so standard tooling can check it."
+act_digest_path(path::AbstractString) = path * ".sha256"
+
 """
-function act_save(tree::ArenaCompactTree, path::AbstractString)
-    open(path, "w") do io
-        write(io, tree.data)
+    act_file_digest(path) -> String
+
+Lowercase hex SHA-256 of the file's bytes. This is the CONTENT ID of a saved trie: `act_save`
+writes a deterministic byte image, so equal tries written by the same version give equal digests.
+
+⚠️ It is an identity for the FILE IMAGE, not for the logical path-set — two tries holding the same
+paths but built in a different insertion order can differ in arena layout and so in digest. For a
+layout-independent identity you would hash the enumerated paths instead; that is not provided here
+because nothing needs it yet, and an unused canonicalisation is a liability.
+"""
+act_file_digest(path::AbstractString) = bytes2hex(open(SHA.sha256, path))
+
+"""
+    act_save(tree::ArenaCompactTree, path::AbstractString; digest::Bool=false)
+
+Write the compact tree to a file. The bytes are exactly upstream's `ACTree03` image — `digest`
+adds a SIDECAR, never a header field, so the file stays readable by upstream's Rust.
+
+The write is ATOMIC: bytes go to a temp file in the same directory and are `mv`'d into place, so a
+crash or a full disk cannot leave a half-written file at `path` for a later `act_open` to misparse.
+Adopted from CeTTa's `bridge_space_dump_act_transactional`, which stages and renames for exactly
+this reason; ours previously wrote straight to `path`. Same-directory is required — `rename` is only
+atomic within a filesystem.
+
+`digest=true` also writes `\$path.sha256`, which `act_open(...; verify=true)` and `sha256sum -c`
+both understand.
+"""
+function act_save(tree::ArenaCompactTree, path::AbstractString; digest::Bool=false)
+    dir = dirname(abspath(path))
+    tmp = tempname(dir; cleanup=false)
+    try
+        open(tmp, "w") do io
+            write(io, tree.data)
+        end
+        mv(tmp, path; force=true)          # atomic within one filesystem
+    catch
+        isfile(tmp) && rm(tmp; force=true)  # never leave a stray temp behind
+        rethrow()
     end
+    if digest
+        open(act_digest_path(path), "w") do io
+            println(io, act_file_digest(path), "  ", basename(path))
+        end
+    end
+    path
+end
+
+"""
+    act_verify(path) -> Bool
+
+Recompute the file's SHA-256 and compare it against the sidecar written by `act_save(...; digest=true)`.
+
+Throws if the sidecar is missing or malformed — a verification that silently passes when it could
+not run is worse than no verification, which is the exact failure mode of JeTTa's fingerprint
+(compared as stored strings, never recomputed from the loaded bytes).
+"""
+function act_verify(path::AbstractString)
+    dpath = act_digest_path(path)
+    isfile(dpath) || throw(ArgumentError("no digest sidecar at $dpath — save with `digest=true`"))
+    line = strip(read(dpath, String))
+    isempty(line) && throw(ArgumentError("empty digest sidecar at $dpath"))
+    want = first(split(line))
+    length(want) == 64 || throw(ArgumentError("malformed digest in $dpath: expected 64 hex chars"))
+    act_file_digest(path) == want
+end
+
+# Minimum bytes any readable ACTree03 file must have: magic + root_id. Upstream ALREADY has this
+# guard — `merge_zipper_into_file` checks `old.len() < MAGIC_LENGTH + U64_SIZE + MAX_VARINT_SIZE`
+# (arena_compact.rs:1298-1305) — but its `open_mmap` does not, so upstream PANICS on a 1..7-byte
+# file when it slices `&memmap[..MAGIC_LENGTH]`. Applying upstream's own guard on the open path is
+# consistency, not deviation.
+const ACT_MIN_FILE_LEN = ACT_MAGIC_LEN + 8
+
+"Shared header validation for both open paths. Returns nothing; throws a typed error on bad input."
+function _act_check_header(data::AbstractVector{UInt8}, path::AbstractString)
+    # NOT `@assert`: Julia documents assertions as removable at some optimisation levels, so using
+    # one to validate FILE INPUT means the check can vanish. Both open paths used `@assert` before.
+    if length(data) < ACT_MIN_FILE_LEN
+        throw(ArgumentError(
+            "$path is not an ACTree03 file: $(length(data)) bytes, need at least $ACT_MIN_FILE_LEN"))
+    end
+    if view(data, 1:ACT_MAGIC_LEN) != ACT_MAGIC
+        throw(ArgumentError("$path is not an ACTree03 file: bad magic " *
+                            "$(repr(String(copy(data[1:ACT_MAGIC_LEN]))))"))
+    end
+    nothing
 end
 
 """
@@ -444,9 +557,10 @@ end
 Load a compact tree from a file (copies bytes into memory).
 Mirrors `ArenaCompactTree::open_mmap` (memory-mapped semantics optional in Julia).
 """
-function act_open(path::AbstractString)
+function act_open(path::AbstractString; verify::Bool=false)
+    verify && !act_verify(path) && throw(ArgumentError("$path failed SHA-256 verification"))
     data = read(path)
-    @assert data[1:ACT_MAGIC_LEN] == ACT_MAGIC "Invalid ACTree magic"
+    _act_check_header(data, path)
     tree = ArenaCompactTree(
         data, UInt64(length(data)), Dict{UInt64, ACT_LineId}(), Ref(UInt64(0))
     )
@@ -470,11 +584,14 @@ the write helpers (`act_push_node!` etc.) assume an owned `Vector{UInt8}` and
 must not be called on an mmap-backed tree.  The mapping survives the fd `close`
 (POSIX: `mmap` holds its own reference); the returned array's finalizer unmaps.
 """
-function act_open_mmap(path::AbstractString)
+function act_open_mmap(path::AbstractString; verify::Bool=false)
+    # `verify` READS THE WHOLE FILE to hash it, which defeats the point of mmap (lazy paging of a
+    # trie too large for RAM). Opt-in and documented rather than silently expensive.
+    verify && !act_verify(path) && throw(ArgumentError("$path failed SHA-256 verification"))
     io = open(path, "r")
     data = Mmap.mmap(io, Vector{UInt8})   # lazy, read-only; OS faults pages on access
     close(io)
-    @assert data[1:ACT_MAGIC_LEN] == ACT_MAGIC "Invalid ACTree magic"
+    _act_check_header(data, path)
     ArenaCompactTree(data, UInt64(length(data)), Dict{UInt64, ACT_LineId}(), Ref(UInt64(0)))
 end
 
@@ -948,6 +1065,7 @@ export ArenaCompactTree, ACTZipper, ACT_NodeId, ACT_LineId
 export ACT_NodeBranch, ACT_NodeLine, ACT_MAGIC
 export act_read_varint, act_push_varint!
 export act_from_zipper, act_save, act_open, act_open_mmap
+export act_file_digest, act_digest_path, act_verify
 export act_read_zipper, act_read_zipper_at_path
 export act_get_val_at
 export act_at_root, act_path, act_path_exists, act_is_val, act_val
