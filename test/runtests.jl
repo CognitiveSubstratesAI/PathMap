@@ -943,5 +943,13 @@ include("test_pzg_battery_ops.jl")
 # callback changes them, so the battery can never reach the moving-depth case.
 include("test_pzg_factor_count_guard.jl")
 
+# `.act` load validation + the PREFIX-NESTED round-trip regression. The second testset is the one
+# that matters: `_cata_ascend_to_fork!` substituted UInt8(0) for the child edge byte, so any saved
+# trie whose keys share a prefix persisted CORRUPTED ("band"/"bandana" -> "band"/"band\0na"). Every
+# pre-existing ArenaCompact round-trip used keys with NO shared prefix, which is the one shape that
+# cannot see it. Wired here so the suite actually runs it — it sat unwired for its first hours,
+# during which a full green suite said nothing about it.
+include("test_act_validation.jl")
+
 # Post-suite: a testset that asserted NOTHING must fail the build, not read as green.
 assert_no_inert_testsets(_PM_TS)

@@ -3,7 +3,6 @@
 module PathMap
 
 using Mmap   # real OS memory-mapping for read-only .act backing (act_open_mmap)
-import SHA    # opt-in .act integrity sidecar (act_save(; digest=true) / act_verify)
 
 # ── Core algebraic primitives ─────────────────────────────────────────────────
 

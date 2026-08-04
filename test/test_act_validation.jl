@@ -1,4 +1,4 @@
-# test_act_integrity.jl — the .act file is TRUSTED INPUT upstream; these pin what we check instead.
+# test_act_validation.jl — the .act file is TRUSTED INPUT upstream; these pin what we check instead.
 #
 # Surveyed 2026-08-04: upstream PathMap validates an 8-byte magic and nothing else, then trusts every
 # node offset — so in-bounds corruption is a SILENT MISPARSE, and a 1..7-byte file PANICS because
@@ -12,7 +12,7 @@
 using Test, PathMap
 
 
-@testset "ACT integrity" begin
+@testset "ACT validation (magic, length guard, atomic write)" begin
     mktempdir() do dir
         m = PathMap.PathMap{UInt64}()
         for (i, k) in enumerate(("apple", "apricot", "banana", "band", "bandana"))
@@ -24,43 +24,30 @@ using Test, PathMap
         # ── format is untouched: still exactly upstream's ACTree03 image
         act_save(tree, f)
         @test read(f)[1:8] == ACT_MAGIC
-        @test !isfile(act_digest_path(f))          # no sidecar unless asked — default is free
 
         # ── round-trip still works
         t2 = act_open(f)
         @test act_get_val_at(t2, b"apple")   === UInt64(1)
         @test act_get_val_at(t2, b"bandana") === UInt64(5)
 
-        # ── digest sidecar
-        act_save(tree, f; digest=true)
-        @test isfile(act_digest_path(f))
-        @test act_verify(f)
-        @test act_file_digest(f) == first(split(strip(read(act_digest_path(f), String))))
-        # sha256sum -c compatible: "<64 hex>  <basename>"
-        @test occursin(Regex("^[0-9a-f]{64}  " * basename(f) * "\$"), strip(read(act_digest_path(f), String)))
-
-        # ── determinism: the same trie saved twice has the same content ID
+        # ── determinism: the same trie written twice is byte-identical
         g = joinpath(dir, "t2.act")
-        act_save(tree, g; digest=true)
-        @test act_file_digest(g) == act_file_digest(f)
+        act_save(tree, g)
+        @test read(g) == read(f)
 
-        # ── THE DEFECT UPSTREAM CANNOT SEE: in-bounds corruption. Flip one byte deep in the arena;
-        # the magic still matches, so upstream would misparse it silently. verify catches it.
+        # ── THE DEFECT NEITHER WE NOR UPSTREAM CAN SEE: in-bounds corruption. Flip one byte deep
+        # in the arena; the magic still matches, so the file still "opens" and is silently misparsed.
+        # Pinned deliberately — this is the accepted limit of magic-only validation, and upstream's
+        # own NodeId doc concedes a bad id "can catastrophically break the implementation".
+        # A digest here would DETECT it but belongs at the SMS/epoch layer, not this file — see the
+        # integrity note in ArenaCompact.jl.
         h = joinpath(dir, "corrupt.act")
-        act_save(tree, h; digest=true)
+        act_save(tree, h)
         raw = read(h)
         raw[end] ⊻= 0xff                              # in bounds, length unchanged, magic intact
         write(h, raw)
-        @test raw[1:8] == ACT_MAGIC                   # ...so the magic check still passes
-        @test act_open(h) isa ArenaCompactTree        # ...and the file still "opens"
-        @test !act_verify(h)                          # only the digest sees it
-        @test_throws ArgumentError act_open(h; verify=true)
-
-        # ── a verification that cannot run must THROW, not silently pass (JeTTa's failure mode)
-        rm(act_digest_path(h))
-        @test_throws ArgumentError act_verify(h)
-        write(act_digest_path(h), "not-a-digest\n")
-        @test_throws ArgumentError act_verify(h)
+        @test raw[1:8] == ACT_MAGIC
+        @test act_open(h) isa ArenaCompactTree        # opens clean — nothing at this layer sees it
 
         # ── SHORT FILE: upstream PANICS here (unguarded slice). We give a typed error.
         for n in (0, 1, 7, 8, 15)
