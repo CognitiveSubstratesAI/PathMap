@@ -45,7 +45,28 @@ because the primary factor is counted"* — cannot hold.
 live consumer: `src/zipper/ProductZipperG.jl:227` computes `dpz_factor_count(src) - 1` inside
 `pzg_factor_count`.
 
-⚠️ **OPEN RISK, recorded rather than resolved.** The composition is reachable and the mixed
+✅ **MEASURED 2026-08-03 — the mechanism is REAL, the guard is NOT WRONG.**
+`test/test_pzg_factor_count_guard.jl` builds CmpSource's exact shape and enrolls a secondary
+mid-walk. `pzg_factor_count` genuinely MOVES — it takes {2, 1} within a single walk — so the
+concern below was correctly identified. But `focus_factor` is derived from the SAME live state,
+so the two move together and `focus_factor < factor_count` holds at every step; the
+`focus_factor != factor_count - 1` guard keeps selecting the last factor correctly. Upstream PR
+#56's invariant (`secondary` in step with `factor_paths`) also held throughout.
+
+⚠️ Two things that reproduction taught, both easy to get wrong:
+* The **PrefixZipper layer is load-bearing**. `_pzg_inner_factor_count` has a method for
+  PrefixZipper ONLY (ProductZipperG.jl:225), so a bare DependentZipper primary falls through to
+  the generic `= 0` and factor_count cannot move at all. A probe without the wrapper reports a
+  false all-clear — measured.
+* **Upstream's conformance battery cannot reach this.** It asserts exact paths, and an enrolling
+  callback changes them; run non-enrolling, `secondary` stays empty and factor_count is pinned
+  at 1. Three green battery invocations say nothing about this question.
+
+SCOPE: one shape — a single enrolled secondary, empty prefix. This refutes the specific
+"focus index vs moving total" concern for CmpSource. It does not prove the guard correct for
+multiple simultaneous secondaries or a non-empty prefix.
+
+The original analysis, kept because it is why the test exists: The composition is reachable and the mixed
 quantities are real:
 
 * `ProductZipperG`'s own `secondary` is STATIC — never popped.

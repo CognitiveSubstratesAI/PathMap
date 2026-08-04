@@ -938,5 +938,10 @@ include("test_upstream_zipper_battery.jl")
 # against the composition type at all. Upstream applies the battery to ProductZipperG; we could not.
 include("test_pzg_battery_ops.jl")
 
+# The ONE oracle for ADAPTATIONS.md entry 2 — the pzg_factor_count / last-factor-guard risk.
+# Kept OUT of the battery deliberately: the battery asserts exact paths, and an enrolling
+# callback changes them, so the battery can never reach the moving-depth case.
+include("test_pzg_factor_count_guard.jl")
+
 # Post-suite: a testset that asserted NOTHING must fail the build, not read as green.
 assert_no_inert_testsets(_PM_TS)
