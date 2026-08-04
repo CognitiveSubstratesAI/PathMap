@@ -54,44 +54,11 @@ end
 "Zipper rooted at `path` — upstream's `run_test` third argument."
 battery_zipper_at(m, path) = BATTERY_MAKE_Z[](m, path)
 
-# ── forwarding so the `zipper_*` calls in the tests reach ProductZipperG's `pzg_*` ───────────────
-# Adding methods to the existing generics, rather than rewriting 26 testsets to call pzg_* — the
-# tests stay a faithful transcription of upstream and the dispatch does the work.
-# EXTEND the existing generics — do not shadow them. Writing `zipper_path(z::PZG) = ...` at Main
-# scope defines a NEW `zipper_path` that HIDES the imported one, and every call on any other zipper
-# type then fails with a MethodError. Measured: 53 errors across the base run. `import` is what
-# makes these additional methods rather than a replacement function.
-import PathMap: zipper_descend_to!, zipper_descend_to_byte!, zipper_descend_to_existing!,
-    zipper_descend_first_byte!, zipper_descend_indexed_byte!, zipper_descend_until!,
-    zipper_descend_until_max_bytes!, zipper_ascend!, zipper_ascend_byte!, zipper_ascend_until!,
-    zipper_ascend_until_branch!, zipper_to_next_sibling_byte!, zipper_to_prev_sibling_byte!,
-    zipper_to_next_val!, zipper_to_next_step!, zipper_reset!, zipper_path, zipper_path_exists,
-    zipper_child_mask, zipper_child_count, zipper_is_val, zipper_val, zipper_at_root
-
-const PZG = PathMap.ProductZipperG
-zipper_descend_to!(z::PZG, k)            = PathMap.pzg_descend_to!(z, k)
-zipper_descend_to_byte!(z::PZG, b)       = PathMap.pzg_descend_to_byte!(z, b)
-zipper_descend_to_existing!(z::PZG, k)   = PathMap.pzg_descend_to_existing!(z, k)
-zipper_descend_first_byte!(z::PZG)       = PathMap.pzg_descend_first_byte!(z)
-zipper_descend_indexed_byte!(z::PZG, i)  = PathMap.pzg_descend_indexed_byte!(z, i)
-zipper_descend_until!(z::PZG)            = PathMap.pzg_descend_until!(z)
-zipper_descend_until_max_bytes!(z::PZG, n) = PathMap.pzg_descend_until_max_bytes!(z, n)
-zipper_ascend!(z::PZG, n)                = PathMap.pzg_ascend!(z, n)
-zipper_ascend_byte!(z::PZG)              = PathMap.pzg_ascend_byte!(z)
-zipper_ascend_until!(z::PZG)             = PathMap.pzg_ascend_until!(z)
-zipper_ascend_until_branch!(z::PZG)      = PathMap.pzg_ascend_until_branch!(z)
-zipper_to_next_sibling_byte!(z::PZG)     = PathMap.pzg_to_next_sibling_byte!(z)
-zipper_to_prev_sibling_byte!(z::PZG)     = PathMap.pzg_to_prev_sibling_byte!(z)
-zipper_to_next_val!(z::PZG)              = PathMap.pzg_to_next_val!(z)
-zipper_to_next_step!(z::PZG)             = PathMap.pzg_to_next_step!(z)
-zipper_reset!(z::PZG)                    = PathMap.pzg_reset!(z)
-zipper_path(z::PZG)                      = PathMap.pzg_path(z)
-zipper_path_exists(z::PZG)               = PathMap.pzg_path_exists(z)
-zipper_child_mask(z::PZG)                = PathMap.pzg_child_mask(z)
-zipper_child_count(z::PZG)               = PathMap.pzg_child_count(z)
-zipper_is_val(z::PZG)                    = PathMap.pzg_is_val(z)
-zipper_val(z::PZG)                       = PathMap.pzg_val(z)
-zipper_at_root(z::PZG)                   = PathMap.pzg_at_root(z)
+# ── forwarding lives in the PACKAGE, not here ────────────────────────────────────────────────────
+# `zipper_*` methods for ProductZipperG are defined in src/zipper/ProductZipperG.jl. Defining them
+# HERE (at Main scope, extending PathMap's generics) invalidated the package's precompiled code and
+# made the base battery run go 1.6s -> 49.3s, with the whole suite past 20 minutes. Measured, then
+# moved. ProductZipperG implementing the zipper interface is a package concern regardless.
 
 mask_bytes(z) = sort!(collect(zipper_child_mask(z)))
 pathstr(z) = String(copy(collect(zipper_path(z))))
@@ -931,3 +898,21 @@ BATTERY_MAKE_Z[] = (m, path) -> PathMap.ProductZipperG(
     isempty(path) ? read_zipper(m) : read_zipper_at_path(m, path),
     PathMap.ReadZipperCore{UnitVal, PathMap.GlobalAlloc}[])
 run_battery("ProductZipperG (0 secondaries)")
+
+# ── THIRD INVOCATION: a DEPENDENT ZIPPER in the composition. ─────────────────────────────────────
+# This is the shape MORK's CmpSource actually builds (MORK Sources.jl:243-246):
+#     PrefixZipper(prefix, DependentZipper(read_zipper_at_path(btm, []), policy))
+# and it is the layer carrying the open pzg_factor_count / last-factor-guard risk recorded in
+# test/differential/ADAPTATIONS.md entry 2 — `secondary` is a LIVE STACK under upstream PR #56's
+# invariant, so pzg_factor_count sums a static count with a moving depth.
+#
+# The enroll callback NEVER enrolls (always returns `nothing`), which keeps every path identical to
+# the primary's so upstream's exact path assertions still hold. That is deliberate: it isolates the
+# DELEGATION and factor bookkeeping from path rewriting. A callback that enrolled would change the
+# paths and the battery would be measuring a different trie, not our zipper.
+BATTERY_MAKE_Z[] = (m, path) -> begin
+    inner = isempty(path) ? read_zipper(m) : read_zipper_at_path(m, path)
+    dpz = PathMap.DependentZipper(inner, nothing, (payload, p, idx) -> (payload, nothing))
+    PathMap.ProductZipperG(dpz, PathMap.ReadZipperCore{UnitVal, PathMap.GlobalAlloc}[])
+end
+run_battery("ProductZipperG over DependentZipper (CmpSource shape)")

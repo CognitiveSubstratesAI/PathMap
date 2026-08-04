@@ -569,4 +569,37 @@ export pzg_descend_first_k_path!, pzg_to_next_k_path!
 # added 2026-08-03: five ops upstream's ProductZipperG has and ours did not — found by porting
 # upstream's own zipper conformance battery, which could not run against the composition without them.
 export pzg_to_prev_sibling_byte!, pzg_descend_indexed_byte!, pzg_val
+
+# ── ProductZipperG under the generic `zipper_*` names ────────────────────────────────────────────
+# Upstream reaches ProductZipperG through the SAME traits as every other zipper (ZipperMoving,
+# Zipper, ZipperIteration), so calling code is type-generic. Ours had only the `pzg_*` names, which
+# meant any generic caller — notably upstream's conformance battery — could not touch it.
+#
+# These live in the package deliberately. Defining them in a test file extends PathMap's generics
+# from Main, which INVALIDATES the precompiled package: measured 1.6s -> 49.3s on one battery run
+# and a >20min suite. Here they compile once with everything else.
+zipper_descend_to!(z::ProductZipperG, k)              = pzg_descend_to!(z, k)
+zipper_descend_to_byte!(z::ProductZipperG, b)         = pzg_descend_to_byte!(z, b)
+zipper_descend_to_existing!(z::ProductZipperG, k)     = pzg_descend_to_existing!(z, k)
+zipper_descend_first_byte!(z::ProductZipperG)         = pzg_descend_first_byte!(z)
+zipper_descend_indexed_byte!(z::ProductZipperG, i)    = pzg_descend_indexed_byte!(z, i)
+zipper_descend_until!(z::ProductZipperG)              = pzg_descend_until!(z)
+zipper_descend_until_max_bytes!(z::ProductZipperG, n) = pzg_descend_until_max_bytes!(z, n)
+zipper_ascend!(z::ProductZipperG, n)                  = pzg_ascend!(z, n)
+zipper_ascend_byte!(z::ProductZipperG)                = pzg_ascend_byte!(z)
+zipper_ascend_until!(z::ProductZipperG)               = pzg_ascend_until!(z)
+zipper_ascend_until_branch!(z::ProductZipperG)        = pzg_ascend_until_branch!(z)
+zipper_to_next_sibling_byte!(z::ProductZipperG)       = pzg_to_next_sibling_byte!(z)
+zipper_to_prev_sibling_byte!(z::ProductZipperG)       = pzg_to_prev_sibling_byte!(z)
+zipper_to_next_val!(z::ProductZipperG)                = pzg_to_next_val!(z)
+zipper_to_next_step!(z::ProductZipperG)               = pzg_to_next_step!(z)
+zipper_reset!(z::ProductZipperG)                      = pzg_reset!(z)
+zipper_path(z::ProductZipperG)                        = pzg_path(z)
+zipper_path_exists(z::ProductZipperG)                 = pzg_path_exists(z)
+zipper_child_mask(z::ProductZipperG)                  = pzg_child_mask(z)
+zipper_child_count(z::ProductZipperG)                 = pzg_child_count(z)
+zipper_is_val(z::ProductZipperG)                      = pzg_is_val(z)
+zipper_val(z::ProductZipperG)                         = pzg_val(z)
+zipper_at_root(z::ProductZipperG)                     = pzg_at_root(z)
+
 export pzg_to_next_step!, pzg_descend_until_max_bytes!
