@@ -573,6 +573,38 @@ end
 zipper_is_val(z::ReadZipperCore) = _is_val_internal(z)
 zipper_val(z::ReadZipperCore) = _get_val(z)
 
+"""
+    zipper_val_at(z, path) -> Union{Nothing, V}
+
+Value at `path`, RELATIVE TO THE FOCUS, without moving the zipper — upstream
+`ZipperValues::val_at` (zipper.rs:66).
+
+Upstream resolves it with a borrowed trie-ref built from `focus_parent()` + `node_key()` + `path`
+(zipper.rs:2338-2352). We cannot reuse `_get_val`'s node-local lookup: `node_get_val` is
+SINGLE-NODE (DenseByteNode requires `length(key) == 1`), so a relative path crossing a node
+boundary needs a walk. This resolves the ABSOLUTE target from the zipper's own root anchor via
+`node_along_path`, which every zipper constructor already uses.
+
+The original zipper is untouched — this reads through the anchor rather than descending and
+ascending back, so it cannot strand the focus on a dangling path when `path` does not exist.
+
+Added 2026-08-03. Its ABSENCE blocked upstream's own conformance battery: `zipper_val_at_test`
+(zipper.rs:3904) and `zipper_val_at_long_path_test` (:3944) are 27 `val_at` calls and nothing else,
+so neither could be ported.
+"""
+function zipper_val_at(z::ReadZipperCore{V, A}, path::AbstractVector{UInt8}) where {V, A}
+    _prepare_buffers!(z)
+    isempty(path) && return _get_val(z)
+    abs_path = vcat(z.prefix_buf, path)
+    # Same two-phase lookup as `get_val_at` (PathMap.jl:97): `node_along_path_off` walks the
+    # child edges, then `node_get_val` over the REMAINING bytes picks up value-slot entries,
+    # which `node_get_child` never returns. Phase 1 alone misses every leaf value — measured:
+    # `roman` (has children) resolved, `romane` (leaf) came back nothing.
+    last_rc, off, _ = node_along_path_off(z.root_node, abs_path)
+    inner = _fnode(_rc_inner(last_rc), V, A)
+    node_get_val(inner, view(abs_path, (off + 1):length(abs_path)))
+end
+
 function zipper_child_count(z::ReadZipperCore{V, A}) where {V, A}
     count_branches(_zfnode(z), _znode_key(z))
 end
@@ -1107,7 +1139,7 @@ end
 
 export ReadZipperCore, ReadZipperCore_at_path, ReadZipperUntracked
 export node_along_path, val_count_below_root
-export zipper_path_exists, zipper_is_val, zipper_val
+export zipper_path_exists, zipper_is_val, zipper_val, zipper_val_at
 export zipper_child_count, zipper_child_mask
 export zipper_at_root, zipper_reset!, zipper_path, zipper_val_count
 export zipper_descend_to!, zipper_descend_to_check!

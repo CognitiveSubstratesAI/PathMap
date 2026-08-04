@@ -34,6 +34,10 @@ _zpg_val(z::ReadZipperCore) = zipper_val(z)
 _zpg_val(z::PrefixZipper) = pz_val(z)
 _zpg_val(z::DependentZipper) = dpz_val(z)
 
+_zpg_val_at(z::ReadZipperCore, path::AbstractVector{UInt8}) = zipper_val_at(z, path)
+_zpg_val_at(z::PrefixZipper, path::AbstractVector{UInt8}) = pz_val_at(z, path)
+_zpg_val_at(z::DependentZipper, path::AbstractVector{UInt8}) = dpz_val_at(z, path)
+
 _zpg_child_count(z::ReadZipperCore) = zipper_child_count(z)
 _zpg_child_count(z::PrefixZipper) = pz_child_count(z)
 _zpg_child_count(z::DependentZipper) = dpz_child_count(z)
@@ -409,6 +413,13 @@ function pzg_val(prz::ProductZipperG)
     idx === nothing ? _zpg_val(prz.primary) : _zpg_val(prz.secondary[idx])
 end
 
+# ── val_at. Upstream product_zipper.rs:565-571 — the SAME focus-factor dispatch as `val`:
+#     if let Some(idx) = self.factor_idx(true) { self.secondary[idx].val_at(path) } else { self.primary.val_at(path) }
+function pzg_val_at(prz::ProductZipperG, path::AbstractVector{UInt8})
+    idx = _pzg_factor_idx(prz, true)
+    idx === nothing ? _zpg_val_at(prz.primary, path) : _zpg_val_at(prz.secondary[idx], path)
+end
+
 # ── to_next_step and descend_until_max_bytes are TRAIT DEFAULTS upstream (ZipperMoving,
 # zipper.rs:426-440 and :326-337), so upstream's ProductZipperG inherits them for free and its
 # forwarding macro passes them straight through (zipper.rs:849). We have no trait system, so they
@@ -568,7 +579,7 @@ export pzg_descend_to_existing_byte!, pzg_descend_to_check!
 export pzg_descend_first_k_path!, pzg_to_next_k_path!
 # added 2026-08-03: five ops upstream's ProductZipperG has and ours did not — found by porting
 # upstream's own zipper conformance battery, which could not run against the composition without them.
-export pzg_to_prev_sibling_byte!, pzg_descend_indexed_byte!, pzg_val
+export pzg_to_prev_sibling_byte!, pzg_descend_indexed_byte!, pzg_val, pzg_val_at
 
 # ── ProductZipperG under the generic `zipper_*` names ────────────────────────────────────────────
 # Upstream reaches ProductZipperG through the SAME traits as every other zipper (ZipperMoving,
@@ -600,6 +611,7 @@ zipper_child_mask(z::ProductZipperG)                  = pzg_child_mask(z)
 zipper_child_count(z::ProductZipperG)                 = pzg_child_count(z)
 zipper_is_val(z::ProductZipperG)                      = pzg_is_val(z)
 zipper_val(z::ProductZipperG)                         = pzg_val(z)
+zipper_val_at(z::ProductZipperG, p::AbstractVector{UInt8}) = pzg_val_at(z, p)
 zipper_at_root(z::ProductZipperG)                     = pzg_at_root(z)
 
 export pzg_to_next_step!, pzg_descend_until_max_bytes!

@@ -884,6 +884,67 @@ function run_battery(kind::String)
         @test count == ZIPPER_ITER_TEST2_COUNT
     end
 
+
+    # ── zipper_val_at_test (upstream zipper.rs:3903) — was UNPORTABLE until zipper_val_at existed
+    @testset "zipper_val_at_test (upstream zipper.rs:3903)" begin
+        _, z = battery_zipper(["arrow", "bow", "cannon", "roman", "romane", "romanus",
+                               "romulus", "rubens", "ruber", "rubicon", "rubicundus", "rom'i"])
+        @test zipper_val_at(z, b"") === nothing
+        @test zipper_val_at(z, b"roman") === UNIT_VAL
+        @test zipper_val_at(z, b"romane") === UNIT_VAL
+        @test zipper_val_at(z, b"roma") === nothing
+        @test zipper_val_at(z, b"romanu") === nothing
+        @test zipper_val_at(z, b"ruber") === UNIT_VAL
+        @test zipper_val_at(z, b"rub") === nothing
+        @test zipper_val_at(z, b"zzz") === nothing
+
+        zipper_descend_to!(z, b"ro")
+        @test zipper_path_exists(z)
+        @test zipper_val_at(z, b"") === nothing
+        @test zipper_val_at(z, b"m") === nothing
+        @test zipper_val_at(z, b"man") === UNIT_VAL
+        @test zipper_val_at(z, b"mane") === UNIT_VAL
+        @test zipper_val_at(z, b"manus") === UNIT_VAL
+        @test zipper_val_at(z, b"manu") === nothing
+        @test zipper_val_at(z, b"mulus") === UNIT_VAL
+        @test zipper_val_at(z, b"mulu") === nothing
+        @test zipper_val_at(z, b"zz") === nothing
+
+        zipper_descend_to!(z, b"man")
+        @test zipper_path_exists(z)
+        @test zipper_val_at(z, b"") === UNIT_VAL
+        @test zipper_val_at(z, b"e") === UNIT_VAL
+        @test zipper_val_at(z, b"us") === UNIT_VAL
+        @test zipper_val_at(z, b"u") === nothing
+        @test zipper_val_at(z, b"zz") === nothing
+
+        zipper_reset!(z)
+        zipper_descend_to!(z, b"romanx")
+        @test !zipper_path_exists(z)
+        @test zipper_val_at(z, b"") === nothing
+        @test zipper_val_at(z, b"e") === nothing
+    end
+
+    # ── zipper_val_at_long_path_test (upstream zipper.rs:3947) — crosses node boundaries
+    @testset "zipper_val_at_long_path_test (upstream zipper.rs:3947)" begin
+        MAX_NODE_KEY_BYTES = 48                       # upstream trie_node.rs:21
+        long_key = vcat(Vector{UInt8}("rom"),
+                        UInt8[UInt8('a') + (i % 26) for i in 0:(MAX_NODE_KEY_BYTES * 2 + 17 - 1)])
+        rel = long_key[4:end]
+        almost = rel[1:(end - 1)]
+        @test length(rel) > MAX_NODE_KEY_BYTES        # the point: it spans multiple nodes
+
+        m = PM{UnitVal}(); set_val_at!(m, long_key, UNIT_VAL)
+        z = BATTERY_MAKE_Z[](m, UInt8[])
+        @test zipper_val_at(z, long_key) === UNIT_VAL
+
+        zipper_descend_to!(z, b"rom")
+        @test zipper_path_exists(z)
+        @test zipper_val_at(z, rel) === UNIT_VAL
+        @test zipper_val_at(z, almost) === nothing
+        @test zipper_val_at(z, b"zzz") === nothing
+    end
+
 end  # @testset
 end  # function run_battery
 

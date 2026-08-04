@@ -211,6 +211,28 @@ pz_path(pz::PrefixZipper) = view(pz.path, (pz.origin_depth + 1):length(pz.path))
 
 pz_val_count(pz::PrefixZipper) = zipper_val_count(pz.source)
 
+# ── adjust_lookup_path — upstream prefix_zipper.rs:191-203, VERBATIM shape.
+#     Source            => Some(path)                       (cursor already inside the source)
+#     Prefix { valid }  => path must START WITH the unconsumed tail of the prefix; strip it
+#     PrefixOff { .. }  => None                             (focus is off the prefix; nothing below)
+function _pz_adjust_lookup_path(pz::PrefixZipper, path::AbstractVector{UInt8})
+    pos = pz.position
+    _pos_is_source(pos) && return path
+    if pos.tag == PREFIX_POS_PREFIX
+        rest = view(pz.prefix, (pz.origin_depth + pos.valid + 1):length(pz.prefix))
+        length(path) >= length(rest) || return nothing        # upstream: !starts_with -> None
+        for i in eachindex(rest)
+            path[i] == rest[i] || return nothing
+        end
+        return view(path, (length(rest) + 1):length(path))
+    end
+    nothing                                                    # PREFIX_POS_OFF
+end
+
+# ── val_at — upstream prefix_zipper.rs:245-248
+pz_val_at(pz::PrefixZipper, path::AbstractVector{UInt8}) =
+    (a = _pz_adjust_lookup_path(pz, path); a === nothing ? nothing : zipper_val_at(pz.source, a))
+
 function pz_at_root(pz::PrefixZipper)
     if pz.position.tag == PREFIX_POS_PREFIX
         return pz.position.valid == 0
@@ -396,7 +418,7 @@ end
 
 export PrefixZipper, PrefixPosTag, PrefixPos
 export pz_path_exists, pz_is_val, pz_child_mask, pz_child_count
-export pz_path, pz_val_count, pz_at_root
+export pz_path, pz_val_count, pz_val_at, pz_at_root
 export pz_reset!, pz_descend_to!, pz_descend_to_byte!, pz_descend_indexed_byte!
 export pz_descend_first_byte!, pz_descend_until!, pz_descend_to_existing!
 export pz_ascend!, pz_ascend_byte!, pz_ascend_until!, pz_ascend_until_branch!

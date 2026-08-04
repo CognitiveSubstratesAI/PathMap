@@ -169,6 +169,18 @@ function dpz_val(dpz::DependentZipper)
     end
 end
 
+# ── val_at — upstream dependent_zipper.rs:240-246. Identical dispatch to `val` above: the FOCUS
+# factor answers, so a lookup below the focus resolves inside whichever factor the cursor is in.
+function dpz_val_at(dpz::DependentZipper, path::AbstractVector{UInt8})
+    idx = _dpz_factor_idx(dpz, true)
+    if idx !== nothing
+        z = dpz.secondary[idx]
+        z isa ReadZipperCore ? zipper_val_at(z, path) : nothing
+    else
+        zipper_val_at(dpz.primary, path)
+    end
+end
+
 dpz_at_root(dpz::DependentZipper) = isempty(dpz_path(dpz))
 dpz_factor_count(dpz::DependentZipper) = length(dpz.secondary) + 1
 
@@ -404,7 +416,7 @@ end
 
 export DependentZipper
 export dpz_path, dpz_path_exists, dpz_is_val, dpz_child_count, dpz_child_mask
-export dpz_val, dpz_at_root, dpz_factor_count, dpz_focus_factor, dpz_path_indices
+export dpz_val, dpz_val_at, dpz_at_root, dpz_factor_count, dpz_focus_factor, dpz_path_indices
 export dpz_reset!, dpz_descend_to!, dpz_descend_to_byte!
 export dpz_descend_to_existing!, dpz_descend_indexed_byte!
 export dpz_descend_first_byte!, dpz_descend_until!
