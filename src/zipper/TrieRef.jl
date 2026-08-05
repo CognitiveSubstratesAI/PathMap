@@ -232,7 +232,22 @@ Ports `ZipperInfallibleSubtries::make_map`.
 function tr_make_map(t::TrieRefBorrowed{V, A}) where {V, A}
     focus_rc = tr_get_focus_rc(t)
     m = PathMap{V, A}(t.alloc)
-    m.root = focus_rc
+    # 🔴 THE `copy` IS LOAD-BEARING — it bumps the node's refcount (Base.copy(::TrieNodeODRc) ->
+    # _node_inc_refcnt!, "mirrors Arc::clone"). Assigning `focus_rc` RAW aliases the node while
+    # leaving refcnt at 1, so `_cow_in_place!` — which forks only ABOVE 1 — mutates it IN PLACE and
+    # the write lands in BOTH maps. MEASURED 2026-08-05, before the fix:
+    #     src = {"ab"=>1,"ac"=>2,"ad"=>3};  m = tr_make_map(trie_ref_at_path(src, []))
+    #     refcount(m.root.node) == 1                      # two maps, one node, refcnt says one
+    #     set_val_at!(m, b"az", 99)
+    #     get_val_at(src, b"az") == 99                    # (!!) the SOURCE was mutated
+    # Upstream cannot have this bug: `make_map` (trie_ref.rs:290-298) builds from
+    # `self.get_focus().into_option()` on a `&self`, so producing an OWNED node ref requires an Rc
+    # clone and the refcount rises. Julia has no such implicit clone — the bump must be written.
+    #
+    # This is `pathmap_rs_reference.md` §1.2 invariant 2 ("a write zipper descending past a share
+    # point must uniquify the nodes along its path"): uniquification is DRIVEN BY the refcount, so a
+    # share that never raises it is invisible to the mechanism meant to protect it.
+    focus_rc === nothing || (m.root = copy(focus_rc))
     m
 end
 

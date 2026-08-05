@@ -956,6 +956,12 @@ include("test_pzg_factor_count_guard.jl")
 # during which a full green suite said nothing about it.
 include("test_act_validation.jl")
 
+# tr_make_map must SHARE a subtrie without letting writes leak between maps. It aliased the node
+# without bumping its refcount, so `_cow_in_place!` (which forks only above 1) mutated in place and
+# a write to the derived map landed in the SOURCE. Latent — the function had no callers — and found
+# only because ShardZipper's O(1) reattach would have been its first one.
+include("test_trie_ref_cow.jl")
+
 # GxHasher vs an INDEPENDENT reference derived from upstream's Rust, plus map_hash's digest contract.
 # Wired here at creation — an unwired test is worse than none, which this suite learned the hard way
 # when test_act_validation.jl sat uncalled through two green runs.
