@@ -441,11 +441,52 @@ must survive a Julia upgrade. Measured before changing it: the old form WAS stab
 on 1.12.6, order-independent, and detected both value changes and key removals — so this widens and
 pins the algorithm; it does not fix a correctness bug.
 
-⚠️ STILL NOT INCREMENTAL. `_cata_cached!` builds its memo FRESH PER CALL (`Morphisms.jl:245`), so a
-whole-trie hash is O(distinct nodes) every time. `sms_spec_corrections_2026-07-11.md` §5.3 requires
-recomputing only CHANGED subtries; that needs the memo PERSISTED across calls, which is upstream's
-own open design question (`merkleization.rs` header: exfiltrate the memo, "gradual merkleization",
-plus an eviction heuristic and the refcount/COW hazard of holding node references).
+⚠️ NOT INCREMENTAL, AND A PERSISTED MEMO IS UNSOUND HERE AS-IS — BUILT, MEASURED, REVERTED 2026-08-05.
+`_cata_cached!` builds its memo FRESH PER CALL, so a whole-trie hash is O(distinct nodes) every time,
+where `sms_spec_corrections_2026-07-11.md` §5.3 wants only CHANGED subtries recomputed. The obvious
+fix — let the caller pass a memo that survives across calls, keyed on the node object — was
+implemented and it SILENTLY RETURNED THE WRONG DIGEST:
+
+    m = build(2000 keys); memo = MapHashMemo()
+    h1 = map_hash(m; memo)                 # populate
+    set_val_at!(m, b"key000001x", 99)      # a real edit
+    map_hash(m; memo) === h1               # true (!!)  — reports NOTHING CHANGED
+    map_hash(m; memo) != map_hash(m)       # disagrees with ground truth
+
+WHY, and it is the exact inverse of what upstream's own note suggests. `set_val_at!` MUTATES A NODE
+IN PLACE when its refcnt == 1 — `_cow_in_place!` forks only at refcnt > 1. The node OBJECT is
+unchanged, so an object-keyed entry still hits and answers with the pre-edit digest. The invariant a
+persisted memo needs — *object identity implies content* — is FALSE for unshared nodes.
+
+🔴 UPSTREAM IS SAFE FOR A REASON IT RECORDS AS A COST. `merkleization.rs`'s header warns that a
+persisted memo "would increase the node refcounts and lead to copying". That extra copying IS the
+correctness mechanism: an `Rc` clone in the memo bumps the refcount, so the next write is FORCED to
+COW-fork, producing a NEW object that MISSES the memo. Julia's semantics remove that cost — a
+reference here never touches our MANUAL `refcnt` field — and remove the safety with it. Do not read
+that note as "a hazard we happily avoid"; we avoid the copying and inherit the staleness.
+
+⚠️ THE CONTAINER WAS NOT THE PROBLEM — do not retry this with a different map. Reviewed 2026-08-05
+with measurements: `WeakKeyDict` is mechanically sound for this. The node structs define NO custom
+`hash`/`==` (checked across all 7 in `src/nodes/`), so both fall to Julia's identity fallbacks —
+verified live that two CONTENT-IDENTICAL nodes from separate PathMaps do not collide. A GC-dropped
+entry is always a benign MISS, never a stale hit. It carries an internal `ReentrantLock` that plain
+`Dict`/`IdDict` lack; 20k concurrent ops across 2 threads on one shared memo gave 0 errors. Costs are
+modest and characterised: ~441 B/entry vs `IdDict`'s ~316 B, and `length()` pays an O(table-size)
+sweep on the first touch after a GC that finalized a key. `IdDict` + explicit eviction, or an epoch
+counter, have THE IDENTICAL DEFECT — the failure is upstream of the container, in node mutability vs
+key stability.
+
+WHAT WOULD ACTUALLY WORK, when SMS needs it (there is no consumer today, so this was not pushed
+through): store into the memo THROUGH A REFCOUNT-BUMPING hold, so any later write to a memoized
+subtrie is forced to COW. That is the same medicine `sms_spec_corrections` §3 already prescribes,
+normatively, for `CheckpointRef` — "MUST hold the region root via a refcount-bumping `copy()`". It
+then needs explicit RELEASE on eviction, which rules out `WeakKeyDict` (finalizers touching refcnt at
+GC time), and lands squarely on upstream's other open question: the eviction heuristic. That is a
+design task, not a keyword argument.
+
+Measured while it was in place, for whoever picks this up: memo reuse on an UNCHANGED 20k-key trie
+was 0.3x — SLOWER than recomputing, the bookkeeping costing more than the fold it skipped. Only the
+post-edit path looked fast (93x), and that number was measuring the wrong answer.
 """
 map_hash(m::PathMap{V, A}) where {V, A} = map_hash(m, map_hash_value)
 
