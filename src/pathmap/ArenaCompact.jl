@@ -836,6 +836,17 @@ function act_descend_until!(z::ACTZipper)
             child_node = act_get_node(z.tree, cur.child)[1]
             push!(z.stack, _ACTFrame(child_node, cur.child))
             z.cur_node = child_node
+            # ⚠️ STOP AT A VALUE ON THE NODE WE JUST STEPPED ONTO.
+            # Upstream's contract is "descend until a branch OR A VALUE is encountered"
+            # (zipper.rs:299-316: `descend_first_byte(); if self.is_val() { break }`) — it tests the
+            # NEW focus after every step. This arm used to step onto the child and then re-enter the
+            # `child_count == 1` loop, so a VALUED BRANCH sitting under a line node was walked
+            # straight past. MEASURED on {"band"=>1,"bandana"=>2}: the walk went "b" -> "banda",
+            # skipping "band" entirely, and `act_to_next_val!` yielded only "bandana". The bytes on
+            # disk were correct the whole time (`act_get_val_at` returned both) — this was purely an
+            # ITERATOR defect, which is why no round-trip test caught it.
+            descended = true
+            act_is_val(z) && break
         else  # Branch
             byte = next_bit(cur.bytemask, UInt8(0))
             byte === nothing && break
@@ -844,7 +855,11 @@ function act_descend_until!(z::ACTZipper)
             child_node = act_get_node(z.tree, child_id)[1]
             push!(z.stack, _ACTFrame(child_node, child_id))
             z.cur_node = child_node
-            cur.value !== nothing && (descended=true; break)
+            # Same correction: this tested `cur.value` — the value of the node we just LEFT — AFTER
+            # already descending past it, so it broke one step late and at the wrong node. Upstream
+            # tests the new focus.
+            descended = true
+            act_is_val(z) && break
         end
         descended = true
     end

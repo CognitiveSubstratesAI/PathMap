@@ -105,26 +105,48 @@ end
     end
 end
 
-@testset "OPEN DEFECT — act_to_next_val! skips a value on a branch under a line node" begin
-    # SEPARATE from the corruption above and NOT fixed here. The bytes on disk are correct — every
-    # `act_get_val_at` below returns the right value — but the ITERATOR misses one entry.
+@testset "act_to_next_val! reaches a value on a branch UNDER A LINE NODE (regression)" begin
+    # WAS AN OPEN DEFECT, pinned here with @test_broken until 2026-08-05. `act_descend_until!`
+    # violated upstream's contract — "descend until a branch OR A VALUE is encountered"
+    # (zipper.rs:299-316, which tests `is_val()` after every single-byte step). Our line arm stepped
+    # onto the child node and re-entered the `child_count == 1` loop WITHOUT testing it, so a valued
+    # branch sitting under a line node was walked straight past:
     #
-    # Shape: {"band"=>1, "bandana"=>2}. The cata emits one node (path="band", jump=4, val=1, one
-    # child 'a'), which `act_from_zipper` writes as a LINE node ("band", value=nothing because it has
-    # children) wrapping a BRANCH that carries value 1. Walking with act_to_next_val! yields only
-    # "bandana" — the branch's value is stepped over.
+    #     {"band"=>1, "bandana"=>2}   walk went  "b" -> "banda"   (measured, by trace)
+    #     act_to_next_val! yielded only "bandana"; "band" was invisible to every enumeration
     #
-    # `@test_broken` on purpose: it records the defect AND fails loudly the moment it is fixed, so
-    # this cannot silently rot into a wrong expectation.
-    m = PathMap.PathMap{UInt64}()
-    set_val_at!(m, b"band", UInt64(1)); set_val_at!(m, b"bandana", UInt64(2))
-    t = act_from_zipper(m, v -> v)
+    # The bytes on disk were CORRECT throughout — `act_get_val_at` returned both values — so this was
+    # purely an iterator defect. That is exactly why no round-trip test caught it: round-trips assert
+    # lookups, and the pre-existing ArenaCompact tests used keys with no shared prefix
+    # ("alpha"/"beta"/"gamma"), the one shape where a value can never sit under a line node.
+    # It matters because CheckpointRef IS full-state `.act`: anything ENUMERATING a checkpoint
+    # silently under-reported.
+    #
+    # The boundary condition is one key being a strict extension of another VALUED key, so the
+    # shorter key's value lands on a branch beneath the shared line. Both are asserted below —
+    # enumeration AND lookup — because they failed independently.
+    for ks in (("band", "bandana"),                       # the original repro
+               ("a", "ab"),                               # minimal
+               ("x", "xy", "xyz"),                        # chained extensions
+               ("band", "bandana", "bandanas"),           # two levels of nesting
+               ("a", "ab", "abc", "abcd"),                # deep chain
+               ("apple", "apricot", "banana", "band", "bandana"),  # nesting mixed with forks
+               ("a",),                                    # single key, no branching
+               ("aa", "ab", "ba", "bb"),                  # forks, no nesting
+               ("alpha", "beta", "gamma"))                # control: no shared prefixes at all
+        m = PathMap.PathMap{UInt64}()
+        for (i, k) in enumerate(ks)
+            set_val_at!(m, Vector{UInt8}(k), UInt64(i))
+        end
+        t = act_from_zipper(m, v -> v)
 
-    @test act_get_val_at(t, b"band")    === UInt64(1)     # data IS present...
-    @test act_get_val_at(t, b"bandana") === UInt64(2)
+        z = act_read_zipper(t); seen = String[]
+        while act_to_next_val!(z); push!(seen, String(copy(act_path(z)))); end
+        @test sort(seen) == sort(collect(ks))          # every key REACHABLE by enumeration
+        @test length(seen) == length(ks)               # ...exactly once, no duplicates
 
-    z = act_read_zipper(t); seen = String[]
-    while act_to_next_val!(z); push!(seen, String(copy(act_path(z)))); end
-    @test_broken sort(seen) == ["band", "bandana"]        # ...but the walk yields only "bandana"
-    @test "bandana" in seen                               # pins what it DOES yield today
+        for (i, k) in enumerate(ks)                    # ...and lookup still agrees
+            @test act_get_val_at(t, Vector{UInt8}(k)) === UInt64(i)
+        end
+    end
 end
