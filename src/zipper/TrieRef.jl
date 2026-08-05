@@ -264,8 +264,27 @@ function tr_get_focus_rc(t::TrieRefBorrowed{V, A}) where {V, A}
     if isempty(key)
         t.focus_node
     else
-        result = node_get_child(as_tagged(t.focus_node), key)
-        result === nothing ? nothing : result[2]
+        # 🔴 `get_node_at_key`, NOT `node_get_child` — fixed 2026-08-05.
+        # Upstream (trie_ref.rs:306) is:
+        #     self.focus_node.unwrap().as_tagged().get_node_at_key(self.node_key())
+        # `get_node_at_key` resolves a node at a key that may land PART-WAY THROUGH a compressed line
+        # node; `node_get_child` only returns a child at an edge BOUNDARY. So any focus sitting
+        # mid-line returned `nothing`, and `tr_make_map` then produced an EMPTY map — silently, with
+        # no error.
+        #
+        # MEASURED, on a trie holding pre:aa / pre:ab / pre:ac / other:zz —
+        #     trie_ref_at_path(btm, "pre:")   -> tr_make_map == []          (!!)  mid-line
+        #     trie_ref_at_path(btm, "pre:a")  -> tr_make_map == [a, b, c]         at a boundary
+        # It only surfaced because ShardZipper's graft reattach compared its output against the
+        # per-path writer and an UNPATCHED entry (`pre:ac`) had vanished: the empty region was
+        # grafted over the real one. An empty-instead-of-error return is invisible to every caller
+        # that does not already know the answer.
+        #
+        # `get_node_at_key` is defined for every node type (TrieNode.jl:275 generic; Dense/LineList/
+        # Bridge/Empty/TinyRef impls) and carries upstream's own name — the divergence was purely in
+        # which one this call site reached for, which is exactly why a name-level diff never caught it.
+        anr = get_node_at_key(as_tagged(t.focus_node), key)
+        into_option(anr)
     end
 end
 

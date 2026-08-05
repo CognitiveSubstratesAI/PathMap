@@ -93,6 +93,38 @@ const P = PathMap
         @test get_val_at(src, Vector{UInt8}("other:z")) === UInt64(3)
     end
 
+    @testset "a MID-LINE prefix extracts the region (get_node_at_key, not node_get_child)" begin
+        # SECOND defect in tr_get_focus_rc, fixed 2026-08-05. Upstream (trie_ref.rs:306) resolves a
+        # non-empty node_key with `get_node_at_key`, which handles a focus landing PART-WAY THROUGH a
+        # compressed line node. Ours called `node_get_child`, which only returns a child at an edge
+        # BOUNDARY — so a mid-line prefix returned `nothing` and tr_make_map produced an EMPTY map,
+        # silently and with no error.
+        #
+        # MEASURED before the fix, on this exact trie:
+        #     trie_ref_at_path(m, "pre:")  -> tr_make_map == []          (!!)   mid-line
+        #     trie_ref_at_path(m, "pre:a") -> tr_make_map == [a, b, c]          at a boundary
+        # Which prefixes are "mid-line" depends on how the trie compressed, so a test that only used
+        # boundary-aligned prefixes would pass forever while the function was broken for real callers.
+        m = P.PathMap{UInt64}()
+        for (k, v) in [("pre:aa", 1), ("pre:ab", 2), ("pre:ac", 3), ("other:zz", 9)]
+            set_val_at!(m, Vector{UInt8}(k), UInt64(v))
+        end
+        keys_of(x) = (z = read_zipper(x); o = String[];
+                      while zipper_to_next_val!(z); push!(o, String(copy(zipper_path(z)))); end; sort(o))
+
+        @test keys_of(P.tr_make_map(P.trie_ref_at_path(m, Vector{UInt8}("pre:")))) == ["aa","ab","ac"]
+        @test keys_of(P.tr_make_map(P.trie_ref_at_path(m, Vector{UInt8}("pre:a")))) == ["a","b","c"]
+        @test keys_of(P.tr_make_map(P.trie_ref_at_path(m, Vector{UInt8}("other:")))) == ["zz"]
+        @test keys_of(P.tr_make_map(P.trie_ref_at_path(m, UInt8[]))) ==
+              ["other:zz","pre:aa","pre:ab","pre:ac"]
+        # a prefix matching NOTHING must give an empty map, not a wrong one
+        @test isempty(keys_of(P.tr_make_map(P.trie_ref_at_path(m, Vector{UInt8}("nope:")))))
+        # and the mid-line region stays isolated, same as the boundary case
+        r = P.tr_make_map(P.trie_ref_at_path(m, Vector{UInt8}("pre:")))
+        set_val_at!(r, b"az", UInt64(99))
+        @test get_val_at(m, Vector{UInt8}("pre:az")) === nothing
+    end
+
     @testset "an empty source yields an empty, writable map" begin
         src = P.PathMap{UInt64}()
         m = P.tr_make_map(P.trie_ref_at_path(src, UInt8[]))
