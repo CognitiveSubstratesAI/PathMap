@@ -88,6 +88,9 @@ include("zipper/ProductZipperG.jl")
 # ── PathMap algorithmic layer ─────────────────────────────────────────────────
 
 # Morphisms. Ports pathmap/src/morphisms.rs.
+# GxHasher — upstream's 128-bit state mixer, which Catamorphism::hash folds with.
+# Must precede Morphisms.jl: map_hash consumes it.
+include("pathmap/GxHash.jl")
 include("pathmap/Morphisms.jl")
 
 # ArenaCompact. Ports pathmap/src/arena_compact.rs.

@@ -125,8 +125,13 @@ const _PM_TS = @testset "PathMap" begin
         @test total == 15   # 1+2+3+4+5
 
         h = map_hash(m)
-        @test h isa UInt64
+        # UInt64 -> UInt128 on 2026-08-05: `map_hash` now folds with upstream's GxHasher instead of
+        # `Base.hash`, matching `Catamorphism::hash`'s u128 width. 64 bits put the birthday bound at
+        # ~2^32 subtries, and `Base.hash` is not contracted stable across Julia versions — both
+        # disqualifying for a digest written into a checkpoint. See test_gxhash_map_hash.jl.
+        @test h isa UInt128
         @test h != 0
+        @test map_hash(m) === h                    # deterministic across calls (memo cannot leak)
     end
 
     @testset "insert_prefix / remove_prefix" begin
@@ -950,6 +955,11 @@ include("test_pzg_factor_count_guard.jl")
 # cannot see it. Wired here so the suite actually runs it — it sat unwired for its first hours,
 # during which a full green suite said nothing about it.
 include("test_act_validation.jl")
+
+# GxHasher vs an INDEPENDENT reference derived from upstream's Rust, plus map_hash's digest contract.
+# Wired here at creation — an unwired test is worse than none, which this suite learned the hard way
+# when test_act_validation.jl sat uncalled through two green runs.
+include("test_gxhash_map_hash.jl")
 
 # Post-suite: a testset that asserted NOTHING must fail the build, not read as green.
 assert_no_inert_testsets(_PM_TS)

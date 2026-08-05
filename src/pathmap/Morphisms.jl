@@ -395,23 +395,73 @@ function cata_jumping_cached(z::ReadZipperCore{V, A}, alg_f::Function) where {V,
     _cata_cached!(z, alg_f, true)
 end
 
-"""
-    map_hash(m::PathMap) → UInt64
+# Upstream's seed for the structural fold — `morphisms.rs:255`, verbatim.
+const _MAP_HASH_SEED = reinterpret(Int64,
+    0b0100001010101101111110010110100110000010011000100100100111110111 % UInt64)
 
-Hash the trie and all values using structural sharing.
-Mirrors `Catamorphism::hash`.
 """
-function map_hash(m::PathMap{V, A}) where {V, A}
+    map_hash_value(v) → UInt128
+
+Per-VALUE hash. Upstream's default `val_hash` (`morphisms.rs:241-245`): a fresh `GxHasher` seeded 0,
+the value hashed into it, read out as u128. Julia's `hash(v)` is used to reduce an arbitrary `V` to
+bytes first — `V` is user-chosen and has no byte encoding of its own, exactly as upstream leans on
+`V: std::hash::Hash`.
+"""
+function map_hash_value(v)::UInt128
+    h = GxHasher(Int64(0))
+    gx_write!(h, gx_u64_le_bytes(UInt64(hash(v))))
+    gx_finish_u128(h)
+end
+
+"""
+    map_hash(m::PathMap) → UInt128
+    map_hash(m::PathMap, val_hash) → UInt128
+
+Hash the LOGICAL trie — a Merkle-style fold in which each node's digest is computed from its
+children's digests — exploiting structural sharing via `cata_cached`. Mirrors `Catamorphism::hash` /
+`hash_with` (`morphisms.rs:236-261`), fold order included:
+
+    seed  = 0b01000010…110111                       (morphisms.rs:255)
+    write(bytemask as 32 bytes)                      byte-wise
+    write(child hashes as 16*len bytes)              byte-wise, little-endian u128s
+    if value: write_u128(val_hash(value))            the SEPARATE u128 path, not 16 bytes
+    finish_u128()
+
+⚠️ **128 bits, and NOT byte-identical to the `mork` binary.** Upstream's `GxHasher` is the AES-NI
+crate on x86_64 and this ~20-line mixer only under miri/riscv64 (`lib.rs:13-16`) — so these digests
+match upstream there and not on x86_64. Deliberate: upstream's own cfg makes the value a PER-TARGET
+artifact, so it cannot be a portable contract, and nothing compares this across engines. See the
+header of `GxHash.jl`, and `MORK/test/conformance/ADAPTATIONS.md` entry 7 for the identical call on
+the HashSink digest.
+
+WHAT CHANGED 2026-08-05 and why. This returned a `UInt64` built from `Base.hash`. Two problems for
+its intended consumer (WP §2.6 `ChangeDigest`): 64 bits puts the birthday bound at ~2^32 subtries,
+and `Base.hash` is not contracted stable across Julia versions — a digest written into a checkpoint
+must survive a Julia upgrade. Measured before changing it: the old form WAS stable across processes
+on 1.12.6, order-independent, and detected both value changes and key removals — so this widens and
+pins the algorithm; it does not fix a correctness bug.
+
+⚠️ STILL NOT INCREMENTAL. `_cata_cached!` builds its memo FRESH PER CALL (`Morphisms.jl:245`), so a
+whole-trie hash is O(distinct nodes) every time. `sms_spec_corrections_2026-07-11.md` §5.3 requires
+recomputing only CHANGED subtries; that needs the memo PERSISTED across calls, which is upstream's
+own open design question (`merkleization.rs` header: exfiltrate the memo, "gradual merkleization",
+plus an eviction heuristic and the refcount/COW hazard of holding node references).
+"""
+map_hash(m::PathMap{V, A}) where {V, A} = map_hash(m, map_hash_value)
+
+function map_hash(m::PathMap{V, A}, val_hash::Function)::UInt128 where {V, A}
     cata_cached(
         m,
         (mask, children, val) -> begin
-            h = hash(mask.bits)
-            for c in children
-                ;
-                h = hash(h, UInt64(c isa Number ? c : objectid(c)));
+            h = GxHasher(_MAP_HASH_SEED)
+            for w in mask.bits                       # ByteMask = 4 x UInt64 = 32 bytes
+                gx_write!(h, gx_u64_le_bytes(w))
             end
-            val !== nothing && (h = hash(h, hash(val)))
-            h
+            for c in children                        # child digests, 16 bytes each
+                gx_write!(h, gx_u128_le_bytes(c::UInt128))
+            end
+            val !== nothing && gx_write_u128!(h, val_hash(val))
+            gx_finish_u128(h)
         end
     )
 end
@@ -740,5 +790,5 @@ export cata_hybrid_cached, cata_jumping_hybrid_cached
 export ana_jumping!
 export TrieBuilder, tb_push_byte!, tb_push!, tb_len, tb_child_mask
 export tb_graft_at_byte!, tb_reset!
-export map_hash
+export map_hash, map_hash_value
 export zipper_origin_path, zipper_shared_node_id
