@@ -458,6 +458,25 @@ IN PLACE when its refcnt == 1 — `_cow_in_place!` forks only at refcnt > 1. The
 unchanged, so an object-keyed entry still hits and answers with the pre-edit digest. The invariant a
 persisted memo needs — *object identity implies content* — is FALSE for unshared nodes.
 
+✅ **MECHANISM RE-VERIFIED IN THE BODY 2026-08-14** (previously this paragraph was the only record, and
+a reader was right to ask whether it had gone stale). `zipper/Zipper.jl:118-125`:
+
+    @inline function _cow_in_place!(rc::TrieNodeODRc{V, A}, inner) where {V, A}
+        if hasfield(typeof(inner), :refcnt) && Int(getfield(inner, :refcnt, :acquire)) > 1
+            _node_dec_refcnt!(inner)
+            rc.node = (clone_self(inner)::TrieNodeODRc{V, A}).node
+            return _fnode(_rc_inner(rc), V, A)
+        end
+        inner                    # <- refcnt <= 1 (or no refcnt field): the SAME object, unforked
+    end
+
+The guard is `> 1` and the fall-through returns `inner` itself, so the write lands on the same object.
+The unsoundness conclusion therefore rests on code, not on this docstring's testimony.
+
+⚠️ **WHAT IS STILL TESTIMONY, AND SHOULD BE RE-RUN BEFORE IT IS PLANNED AROUND:** the 2026-08-05
+experiment itself, and every NUMBER below (0.3x, 93x, the 441 B/entry and ~316 B/entry figures). They
+were not re-measured on 2026-08-14. Quote them as "reported", never as a current measurement.
+
 🔴 UPSTREAM IS SAFE FOR A REASON IT RECORDS AS A COST. `merkleization.rs`'s header warns that a
 persisted memo "would increase the node refcounts and lead to copying". That extra copying IS the
 correctness mechanism: an `Rc` clone in the memo bumps the refcount, so the next write is FORCED to
