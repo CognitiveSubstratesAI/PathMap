@@ -644,22 +644,21 @@ struct SetPayloadUpgrade{V, A} <: AbstractSetPayloadResult{V, A}
 end
 
 """
-    set_payload_abstract!(n, is_child, key, payload) → AbstractSetPayloadResult
+    _lln_set_recursive(child_rc, sub_key, is_child, payload) -> SetPayloadOk | SetPayloadUpgrade
 
-Inserts `(key, payload)` into the node:
+The recursive descent of [`set_payload_abstract!`], HOISTED OUT of it.
 
-  - If the key exactly replaces an existing entry: Ok(old, false)
-  - If a new slot or sub-node was created: Ok(nothing, bool)
-  - If both slots are full and no key overlap → upgrade needed: Upgrade(new_dense_rc)
+🔴 IT WAS AN INNER CLOSURE AND JULIA BOXED ITS LOCALS. `code_lowered` named three —
+`val@_7 = Core.Box()`, `inner_rc@_8 = Core.Box()`, `child@_10 = Core.Box()` — and the allocation
+profiler attributed 116 sampled `Core.Box` allocations here on a single clique4 step, the largest
+Box site in the engine. A closure whose captures Julia cannot prove immutable boxes them; passing
+`is_child` and `payload` as ARGUMENTS removes the capture, and with it the box.
+
+⚠️ THE BODY IS UNCHANGED, including the asymmetry fix documented inside it. This is a scope
+transformation, not a rewrite: same branches, same returns, same hardcoded `true`.
 """
-function set_payload_abstract!(
-    n::LineListNode{V, A}, is_child::Bool, key::AbstractVector{UInt8},
-    payload::ValOrChild{V, A}
-) where {V, A}
-    @assert !isempty(key)
-
-    # Recursively set in a child slot
-    function set_recursive(child_rc::TrieNodeODRc{V, A}, sub_key::AbstractVector{UInt8})
+function _lln_set_recursive(child_rc::TrieNodeODRc{V, A}, sub_key::AbstractVector{UInt8},
+                            is_child::Bool, payload::ValOrChild{V, A}) where {V, A}
         child = as_tagged(child_rc)
         if is_child
             inner_rc = into_child(payload)
@@ -695,7 +694,24 @@ function set_payload_abstract!(
                 return SetPayloadOk{V, A}(old_val, true)
             end
         end
-    end
+end
+
+"""
+    set_payload_abstract!(n, is_child, key, payload) → AbstractSetPayloadResult
+
+Inserts `(key, payload)` into the node:
+
+  - If the key exactly replaces an existing entry: Ok(old, false)
+  - If a new slot or sub-node was created: Ok(nothing, bool)
+  - If both slots are full and no key overlap → upgrade needed: Upgrade(new_dense_rc)
+"""
+function set_payload_abstract!(
+    n::LineListNode{V, A}, is_child::Bool, key::AbstractVector{UInt8},
+    payload::ValOrChild{V, A}
+) where {V, A}
+    @assert !isempty(key)
+
+    # Recursively set in a child slot
 
     # Check if there's already an exact match → replace
     if is_child
@@ -744,7 +760,7 @@ function set_payload_abstract!(
             split_slot0!(n, overlap)
             child_rc = into_child(n.slot0)
             child_mut = as_tagged(child_rc)
-            return set_recursive(child_rc, key[(overlap + 1):end])
+            return _lln_set_recursive(child_rc, key[(overlap + 1):end], is_child, payload)
         end
     end
 
@@ -772,7 +788,7 @@ function set_payload_abstract!(
         if overlap1 > 0
             split_slot1!(n, overlap1)
             child_rc = into_child(n.slot1)
-            return set_recursive(child_rc, key[(overlap1 + 1):end])
+            return _lln_set_recursive(child_rc, key[(overlap1 + 1):end], is_child, payload)
         end
     end
 
