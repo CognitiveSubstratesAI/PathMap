@@ -759,7 +759,9 @@ function set_payload_abstract!(
         if overlap > 0
             split_slot0!(n, overlap)
             child_rc = into_child(n.slot0)
-            child_mut = as_tagged(child_rc)
+            # `child_mut = as_tagged(child_rc)` was here and DEAD — `_lln_set_recursive` recomputes
+            # it as its own first line. Flagged in test/differential/fuzz/TRIAGE.md as "delete it
+            # when next in the file"; removed 2026-08-20 while hoisting that function out.
             return _lln_set_recursive(child_rc, key[(overlap + 1):end], is_child, payload)
         end
     end

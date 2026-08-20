@@ -365,10 +365,16 @@ LineListNode.jl:692-711), which is the path `node_set_branch` takes for a prefix
 
 * The branch is FAITHFUL — same `find_prefix_overlap`, same `IS_CHILD && is_child_ptr && overlap ==
   key.len()` total-replacement arm, same `overlap -= 1` adjustment, same `split_0` + recurse.
-* Our `set_recursive(child_rc, sub_key)` looks like it drops upstream's third argument. It does not:
-  it is a local closure capturing `payload` and `is_child`. Not a bug.
-* `child_mut = as_tagged(child_rc)` (LineListNode.jl:708) is DEAD — `set_recursive` recomputes it.
-  Harmless, but delete it when next in the file.
+* ~~Our `set_recursive(child_rc, sub_key)` looks like it drops upstream's third argument. It does
+  not: it is a local closure capturing `payload` and `is_child`.~~ **SUPERSEDED 2026-08-20** — it is
+  no longer a closure. It is now the top-level `_lln_set_recursive(child_rc, sub_key, is_child,
+  payload)`, taking both explicitly, because capturing them made Julia BOX three of its locals
+  (`code_lowered`: `val`, `inner_rc`, `child`) and the allocation profiler attributed the largest
+  `Core.Box` site in the engine here. Behaviour unchanged; the arguments are now visible rather
+  than captured, which is also what the original note had to explain away.
+* ~~`child_mut = as_tagged(child_rc)` is DEAD — delete it when next in the file.~~ **DONE
+  2026-08-20**, in the same pass. It was assigned and never read; `_lln_set_recursive` recomputes it
+  as its own first line.
 
 *The one candidate this surfaced.* Upstream recurses into
 `self.child_in_slot_mut::<0>().make_mut()` — `make_mut()` is the COW ensure-unique. Ours recurses
