@@ -69,28 +69,66 @@ function _probe(name::String, f)
 end
 
 # Entry points chosen to cover every algebra path plus the two prune sites fixed on 2026-08-01.
-_probe("wz_restrict!", () -> (m = _mk(["aa", "ab", "b"]); s = _mk(["aa", "b"]);
-    @report_call PathMap.wz_restrict!(PathMap.write_zipper(m),
-                                      PathMap.ANRBorrowedRc{UV, GA}(s.root))))
-_probe("wz_meet_into!", () -> (m = _mk(["aa", "b"]); s = _mk(["a", "b"]);
-    @report_call PathMap.wz_meet_into!(PathMap.write_zipper(m),
-                                       PathMap.ANRBorrowedRc{UV, GA}(s.root), true, s.root_val)))
-_probe("wz_subtract_into!", () -> (m = _mk(["aa", "b"]); s = _mk(["a", "b"]);
-    @report_call PathMap.wz_subtract_into!(PathMap.write_zipper(m),
-                                           PathMap.ANRBorrowedRc{UV, GA}(s.root), true, s.root_val)))
-_probe("wz_join_map_into!", () -> (m = _mk(["aa", "b"]); s = _mk(["a", "b"]);
-    @report_call PathMap.wz_join_map_into!(PathMap.write_zipper(m), s)))
-_probe("wz_graft_map!", () -> (m = _mk(["aa", "b"]); s = _mk(["a", "b"]);
-    @report_call PathMap.wz_graft_map!(PathMap.write_zipper(m), s)))
-_probe("wz_join_k_path_into!", () -> (m = _mk(["abc"]);
-    @report_call PathMap.wz_join_k_path_into!(PathMap.write_zipper_at_path(m, _b("ab")), 5, true)))
-_probe("wz_remove_val!", () -> (m = _mk(["aa", "ab"]);
-    @report_call PathMap.wz_remove_val!(PathMap.write_zipper_at_path(m, _b("aa")), true)))
-_probe("wz_take_map!", () -> (m = _mk(["aa", "ab"]);
-    @report_call PathMap.wz_take_map!(PathMap.write_zipper_at_path(m, _b("a")), true)))
-_probe("prestrict_dyn", () -> (m = _mk(["aa", "ab", "b"]); s = _mk(["aa", "b"]);
-    @report_call PathMap.prestrict_dyn(PathMap.as_tagged(m.root), PathMap.as_tagged(s.root))))
-_probe("_wz_prune_path_internal!", () -> (m = _mk(["abc"]);
-    @report_call PathMap._wz_prune_path_internal!(PathMap.write_zipper_at_path(m, _b("ab")))))
+_probe(
+    "wz_restrict!",
+    () -> (m=_mk(["aa", "ab", "b"]); s=_mk(["aa", "b"]);
+        @report_call PathMap.wz_restrict!(PathMap.write_zipper(m),
+            PathMap.ANRBorrowedRc{UV, GA}(s.root)))
+)
+_probe(
+    "wz_meet_into!",
+    () -> (m=_mk(["aa", "b"]); s=_mk(["a", "b"]);
+        @report_call PathMap.wz_meet_into!(PathMap.write_zipper(m),
+            PathMap.ANRBorrowedRc{UV, GA}(s.root), true, s.root_val))
+)
+_probe(
+    "wz_subtract_into!",
+    () -> (m=_mk(["aa", "b"]); s=_mk(["a", "b"]);
+        @report_call PathMap.wz_subtract_into!(PathMap.write_zipper(m),
+            PathMap.ANRBorrowedRc{UV, GA}(s.root), true, s.root_val))
+)
+_probe(
+    "wz_join_map_into!",
+    () -> (m=_mk(["aa", "b"]); s=_mk(["a", "b"]);
+        @report_call PathMap.wz_join_map_into!(PathMap.write_zipper(m), s))
+)
+_probe(
+    "wz_graft_map!",
+    () -> (m=_mk(["aa", "b"]); s=_mk(["a", "b"]);
+        @report_call PathMap.wz_graft_map!(PathMap.write_zipper(m), s))
+)
+_probe(
+    "wz_join_k_path_into!",
+    () -> (m=_mk(["abc"]);
+        @report_call PathMap.wz_join_k_path_into!(
+            PathMap.write_zipper_at_path(m, _b("ab")), 5, true
+        ))
+)
+_probe(
+    "wz_remove_val!",
+    () -> (m=_mk(["aa", "ab"]);
+        @report_call PathMap.wz_remove_val!(
+            PathMap.write_zipper_at_path(m, _b("aa")), true
+        ))
+)
+_probe(
+    "wz_take_map!",
+    () -> (m=_mk(["aa", "ab"]);
+        @report_call PathMap.wz_take_map!(PathMap.write_zipper_at_path(m, _b("a")), true))
+)
+_probe(
+    "prestrict_dyn",
+    () -> (m=_mk(["aa", "ab", "b"]); s=_mk(["aa", "b"]);
+        @report_call PathMap.prestrict_dyn(
+            PathMap.as_tagged(m.root), PathMap.as_tagged(s.root)
+        ))
+)
+_probe(
+    "_wz_prune_path_internal!",
+    () -> (m=_mk(["abc"]);
+        @report_call PathMap._wz_prune_path_internal!(
+            PathMap.write_zipper_at_path(m, _b("ab"))
+        ))
+)
 
 println("\n=== TOTAL REPORTS: ", _TOTAL[], " (74 as of 2026-08-01 — see the header) ===")

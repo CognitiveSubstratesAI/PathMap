@@ -280,8 +280,8 @@ function _cata_cached!(z::ReadZipperCore{V, A}, alg_f::Function, jumping::Bool) 
                     end
                 cur_w = _cata_ascend_to_fork!(z, inner_alg, [], jumping)
                 if nid !== nothing
-                    ;
-                    cache[nid] = cur_w;
+
+                    cache[nid] = cur_w
                 end
                 push!(children, cur_w)
                 continue

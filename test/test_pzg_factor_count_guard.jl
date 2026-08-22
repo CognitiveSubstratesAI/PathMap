@@ -52,10 +52,11 @@ const PMG = PathMap.PathMap
     end
 
     dpz = PathMap.DependentZipper(read_zipper(m), nothing, cb)
-    pz  = PathMap.PrefixZipper(UInt8[], dpz)           # CmpSource's shape — load-bearing, see header
+    pz = PathMap.PrefixZipper(UInt8[], dpz)           # CmpSource's shape — load-bearing, see header
     prz = PathMap.ProductZipperG(pz, PathMap.ReadZipperCore{UnitVal, PathMap.GlobalAlloc}[])
 
-    counts = Set{Int}(); steps = 0
+    counts = Set{Int}()
+    steps = 0
     while PathMap.pzg_to_next_val!(prz)
         steps += 1
         steps > 200 && break                            # cycle guard: the assertions below fail, not hang

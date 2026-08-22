@@ -9,7 +9,8 @@
 # structurally cannot avoid. Mirrors the existing read-only ACT (`ArenaCompact.jl`): an `ACT_NodeId`
 # handle + slab-threaded reads — ADR-001 promotes that layout to the primary, writable form.
 
-@enum NodeTag::UInt8 TAG_NIL = 0 TAG_LINELIST = 1 TAG_DENSEBYTE = 2 TAG_BRIDGE = 3 TAG_TINYREF = 4
+@enum NodeTag::UInt8 TAG_NIL = 0 TAG_LINELIST = 1 TAG_DENSEBYTE = 2 TAG_BRIDGE = 3 TAG_TINYREF =
+    4
 
 """
     SlabHandle
@@ -35,7 +36,7 @@ mutable struct NodeSlab
     bytes::Memory{UInt8}
     len::UInt32
 end
-NodeSlab(cap::Integer = 256) = NodeSlab(Memory{UInt8}(undef, Int(cap)), UInt32(0))
+NodeSlab(cap::Integer=256) = NodeSlab(Memory{UInt8}(undef, Int(cap)), UInt32(0))
 
 "Reserve `nbytes` contiguous bytes (doubling-grow if needed); return the 1-based start index."
 @inline function slab_reserve!(s::NodeSlab, nbytes::Integer)::UInt32
@@ -80,22 +81,30 @@ end
 @inline _dbn_estride(::Type{V}) where {V} = sizeof(SlabHandle) + sizeof(V) + 1
 
 "Pack a dense byte node (mask + entries) into the slab; return its `SlabHandle`."
-function dbn_pack!(s::NodeSlab, mask::ByteMask, entries::AbstractVector{DBNEntry{V}}) where {V}
+function dbn_pack!(
+    s::NodeSlab, mask::ByteMask, entries::AbstractVector{DBNEntry{V}}
+) where {V}
     es = _dbn_estride(V)
     start = slab_reserve!(s, sizeof(ByteMask) + 2 + length(entries) * es)
     off = start
-    slab_store!(s, off, mask);                    off += UInt32(sizeof(ByteMask))
-    slab_store!(s, off, UInt16(length(entries))); off += UInt32(2)
+    slab_store!(s, off, mask)
+    off += UInt32(sizeof(ByteMask))
+    slab_store!(s, off, UInt16(length(entries)))
+    off += UInt32(2)
     for e in entries
-        slab_store!(s, off, e.child);             off += UInt32(sizeof(SlabHandle))
-        slab_store!(s, off, e.val);               off += UInt32(sizeof(V))
-        slab_store!(s, off, e.has_val ? 0x01 : 0x00); off += UInt32(1)
+        slab_store!(s, off, e.child)
+        off += UInt32(sizeof(SlabHandle))
+        slab_store!(s, off, e.val)
+        off += UInt32(sizeof(V))
+        slab_store!(s, off, e.has_val ? 0x01 : 0x00)
+        off += UInt32(1)
     end
     return SlabHandle(start, TAG_DENSEBYTE)
 end
 
 @inline dbn_mask(s::NodeSlab, h::SlabHandle) = slab_load(s, h.idx, ByteMask)
-@inline dbn_nentries(s::NodeSlab, h::SlabHandle) = Int(slab_load(s, h.idx + UInt32(sizeof(ByteMask)), UInt16))
+@inline dbn_nentries(s::NodeSlab, h::SlabHandle) =
+    Int(slab_load(s, h.idx + UInt32(sizeof(ByteMask)), UInt16))
 
 "Read the `i`-th (1-based) entry of the slab dense byte node at `h`."
 function dbn_entry(s::NodeSlab, h::SlabHandle, i::Integer, ::Type{V}) where {V}
@@ -122,12 +131,18 @@ end
 # Halves per-node memory vs the dense node for the (many) sparse nodes; lookup is an O(count) scan.
 @inline _lln_estride(::Type{V}) where {V} = 1 + sizeof(SlabHandle) + sizeof(V) + 1
 @inline lln_count(s::NodeSlab, h::SlabHandle) = Int(slab_load(s, h.idx, UInt16))
-@inline _lln_ebase(h::SlabHandle, i::Int, ::Type{V}) where {V} = h.idx + UInt32(2 + (i - 1) * _lln_estride(V))
-@inline lln_byte(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} = slab_load(s, _lln_ebase(h, i, V), UInt8)
-@inline lln_child(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} = slab_load(s, _lln_ebase(h, i, V) + UInt32(1), SlabHandle)
-@inline lln_val(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} = slab_load(s, _lln_ebase(h, i, V) + UInt32(9), V)
-@inline lln_hasval(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} = slab_load(s, _lln_ebase(h, i, V) + UInt32(9 + sizeof(V)), UInt8) != 0x00
-@inline lln_child_off(h::SlabHandle, i::Int, ::Type{V}) where {V} = _lln_ebase(h, i, V) + UInt32(1)
+@inline _lln_ebase(h::SlabHandle, i::Int, ::Type{V}) where {V} =
+    h.idx + UInt32(2 + (i - 1) * _lln_estride(V))
+@inline lln_byte(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} =
+    slab_load(s, _lln_ebase(h, i, V), UInt8)
+@inline lln_child(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} =
+    slab_load(s, _lln_ebase(h, i, V) + UInt32(1), SlabHandle)
+@inline lln_val(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} =
+    slab_load(s, _lln_ebase(h, i, V) + UInt32(9), V)
+@inline lln_hasval(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} =
+    slab_load(s, _lln_ebase(h, i, V) + UInt32(9 + sizeof(V)), UInt8) != 0x00
+@inline lln_child_off(h::SlabHandle, i::Int, ::Type{V}) where {V} =
+    _lln_ebase(h, i, V) + UInt32(1)
 
 @inline function lln_find(s::NodeSlab, h::SlabHandle, byte::UInt8, ::Type{V})::Int where {V}
     cnt = lln_count(s, h)
@@ -144,7 +159,9 @@ end
 end
 
 "Pack a list node from `(byte, child, val, has_val)` items."
-function lln_pack!(s::NodeSlab, items::AbstractVector{Tuple{UInt8, SlabHandle, V, Bool}}) where {V}
+function lln_pack!(
+    s::NodeSlab, items::AbstractVector{Tuple{UInt8, SlabHandle, V, Bool}}
+) where {V}
     n = length(items)
     start = slab_reserve!(s, 2 + n * _lln_estride(V))
     slab_store!(s, start, UInt16(n))
@@ -164,7 +181,12 @@ function lln_add_byte!(s::NodeSlab, h::SlabHandle, b::UInt8, ::Type{V}) where {V
     cnt = lln_count(s, h)
     items = Vector{Tuple{UInt8, SlabHandle, V, Bool}}(undef, cnt + 1)
     @inbounds for i in 1:cnt
-        items[i] = (lln_byte(s, h, i, V), lln_child(s, h, i, V), lln_val(s, h, i, V), lln_hasval(s, h, i, V))
+        items[i] = (
+            lln_byte(s, h, i, V),
+            lln_child(s, h, i, V),
+            lln_val(s, h, i, V),
+            lln_hasval(s, h, i, V)
+        )
     end
     items[cnt + 1] = (b, SLAB_NIL, zero(V), false)
     return (lln_pack!(s, items), cnt + 1)
@@ -176,7 +198,9 @@ end
     slab_store!(s, base + UInt32(9 + sizeof(V)), 0x01)
     return nothing
 end
-@inline lln_set_child!(s::NodeSlab, h::SlabHandle, i::Int, child::SlabHandle, ::Type{V}) where {V} =
+@inline lln_set_child!(
+    s::NodeSlab, h::SlabHandle, i::Int, child::SlabHandle, ::Type{V}
+) where {V} =
     slab_store!(s, _lln_ebase(h, i, V) + UInt32(1), child)
 
 # ── increment 2 hybrid: dense-byte WRITE helpers + list→dense conversion + tag dispatch ──
@@ -184,10 +208,15 @@ end
 # DENSE (32-byte mask, O(1) lookup) so high-fan-out nodes don't degrade to a long linear scan.
 const SLAB_MAXLIST = 16
 
-@inline _dbn_ebase(h::SlabHandle, i::Int, ::Type{V}) where {V} = h.idx + UInt32(sizeof(ByteMask) + 2 + (i - 1) * _dbn_estride(V))
-@inline dbn_child(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} = slab_load(s, _dbn_ebase(h, i, V), SlabHandle)
-@inline dbn_val(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} = slab_load(s, _dbn_ebase(h, i, V) + UInt32(sizeof(SlabHandle)), V)
-@inline dbn_hasval(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} = slab_load(s, _dbn_ebase(h, i, V) + UInt32(sizeof(SlabHandle) + sizeof(V)), UInt8) != 0x00
+@inline _dbn_ebase(h::SlabHandle, i::Int, ::Type{V}) where {V} =
+    h.idx + UInt32(sizeof(ByteMask) + 2 + (i - 1) * _dbn_estride(V))
+@inline dbn_child(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} =
+    slab_load(s, _dbn_ebase(h, i, V), SlabHandle)
+@inline dbn_val(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} =
+    slab_load(s, _dbn_ebase(h, i, V) + UInt32(sizeof(SlabHandle)), V)
+@inline dbn_hasval(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} =
+    slab_load(s, _dbn_ebase(h, i, V) + UInt32(sizeof(SlabHandle) + sizeof(V)), UInt8) !=
+    0x00
 @inline dbn_child_off(h::SlabHandle, i::Int, ::Type{V}) where {V} = _dbn_ebase(h, i, V)
 @inline function dbn_set_val!(s::NodeSlab, h::SlabHandle, i::Int, val::V) where {V}
     base = _dbn_ebase(h, i, V)
@@ -195,7 +224,9 @@ const SLAB_MAXLIST = 16
     slab_store!(s, base + UInt32(sizeof(SlabHandle) + sizeof(V)), 0x01)
     return nothing
 end
-@inline dbn_set_child!(s::NodeSlab, h::SlabHandle, i::Int, child::SlabHandle, ::Type{V}) where {V} =
+@inline dbn_set_child!(
+    s::NodeSlab, h::SlabHandle, i::Int, child::SlabHandle, ::Type{V}
+) where {V} =
     slab_store!(s, _dbn_ebase(h, i, V), child)
 @inline dbn_new!(s::NodeSlab, ::Type{V}) where {V} = dbn_pack!(s, ByteMask(), DBNEntry{V}[])
 
@@ -218,10 +249,15 @@ function lln_to_dense!(s::NodeSlab, h::SlabHandle, newbyte::UInt8, ::Type{V}) wh
     cnt = lln_count(s, h)
     items = Vector{Tuple{UInt8, SlabHandle, V, Bool}}(undef, cnt + 1)
     @inbounds for i in 1:cnt
-        items[i] = (lln_byte(s, h, i, V), lln_child(s, h, i, V), lln_val(s, h, i, V), lln_hasval(s, h, i, V))
+        items[i] = (
+            lln_byte(s, h, i, V),
+            lln_child(s, h, i, V),
+            lln_val(s, h, i, V),
+            lln_hasval(s, h, i, V)
+        )
     end
     items[cnt + 1] = (newbyte, SLAB_NIL, zero(V), false)
-    sort!(items; by = it -> it[1])                       # dense entries are mask (byte) ordered
+    sort!(items; by=it -> it[1])                       # dense entries are mask (byte) ordered
     mask = ByteMask()
     for it in items
         mask = set(mask, it[1])
@@ -231,14 +267,28 @@ function lln_to_dense!(s::NodeSlab, h::SlabHandle, newbyte::UInt8, ::Type{V}) wh
 end
 
 # Tag-dispatched node interface used by SlabTrie (LIST sparse | DENSE high-fan-out).
-@inline node_count(s::NodeSlab, h::SlabHandle, ::Type{V}) where {V} = h.tag == TAG_DENSEBYTE ? dbn_nentries(s, h) : lln_count(s, h)
-@inline node_find(s::NodeSlab, h::SlabHandle, byte::UInt8, ::Type{V}) where {V} = h.tag == TAG_DENSEBYTE ? dbn_slab_index(s, h, byte) : lln_find(s, h, byte, V)
-@inline node_child(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} = h.tag == TAG_DENSEBYTE ? dbn_child(s, h, i, V) : lln_child(s, h, i, V)
-@inline node_val(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} = h.tag == TAG_DENSEBYTE ? dbn_val(s, h, i, V) : lln_val(s, h, i, V)
-@inline node_hasval(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} = h.tag == TAG_DENSEBYTE ? dbn_hasval(s, h, i, V) : lln_hasval(s, h, i, V)
-@inline node_child_off(h::SlabHandle, i::Int, ::Type{V}) where {V} = h.tag == TAG_DENSEBYTE ? dbn_child_off(h, i, V) : lln_child_off(h, i, V)
-@inline node_set_val!(s::NodeSlab, h::SlabHandle, i::Int, val::V) where {V} = h.tag == TAG_DENSEBYTE ? dbn_set_val!(s, h, i, val) : lln_set_val!(s, h, i, val)
-@inline node_set_child!(s::NodeSlab, h::SlabHandle, i::Int, child::SlabHandle, ::Type{V}) where {V} = h.tag == TAG_DENSEBYTE ? dbn_set_child!(s, h, i, child, V) : lln_set_child!(s, h, i, child, V)
+@inline node_count(s::NodeSlab, h::SlabHandle, ::Type{V}) where {V} =
+    h.tag == TAG_DENSEBYTE ? dbn_nentries(s, h) : lln_count(s, h)
+@inline node_find(s::NodeSlab, h::SlabHandle, byte::UInt8, ::Type{V}) where {V} =
+    h.tag == TAG_DENSEBYTE ? dbn_slab_index(s, h, byte) : lln_find(s, h, byte, V)
+@inline node_child(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} =
+    h.tag == TAG_DENSEBYTE ? dbn_child(s, h, i, V) : lln_child(s, h, i, V)
+@inline node_val(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} =
+    h.tag == TAG_DENSEBYTE ? dbn_val(s, h, i, V) : lln_val(s, h, i, V)
+@inline node_hasval(s::NodeSlab, h::SlabHandle, i::Int, ::Type{V}) where {V} =
+    h.tag == TAG_DENSEBYTE ? dbn_hasval(s, h, i, V) : lln_hasval(s, h, i, V)
+@inline node_child_off(h::SlabHandle, i::Int, ::Type{V}) where {V} =
+    h.tag == TAG_DENSEBYTE ? dbn_child_off(h, i, V) : lln_child_off(h, i, V)
+@inline node_set_val!(s::NodeSlab, h::SlabHandle, i::Int, val::V) where {V} =
+    h.tag == TAG_DENSEBYTE ? dbn_set_val!(s, h, i, val) : lln_set_val!(s, h, i, val)
+@inline node_set_child!(
+    s::NodeSlab, h::SlabHandle, i::Int, child::SlabHandle, ::Type{V}
+) where {V} =
+    if h.tag == TAG_DENSEBYTE
+        dbn_set_child!(s, h, i, child, V)
+    else
+        lln_set_child!(s, h, i, child, V)
+    end
 @inline node_new!(s::NodeSlab, ::Type{V}) where {V} = lln_new!(s, V)        # always start sparse
 @inline function node_add_byte!(s::NodeSlab, h::SlabHandle, b::UInt8, ::Type{V}) where {V}
     h.tag == TAG_DENSEBYTE && return dbn_add_byte!(s, h, b, V)

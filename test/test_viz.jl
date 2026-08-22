@@ -9,7 +9,7 @@ const _PMv = PathMap.PathMap
     for (i, s) in enumerate(["roman", "romane", "romanus", "bow"])
         PathMap.set_val_at!(m, Vector{UInt8}(s), i)
     end
-    out = PathMap.viz_maps([m]; ascii_path = true)   # → Mermaid String
+    out = PathMap.viz_maps([m]; ascii_path=true)   # → Mermaid String
     @test occursin("flowchart LR", out)
     @test occursin("shape: rect", out)               # node boxes
     @test occursin("shape: rounded", out)            # value boxes
@@ -17,9 +17,11 @@ const _PMv = PathMap.PathMap
 
     # ── CROSS-MAP sharing: graft m1's root into m2 under "prefix:" ⇒ ONE physical
     #    node in both maps ⇒ rendered ONCE, colored by the two-map bitmask 0b011 = "#0aa".
-    m1 = _PMv{Int}(); PathMap.set_val_at!(m1, b"hello", 42)
+    m1 = _PMv{Int}()
+    PathMap.set_val_at!(m1, b"hello", 42)
     m2 = _PMv{Int}()
-    wz = PathMap.write_zipper(m2); PathMap.wz_descend_to!(wz, b"prefix:")
+    wz = PathMap.write_zipper(m2)
+    PathMap.wz_descend_to!(wz, b"prefix:")
     PathMap.wz_graft_map!(wz, m1)
     @test PathMap.refcount(m1.root) == 2                                    # sharing is real
     shared_id = PathMap.shared_node_id(m1.root)
@@ -31,9 +33,11 @@ const _PMv = PathMap.PathMap
 
     # ── WITHIN-MAP sharing (ref_cnt>1 inside one map) ⇒ rendered once, map color (blue).
     mw = _PMv{Int}()
-    PathMap.set_val_at!(mw, b"Sab", 1); PathMap.set_val_at!(mw, b"Scd", 2)
+    PathMap.set_val_at!(mw, b"Sab", 1)
+    PathMap.set_val_at!(mw, b"Scd", 2)
     src_anr = PathMap.tr_get_focus_anr(PathMap.trie_ref_at_path(mw, b"S"))
-    wzg = PathMap.write_zipper(mw); PathMap.wz_descend_to!(wzg, b"D")
+    wzg = PathMap.write_zipper(mw)
+    PathMap.wz_descend_to!(wzg, b"D")
     PathMap.wz_graft!(wzg, src_anr)
     shared_rc = PathMap.tr_get_focus_rc(PathMap.trie_ref_at_path(mw, b"S"))
     @test PathMap.refcount(shared_rc) >= 2
@@ -44,18 +48,25 @@ const _PMv = PathMap.PathMap
 
     # ── edge cases the port review flagged ──────────────────────────────────
     # root value (empty key) lives in PathMap.root_val — must still render
-    mr = _PMv{Int}(); PathMap.set_val_at!(mr, b"", 7)
+    mr = _PMv{Int}()
+    PathMap.set_val_at!(mr, b"", 7)
     @test occursin("label: \"7\"", PathMap.viz_maps([mr]))
 
     # value with a Mermaid-breaking char must be escaped, not emitted raw
-    ms = _PMv{String}(); PathMap.set_val_at!(ms, b"k", "a\"b")
+    ms = _PMv{String}()
+    PathMap.set_val_at!(ms, b"k", "a\"b")
     esc = PathMap.viz_maps([ms])
     @test occursin("#quot;", esc)              # quote escaped
     @test !occursin("\"a\"b\"", esc)           # no raw quote breaking the label
 
     # ── ASCII tree mode ─────────────────────────────────────────────────────
-    ascii(mp) = String(take!(PathMap.viz_maps(mp,
-        PathMap.DrawConfig(; mode = PathMap.ASCII, ascii_path = true, color = false), IOBuffer())))
+    ascii(mp) = String(
+        take!(
+            PathMap.viz_maps(mp,
+                PathMap.DrawConfig(; mode=PathMap.ASCII, ascii_path=true, color=false),
+                IOBuffer())
+        )
+    )
     at = ascii([m])
     @test occursin("PathMap[0]", at)
     @test occursin("├── ", at) || occursin("└── ", at)   # box-drawing tree
@@ -69,12 +80,34 @@ const _PMv = PathMap.PathMap
     # ── LOGICAL (path-collapsed) mode — both renderers. Collapses cross-node single-child runs, so
     #    it is valid and never MORE nodes than physical (often equal, since LineListNode pre-compresses).
     rectcount(logical) = count("shape: rect",
-        String(take!(PathMap.viz_maps([m], PathMap.DrawConfig(; logical, ascii_path = true, color = false), IOBuffer()))))
-    lg_m = String(take!(PathMap.viz_maps([m], PathMap.DrawConfig(; logical = true, ascii_path = true, color = false), IOBuffer())))
+        String(
+            take!(
+                PathMap.viz_maps(
+                    [m],
+                    PathMap.DrawConfig(; logical, ascii_path=true, color=false),
+                    IOBuffer()
+                )
+            )
+        ))
+    lg_m = String(
+        take!(
+            PathMap.viz_maps(
+                [m],
+                PathMap.DrawConfig(; logical=true, ascii_path=true, color=false),
+                IOBuffer()
+            )
+        )
+    )
     @test occursin("flowchart LR", lg_m)
     @test rectcount(true) <= rectcount(false)
-    lg_a = String(take!(PathMap.viz_maps([m],
-        PathMap.DrawConfig(; mode = PathMap.ASCII, logical = true, ascii_path = true, color = false), IOBuffer())))
+    lg_a = String(
+        take!(
+            PathMap.viz_maps([m],
+                PathMap.DrawConfig(;
+                    mode=PathMap.ASCII, logical=true, ascii_path=true, color=false
+                ), IOBuffer())
+        )
+    )
     @test occursin("PathMap[0]", lg_a)
     @test occursin(" = ", lg_a)   # values still shown after collapse
 end

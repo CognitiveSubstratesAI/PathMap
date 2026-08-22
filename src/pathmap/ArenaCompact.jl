@@ -103,8 +103,8 @@ function act_push_varint!(buf::Vector{UInt8}, v::UInt64)::Int
     push!(buf, ACT_VARINT_BIAS + UInt8(nbytes))
     # Write nbytes LE bytes of v
     for i in 1:nbytes
-        ;
-        push!(buf, UInt8((v >> ((i-1)*8)) & 0xff));
+
+        push!(buf, UInt8((v >> ((i-1)*8)) & 0xff))
     end
     nbytes + 1
 end
@@ -128,7 +128,7 @@ function act_read_node(data::AbstractVector{UInt8}, node_id::ACT_NodeId)
         value = nothing
         if has_value
             v, n = act_read_varint(data, off + pos - 1)
-            value = v;
+            value = v
             pos += n
         end
         first_child = nothing
@@ -147,8 +147,8 @@ function act_read_node(data::AbstractVector{UInt8}, node_id::ACT_NodeId)
                 word_off = base + (i-1)*8
                 w = UInt64(0)
                 for j in 0:7
-                    ;
-                    w |= UInt64(data[word_off + j]) << (j*8);
+
+                    w |= UInt64(data[word_off + j]) << (j*8)
                 end
                 w
             end
@@ -169,7 +169,7 @@ function act_read_node(data::AbstractVector{UInt8}, node_id::ACT_NodeId)
         value = nothing
         if has_value
             v, n = act_read_varint(data, off + pos - 1)
-            value = v;
+            value = v
             pos += n
         end
         child = nothing
@@ -201,10 +201,10 @@ function act_write_branch!(buf::Vector{UInt8}, node::ACT_NodeBranch, pos::UInt64
     end
     if nchildren >= 32
         for w in node.bytemask.bits   # Bits4 = NTuple{4,UInt64}
-            tmp = UInt8[];
+            tmp = UInt8[]
             for j in 0:7
-                ;
-                push!(tmp, UInt8((w>>(j*8))&0xff));
+
+                push!(tmp, UInt8((w>>(j*8))&0xff))
             end
             append!(buf, tmp)
         end
@@ -312,8 +312,8 @@ function act_set_root!(tree::ArenaCompactTree, node::ACTNode)
     # Write root_id at bytes [9..16]
     v = nid.v
     for i in 1:8
-        ;
-        tree.data[ACT_MAGIC_LEN + i] = UInt8((v >> ((i-1)*8)) & 0xff);
+
+        tree.data[ACT_MAGIC_LEN + i] = UInt8((v >> ((i-1)*8)) & 0xff)
     end
     nid
 end
@@ -512,12 +512,19 @@ function _act_check_header(data::AbstractVector{UInt8}, path::AbstractString)
     # NOT `@assert`: Julia documents assertions as removable at some optimisation levels, so using
     # one to validate FILE INPUT means the check can vanish. Both open paths used `@assert` before.
     if length(data) < ACT_MIN_FILE_LEN
-        throw(ArgumentError(
-            "$path is not an ACTree03 file: $(length(data)) bytes, need at least $ACT_MIN_FILE_LEN"))
+        throw(
+            ArgumentError(
+                "$path is not an ACTree03 file: $(length(data)) bytes, need at least $ACT_MIN_FILE_LEN"
+            )
+        )
     end
     if view(data, 1:ACT_MAGIC_LEN) != ACT_MAGIC
-        throw(ArgumentError("$path is not an ACTree03 file: bad magic " *
-                            "$(repr(String(copy(data[1:ACT_MAGIC_LEN]))))"))
+        throw(
+            ArgumentError(
+                "$path is not an ACTree03 file: bad magic " *
+                "$(repr(String(copy(data[1:ACT_MAGIC_LEN]))))"
+            )
+        )
     end
     nothing
 end
@@ -944,7 +951,7 @@ end
 function act_to_next_val!(z::ACTZipper)
     loop_count = 0
     while true
-        loop_count += 1;
+        loop_count += 1
         loop_count > 500_000 && return false
         if act_descend_first_byte!(z)
             act_is_val(z) && return true
@@ -976,12 +983,12 @@ end
 act_fork!(z::ACTZipper) = act_zipper_with_root_here!(copy(z))
 
 act_val_count(z::ACTZipper) = begin
-    z2 = copy(z);
+    z2 = copy(z)
     act_reset!(z2)
     n = act_is_val(z2) ? 1 : 0
     while act_to_next_val!(z2)
-        ;
-        n += 1;
+
+        n += 1
     end
     n
 end

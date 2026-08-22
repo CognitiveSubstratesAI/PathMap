@@ -49,7 +49,7 @@ function ProductZipper(primary_z::ReadZipperCore{V, A}, other_zippers) where {V,
         push!(secondaries, t)
     end
     # Upstream: factor_paths pre-allocated with Vec::with_capacity(secondaries.len())
-    fp = Int[];
+    fp = Int[]
     sizehint!(fp, length(secondaries))
     ProductZipper{V, A}(primary_z, secondaries, fp)
 end
@@ -111,8 +111,8 @@ function ProductZipper(
     tr = trie_ref_at_path(m, prefix)
     rc = _tr_is_valid(tr) ? into_option(tr_get_focus_anr(tr)) : nothing
     sub = if rc === nothing
-        e = PathMap{V, A}(m.alloc);
-        _ensure_root!(e);
+        e = PathMap{V, A}(m.alloc)
+        _ensure_root!(e)
         e        # empty region
     else
         PathMap{V, A}(rc, nothing, m.alloc)                    # root AT prefix node
@@ -403,8 +403,8 @@ function pz_to_next_val!(pz::ProductZipper)
         if pz_descend_first_byte!(pz)
             pz_is_val(pz) && return true
             if pz_descend_until!(pz)
-                ;
-                pz_is_val(pz) && return true;
+
+                pz_is_val(pz) && return true
             end
         else
             ascending = true

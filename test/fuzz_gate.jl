@@ -42,8 +42,11 @@ include(joinpath(@__DIR__, "differential", "run_fuzz.jl"))
     n, mism, errs = Base.invokelatest(fuzz_compare)
 
     known_path = joinpath(@__DIR__, "differential", "fuzz", "KNOWN_DIVERGENT.txt")
-    known = isfile(known_path) ?
-        Set(filter(!isempty, map(strip, readlines(known_path)))) : Set{String}()
+    known = if isfile(known_path)
+        Set(filter(!isempty, map(strip, readlines(known_path))))
+    else
+        Set{String}()
+    end
 
     failing = Set{String}()
     for (nm, _, _) in mism
@@ -53,7 +56,9 @@ include(joinpath(@__DIR__, "differential", "run_fuzz.jl"))
         push!(failing, nm)
     end
 
-    @info "PathMap fuzz" cases = n matching = n - length(failing) known_divergent = length(known)
+    @info "PathMap fuzz" cases = n matching = n - length(failing) known_divergent = length(
+        known
+    )
 
     # Zero cases would make every assertion below vacuously true — the corpus must be present.
     @test n > 0

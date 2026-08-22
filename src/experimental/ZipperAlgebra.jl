@@ -295,7 +295,7 @@ function _zm_combine_n(::MeetP, vals)
     for v in vals
         v === nothing && return nothing
         if !started
-            result = v;
+            result = v
             started = true
         else
             ar = pmeet(result, v)
@@ -316,7 +316,7 @@ function _zm_combine_n(::SubtractP, vals)
     started = false
     for v in vals
         if !started
-            result = v;
+            result = v
             started = true
         elseif result !== nothing && v !== nothing
             ar = psubtract(result, v)

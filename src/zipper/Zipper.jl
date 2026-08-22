@@ -199,7 +199,9 @@ end
 # nullable pointer, so the tuple is isbits-representable and stays in registers (no box).
 # Used ONLY by `node_along_path_off` — the 25 other `node_get_child` callers are untouched.
 
-@inline function _prefix_eq_off(path::AbstractVector{UInt8}, off::Int, klen::Int, nkey)::Bool
+@inline function _prefix_eq_off(
+    path::AbstractVector{UInt8}, off::Int, klen::Int, nkey
+)::Bool
     (length(path) - off) >= klen || return false
     @inbounds for i in 1:klen
         path[off + i] == nkey[i] || return false
@@ -207,12 +209,16 @@ end
     true
 end
 
-@inline function node_get_child_nb(n::AbstractByteNode{V, A}, path::AbstractVector{UInt8}, off::Int)::Tuple{Int, Union{Nothing, TrieNodeODRc{V, A}}} where {V, A}
+@inline function node_get_child_nb(
+    n::AbstractByteNode{V, A}, path::AbstractVector{UInt8}, off::Int
+)::Tuple{Int, Union{Nothing, TrieNodeODRc{V, A}}} where {V, A}
     @inbounds cf = _bn_get(n, path[off + 1])
     (cf === nothing || cf.rec === nothing) && return (0, nothing)
     (1, cf.rec)
 end
-@inline function node_get_child_nb(n::LineListNode{V, A}, path::AbstractVector{UInt8}, off::Int)::Tuple{Int, Union{Nothing, TrieNodeODRc{V, A}}} where {V, A}
+@inline function node_get_child_nb(
+    n::LineListNode{V, A}, path::AbstractVector{UInt8}, off::Int
+)::Tuple{Int, Union{Nothing, TrieNodeODRc{V, A}}} where {V, A}
     if is_child_0(n)
         klen = key_len_0(n)
         _prefix_eq_off(path, off, klen, n.key0) && return (klen, into_child(n.slot0))
@@ -223,7 +229,9 @@ end
     end
     (0, nothing)
 end
-@inline function node_get_child_nb(n::BridgeNode{V, A}, path::AbstractVector{UInt8}, off::Int)::Tuple{Int, Union{Nothing, TrieNodeODRc{V, A}}} where {V, A}
+@inline function node_get_child_nb(
+    n::BridgeNode{V, A}, path::AbstractVector{UInt8}, off::Int
+)::Tuple{Int, Union{Nothing, TrieNodeODRc{V, A}}} where {V, A}
     (n.is_child && !node_is_empty(n)) || return (0, nothing)
     klen = length(n.key)
     _prefix_eq_off(path, off, klen, n.key) || return (0, nothing)
@@ -231,7 +239,9 @@ end
     is_empty_node(child_rc) && return (0, nothing)
     (klen, child_rc)
 end
-@inline function node_get_child_nb(t::TinyRefNode{V, A}, path::AbstractVector{UInt8}, off::Int)::Tuple{Int, Union{Nothing, TrieNodeODRc{V, A}}} where {V, A}
+@inline function node_get_child_nb(
+    t::TinyRefNode{V, A}, path::AbstractVector{UInt8}, off::Int
+)::Tuple{Int, Union{Nothing, TrieNodeODRc{V, A}}} where {V, A}
     if t.is_child && !node_is_empty(t)
         klen = length(t.key)
         if _prefix_eq_off(path, off, klen, t.key)
@@ -242,7 +252,9 @@ end
     (0, nothing)
 end
 # Fallback for any other AbstractTrieNode — delegates to node_get_child (correct, not optimized).
-@inline function node_get_child_nb(n::AbstractTrieNode{V, A}, path::AbstractVector{UInt8}, off::Int)::Tuple{Int, Union{Nothing, TrieNodeODRc{V, A}}} where {V, A}
+@inline function node_get_child_nb(
+    n::AbstractTrieNode{V, A}, path::AbstractVector{UInt8}, off::Int
+)::Tuple{Int, Union{Nothing, TrieNodeODRc{V, A}}} where {V, A}
     r = node_get_child(n, view(path, (off + 1):length(path)))
     r === nothing ? (0, nothing) : r
 end

@@ -60,7 +60,7 @@ const MUTATIONS = [
     (432, "deepcopy((vm & SELF_IDENT) != 0 ? a.val : b.val)", "deepcopy(a.val)"),
     (447, "deepcopy((rm & SELF_IDENT) != 0 ? a.rec : b.rec)", "deepcopy(a.rec)"),
     (455, "deepcopy((rec_res.mask & SELF_IDENT) != 0 ? a.rec : b.rec)", "deepcopy(a.rec)"),
-    (463, "deepcopy((val_res.mask & SELF_IDENT) != 0 ? a.val : b.val)", "deepcopy(a.val)"),
+    (463, "deepcopy((val_res.mask & SELF_IDENT) != 0 ? a.val : b.val)", "deepcopy(a.val)")
 ]
 
 function main()
@@ -82,7 +82,7 @@ function main()
             killed = probe() != baseline
             push!(results, (lineno, killed))
             println("  line $(lpad(lineno, 3))  ",
-                    killed ? "KILLED   (covered)" : "SURVIVED (NOT covered)")
+                killed ? "KILLED   (covered)" : "SURVIVED (NOT covered)")
             write(TARGET, original)
             sleep(1.0)
             Revise.revise()
@@ -95,9 +95,13 @@ function main()
 
     idx = findfirst(r -> r[1] == CONTROL_LINE, results)
     if idx === nothing || !results[idx][2]
-        println("\n🔴 CONTROL (line $CONTROL_LINE) DID NOT DIE — Revise is serving STALE code. RESULTS VOID.")
+        println(
+            "\n🔴 CONTROL (line $CONTROL_LINE) DID NOT DIE — Revise is serving STALE code. RESULTS VOID."
+        )
     else
-        println("\n✅ control line $CONTROL_LINE killed — Revise is live, verdicts are trustworthy")
+        println(
+            "\n✅ control line $CONTROL_LINE killed — Revise is live, verdicts are trustworthy"
+        )
         println("   covered     : ", [r[1] for r in results if r[2]])
         println("   NOT covered : ", [r[1] for r in results if !r[2]])
     end

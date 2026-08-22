@@ -36,9 +36,11 @@ include(joinpath(@__DIR__, "differential", "run_fuzz.jl"))
     @testset "remove_val(prune) prunes ancestors — visible through TAKEMAP" begin
         # `wz_take_map!` calls `wz_remove_val!(z, prune)`, so TAKEMAP inherited the defect.
         # The tell is None vs an EMPTY MAP: upstream finds nothing at "a", we found a husk.
-        out = fuzz_run_text(prefix * "S \nSROOTVAL 0\nORIGIN -\n" *
-                            "OP DESCEND aa\nOP REMOVEVAL 1\nOP ASCEND 1\n" *
-                            "OP DESCEND b\nOP REMOVEVAL 1\nOP ASCEND 1\nOP TAKEMAP 0\n")
+        out = fuzz_run_text(
+            prefix * "S \nSROOTVAL 0\nORIGIN -\n" *
+            "OP DESCEND aa\nOP REMOVEVAL 1\nOP ASCEND 1\n" *
+            "OP DESCEND b\nOP REMOVEVAL 1\nOP ASCEND 1\nOP TAKEMAP 0\n"
+        )
         @test out == "-;true;true;-;true;true;None;|[ba] vc=1"
         @test occursin(";None;", out)          # NOT ";[] vc=0;" — an empty map is the bug
     end
@@ -46,9 +48,11 @@ include(joinpath(@__DIR__, "differential", "run_fuzz.jl"))
     @testset "remove_val(prune) prunes ancestors — visible in an algebra op's status" begin
         # Same cause with no TAKEMAP: the surviving empty child made SUB report Element where
         # upstream reports None. A status-only divergence, and still a real one.
-        out = fuzz_run_text(prefix * "S ba\nSROOTVAL 0\nORIGIN -\n" *
-                            "OP DESCEND aa\nOP REMOVEVAL 1\nOP ASCEND 1\n" *
-                            "OP DESCEND b\nOP REMOVEVAL 1\nOP RESET\nOP SUB 0\n")
+        out = fuzz_run_text(
+            prefix * "S ba\nSROOTVAL 0\nORIGIN -\n" *
+            "OP DESCEND aa\nOP REMOVEVAL 1\nOP ASCEND 1\n" *
+            "OP DESCEND b\nOP REMOVEVAL 1\nOP RESET\nOP SUB 0\n"
+        )
         @test out == "-;true;true;-;true;-;None;|[] vc=0"
         @test !occursin(";Element;", out)
     end

@@ -25,19 +25,21 @@ include(joinpath(@__DIR__, "differential", "run_differential.jl"))
     baseline = Set(
         filter(
             !isempty,
-            map(strip, readlines(joinpath(@__DIR__, "differential", "EXPECTED_PASS.txt"))),
-        ),
+            map(strip, readlines(joinpath(@__DIR__, "differential", "EXPECTED_PASS.txt")))
+        )
     )
 
     @info "PathMap differential" total passing = length(passing) baseline = length(baseline)
 
     # A scenario present in the vendored ground truth but not runnable here is INERT — it silently
     # checks nothing. Same failure mode as a .mm2 with no .expected in MORK's corpus (fixed 6e12d7d).
-    isempty(missing_s) || @info "differential: scenarios in upstream.tsv with no Julia case" missing_s
+    isempty(missing_s) ||
+        @info "differential: scenarios in upstream.tsv with no Julia case" missing_s
     @test isempty(missing_s)
 
     regressed = sort!(collect(setdiff(baseline, passing)))
-    isempty(regressed) || @info "differential REGRESSED — these matched upstream and no longer do" regressed
+    isempty(regressed) ||
+        @info "differential REGRESSED — these matched upstream and no longer do" regressed
     @test isempty(regressed)
 
     improved = sort!(collect(setdiff(passing, baseline)))

@@ -28,11 +28,11 @@ const PM = PathMap.PathMap
         wz_join_n!(
             write_zipper(out), [write_zipper(m1), write_zipper(m2), write_zipper(m3)]
         )
-        rz = read_zipper(out);
+        rz = read_zipper(out)
         keys = Set{String}()
         while zipper_to_next_val!(rz)
-            ;
-            push!(keys, String(copy(zipper_path(rz))));
+
+            push!(keys, String(copy(zipper_path(rz))))
         end
         @test "bird-robin" in keys
         @test "mammal-dog" in keys
@@ -58,11 +58,11 @@ const PM = PathMap.PathMap
         wz_meet_n!(
             write_zipper(out), [write_zipper(m1), write_zipper(m2), write_zipper(m3)]
         )
-        rz = read_zipper(out);
+        rz = read_zipper(out)
         keys = Set{String}()
         while zipper_to_next_val!(rz)
-            ;
-            push!(keys, String(copy(zipper_path(rz))));
+
+            push!(keys, String(copy(zipper_path(rz))))
         end
         @test keys == Set(["common-a", "common-b"])
         println("  meet: $(keys) — only universal patterns ✓")
@@ -86,11 +86,11 @@ const PM = PathMap.PathMap
             write_zipper(out),
             [write_zipper(base), write_zipper(noise1), write_zipper(noise2)]
         )
-        rz = read_zipper(out);
+        rz = read_zipper(out)
         keys = Set{String}()
         while zipper_to_next_val!(rz)
-            ;
-            push!(keys, String(copy(zipper_path(rz))));
+
+            push!(keys, String(copy(zipper_path(rz))))
         end
         @test keys == Set(["keep-a", "keep-b"])
         println("  subtract: $(keys) — noise removed ✓")
@@ -104,11 +104,11 @@ const PM = PathMap.PathMap
         end
         out = PM{UnitVal}()
         wz_join_n!(write_zipper(out), [write_zipper(m) for m in maps])
-        rz = read_zipper(out);
+        rz = read_zipper(out)
         keys = Set{String}()
         while zipper_to_next_val!(rz)
-            ;
-            push!(keys, String(copy(zipper_path(rz))));
+
+            push!(keys, String(copy(zipper_path(rz))))
         end
         @test "shared" in keys
         @test length(keys) == 6  # 1 shared + 5 unique

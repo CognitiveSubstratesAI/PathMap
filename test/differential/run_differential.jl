@@ -50,8 +50,12 @@ Our `wz_{join,meet,subtract}_into!` take an `AbstractNodeRef` where upstream's t
 (`wz.meet_into(&src.read_zipper(), prune)`). Different API SHAPE, same operation — so the scenario
 must adapt rather than the semantics. Mirrors how test/runtests.jl:277-281 builds one.
 """
-_anr(m) = m.root === nothing ? PathMap.ANRNone{PathMap.UnitVal, PathMap.GlobalAlloc}() :
-                               PathMap.ANRBorrowedRc{PathMap.UnitVal, PathMap.GlobalAlloc}(m.root)
+_anr(m) =
+    if m.root === nothing
+        PathMap.ANRNone{PathMap.UnitVal, PathMap.GlobalAlloc}()
+    else
+        PathMap.ANRBorrowedRc{PathMap.UnitVal, PathMap.GlobalAlloc}(m.root)
+    end
 
 "Run every scenario; return name => result string."
 function differential_results()
@@ -64,47 +68,62 @@ function differential_results()
         out[nm] = string(PathMap.path_exists_at(m, _b(p)))
     end
     empty_map = PMT{PathMap.UnitVal}()
-    out["path_exists_at/empty_map_empty_path"] = string(PathMap.path_exists_at(empty_map, UInt8[]))
-    out["path_exists_at/empty_map_some_path"] = string(PathMap.path_exists_at(empty_map, _b("a")))
+    out["path_exists_at/empty_map_empty_path"] = string(
+        PathMap.path_exists_at(empty_map, UInt8[])
+    )
+    out["path_exists_at/empty_map_some_path"] = string(
+        PathMap.path_exists_at(empty_map, _b("a"))
+    )
     rootonly = PMT{PathMap.UnitVal}()
     PathMap.set_val_at!(rootonly, UInt8[], PathMap.UnitVal())
-    out["path_exists_at/rootval_empty_path"] = string(PathMap.path_exists_at(rootonly, UInt8[]))
-    out["path_exists_at/rootval_some_path"] = string(PathMap.path_exists_at(rootonly, _b("a")))
+    out["path_exists_at/rootval_empty_path"] = string(
+        PathMap.path_exists_at(rootonly, UInt8[])
+    )
+    out["path_exists_at/rootval_some_path"] = string(
+        PathMap.path_exists_at(rootonly, _b("a"))
+    )
 
     key16 = "zzzzzzzzzzzzzzzz"
     m2 = _mk([key16])
-    out["path_exists_at/16z_prefixes"] =
-        join([PathMap.path_exists_at(m2, _b(key16)[1:n]) ? "T" : "F" for n in 1:16])
+    out["path_exists_at/16z_prefixes"] = join([
+        PathMap.path_exists_at(m2, _b(key16)[1:n]) ? "T" : "F" for n in 1:16
+    ])
 
     # ---- basic ------------------------------------------------------------
     out["basic/mk_three"] = _dump(_mk(["a", "ab", "abc"]))
     out["basic/empty"] = _dump(PMT{PathMap.UnitVal}())
-    m = _mk(["k1", "k2", "k3"]); PathMap.remove_val_at!(m, _b("k2"), false)
+    m = _mk(["k1", "k2", "k3"])
+    PathMap.remove_val_at!(m, _b("k2"), false)
     out["basic/remove_noprune"] = _dump(m)
-    m = _mk(["k1", "k2", "k3"]); PathMap.remove_val_at!(m, _b("k2"), true)
+    m = _mk(["k1", "k2", "k3"])
+    PathMap.remove_val_at!(m, _b("k2"), true)
     out["basic/remove_prune"] = _dump(m)
 
     # ---- graft / algebra at a NON-ROOT focus ------------------------------
-    a = _mk(["p", "px", "q"]); src = _mk(["y"])
+    a = _mk(["p", "px", "q"])
+    src = _mk(["y"])
     let wz = PathMap.write_zipper_at_path(a, _b("p"))
         PathMap.wz_graft_map!(wz, src)
     end
     out["graft/graft_map_at_p"] = _dump(a)
 
-    a = _mk(["p", "px", "q"]); src = _mk(["x"])
+    a = _mk(["p", "px", "q"])
+    src = _mk(["x"])
     let wz = PathMap.write_zipper_at_path(a, _b("p"))
         PathMap.wz_meet_into!(wz, _anr(src), false, src.root_val)
     end
     out["graft/meet_into_at_p"] = _dump(a)
 
     a = _mk(["p", "px", "q"])
-    src = PMT{PathMap.UnitVal}(); PathMap.set_val_at!(src, UInt8[], PathMap.UnitVal())
+    src = PMT{PathMap.UnitVal}()
+    PathMap.set_val_at!(src, UInt8[], PathMap.UnitVal())
     let wz = PathMap.write_zipper_at_path(a, _b("p"))
         PathMap.wz_subtract_into!(wz, _anr(src), false, src.root_val)
     end
     out["graft/subtract_into_rootval_at_p"] = _dump(a)
 
-    a = _mk(["px", "py", "q"]); src = _mk(["y"])
+    a = _mk(["px", "py", "q"])
+    src = _mk(["y"])
     let wz = PathMap.write_zipper_at_path(a, _b("p"))
         PathMap.wz_join_into!(wz, _anr(src))
     end
@@ -134,7 +153,8 @@ function differential_results()
     out["graft/join_map_into_rootval_at_p"] = _dump(a)
 
     # CONTROL: join must NOT clear the focus value when the source root has none.
-    a = _mk(["p", "px", "q"]); src = _mk(["y"])
+    a = _mk(["p", "px", "q"])
+    src = _mk(["y"])
     let wz = PathMap.write_zipper_at_path(a, _b("p"))
         PathMap.wz_join_map_into!(wz, src)
     end
@@ -150,19 +170,22 @@ function differential_results()
     out["graft/take_map_valonly_residue"] = _dump(a)
 
     # ---- algebra at ROOT --------------------------------------------------
-    a = _mk(["a", "b"]); b = _mk(["b", "c"])
+    a = _mk(["a", "b"])
+    b = _mk(["b", "c"])
     let wz = PathMap.write_zipper(a)
         PathMap.wz_join_into!(wz, _anr(b))
     end
     out["algebra/join_root"] = _dump(a)
 
-    a = _mk(["a", "b", "c"]); b = _mk(["b", "c", "d"])
+    a = _mk(["a", "b", "c"])
+    b = _mk(["b", "c", "d"])
     let wz = PathMap.write_zipper(a)
         PathMap.wz_meet_into!(wz, _anr(b), false)
     end
     out["algebra/meet_root"] = _dump(a)
 
-    a = _mk(["a", "b", "c"]); b = _mk(["b"])
+    a = _mk(["a", "b", "c"])
+    b = _mk(["b"])
     let wz = PathMap.write_zipper(a)
         PathMap.wz_subtract_into!(wz, _anr(b), false)
     end
@@ -241,7 +264,7 @@ function upstream_expected()
     exp = Dict{String, String}()
     for ln in eachline(joinpath(_DIFF_DIR, "expected", "upstream.tsv"))
         isempty(strip(ln)) && continue
-        parts = split(ln, '\t'; limit = 2)
+        parts = split(ln, '\t'; limit=2)
         length(parts) == 2 && (exp[parts[1]] = parts[2])
     end
     exp

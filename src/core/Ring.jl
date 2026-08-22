@@ -479,7 +479,7 @@ function psubtract(
     else
         b === nothing && return AlgResIdentity(SELF_IDENT)
         # Rebind to V to avoid recursing back into this Union{Nothing,V} overload
-        av::V = a;
+        av::V = a
         bv::V = b
         r = psubtract(av, bv)
         if is_none(r)
@@ -808,10 +808,10 @@ function _set_lattice_update_ident!(
     result, inner_result, key, sv, ov, is_ident::Ref{Bool}, is_cident::Ref{Bool}
 )
     if inner_result isa AlgResNone
-        is_ident[] = false;
+        is_ident[] = false
         is_cident[] = false
     elseif inner_result isa AlgResElement
-        is_ident[] = false;
+        is_ident[] = false
         is_cident[] = false
         result[key] = inner_result.value
     else  # Identity
@@ -823,8 +823,8 @@ function _set_lattice_update_ident!(
         end
         if mask & COUNTER_IDENT > 0
             if mask & SELF_IDENT == 0
-                ;
-                result[key] = ov;
+
+                result[key] = ov
             end
         else
             is_cident[] = false
@@ -850,15 +850,15 @@ function pjoin(a::Dict{K, V}, b::Dict{K, V}) where {K, V}
                 result, pjoin(av, b[k]), k, av, b[k], is_ident, is_cident
             )
         else
-            result[k] = av;
+            result[k] = av
             is_cident[] = false
         end
     end
     for (k, bv) in b
         if !haskey(a, k)
-            ;
-            result[k] = bv;
-            is_ident[] = false;
+
+            result[k] = bv
+            is_ident[] = false
         end
     end
     _set_lattice_integrate(result, is_ident[], is_cident[], length(a), length(b))
@@ -880,9 +880,9 @@ function pmeet(a::Dict{K, V}, b::Dict{K, V}) where {K, V}
         end
     end
     switched && begin
-        tmp = is_ident[];
-        is_ident[] = is_cident[];
-        is_cident[] = tmp;
+        tmp = is_ident[]
+        is_ident[] = is_cident[]
+        is_cident[] = tmp
     end
     _set_lattice_integrate(result, is_ident[], is_cident[], length(a), length(b))
 end
@@ -897,10 +897,10 @@ function psubtract(a::Dict{K, V}, b::Dict{K, V}) where {K, V}
         (self_v === nothing || other_v2 === nothing) && continue
         r = psubtract(self_v, other_v2)
         if r isa AlgResElement
-            result[k] = r.value;
+            result[k] = r.value
             is_ident[] = false
         elseif r isa AlgResNone
-            delete!(result, k);
+            delete!(result, k)
             is_ident[] = false
         end
     end

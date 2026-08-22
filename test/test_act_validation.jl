@@ -27,7 +27,7 @@ using Test, PathMap
 
         # ── round-trip still works
         t2 = act_open(f)
-        @test act_get_val_at(t2, b"apple")   === UInt64(1)
+        @test act_get_val_at(t2, b"apple") === UInt64(1)
         @test act_get_val_at(t2, b"bandana") === UInt64(5)
 
         # ── determinism: the same trie written twice is byte-identical
@@ -60,7 +60,9 @@ using Test, PathMap
         # ── bad magic is rejected on BOTH paths, and by a throw rather than @assert (which Julia
         # documents as removable at some optimisation levels — the reason this is not an @assert)
         bad = joinpath(dir, "bad.act")
-        b = read(f); b[1:8] = Vector{UInt8}("NOTACT01"); write(bad, b)
+        b = read(f)
+        b[1:8] = Vector{UInt8}("NOTACT01")
+        write(bad, b)
         @test_throws ArgumentError act_open(bad)
         @test_throws ArgumentError act_open_mmap(bad)
 
@@ -80,12 +82,12 @@ end
     # prefix ("alpha"/"beta"/"gamma"), and the in-memory map stayed correct — only the persisted
     # image was wrong. Boundary case = one key that is a strict extension of another valued key.
     for ks in (("band", "bandana"),
-               ("a", "ab"),
-               ("x", "xy", "xyz"),
-               ("band", "bandana", "bandanas"),
-               ("a", "ab", "abc", "abcd"),
-               ("apple", "apricot", "banana", "band", "bandana"),
-               ("alpha", "beta", "gamma"))                       # control: no shared prefixes
+        ("a", "ab"),
+        ("x", "xy", "xyz"),
+        ("band", "bandana", "bandanas"),
+        ("a", "ab", "abc", "abcd"),
+        ("apple", "apricot", "banana", "band", "bandana"),
+        ("alpha", "beta", "gamma"))                       # control: no shared prefixes
         m = PathMap.PathMap{UInt64}()
         for (i, k) in enumerate(ks)
             set_val_at!(m, Vector{UInt8}(k), UInt64(i))
@@ -126,22 +128,25 @@ end
     # shorter key's value lands on a branch beneath the shared line. Both are asserted below —
     # enumeration AND lookup — because they failed independently.
     for ks in (("band", "bandana"),                       # the original repro
-               ("a", "ab"),                               # minimal
-               ("x", "xy", "xyz"),                        # chained extensions
-               ("band", "bandana", "bandanas"),           # two levels of nesting
-               ("a", "ab", "abc", "abcd"),                # deep chain
-               ("apple", "apricot", "banana", "band", "bandana"),  # nesting mixed with forks
-               ("a",),                                    # single key, no branching
-               ("aa", "ab", "ba", "bb"),                  # forks, no nesting
-               ("alpha", "beta", "gamma"))                # control: no shared prefixes at all
+        ("a", "ab"),                               # minimal
+        ("x", "xy", "xyz"),                        # chained extensions
+        ("band", "bandana", "bandanas"),           # two levels of nesting
+        ("a", "ab", "abc", "abcd"),                # deep chain
+        ("apple", "apricot", "banana", "band", "bandana"),  # nesting mixed with forks
+        ("a",),                                    # single key, no branching
+        ("aa", "ab", "ba", "bb"),                  # forks, no nesting
+        ("alpha", "beta", "gamma"))                # control: no shared prefixes at all
         m = PathMap.PathMap{UInt64}()
         for (i, k) in enumerate(ks)
             set_val_at!(m, Vector{UInt8}(k), UInt64(i))
         end
         t = act_from_zipper(m, v -> v)
 
-        z = act_read_zipper(t); seen = String[]
-        while act_to_next_val!(z); push!(seen, String(copy(act_path(z)))); end
+        z = act_read_zipper(t)
+        seen = String[]
+        while act_to_next_val!(z)
+            push!(seen, String(copy(act_path(z))))
+        end
         @test sort(seen) == sort(collect(ks))          # every key REACHABLE by enumeration
         @test length(seen) == length(ks)               # ...exactly once, no duplicates
 

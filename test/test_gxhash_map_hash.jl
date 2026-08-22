@@ -19,23 +19,23 @@ using Test, PathMap
     # empty input, a single byte, exactly 32 bytes (the ByteMask width), the u128 lane path,
     # a NEGATIVE seed (bit-reinterpretation, not conversion), and a saturated u128.
     vectors = [
-        (Int64(0),  UInt8[],                     nothing,
+        (Int64(0), UInt8[], nothing,
             UInt128(220182708007666064593948275397026489765)),
-        (Int64(0),  UInt8[0x61],                 nothing,
+        (Int64(0), UInt8[0x61], nothing,
             UInt128(220182708007667311290018932242793705525)),
-        (Int64(0),  Vector{UInt8}("hello world"), nothing,
+        (Int64(0), Vector{UInt8}("hello world"), nothing,
             UInt128(220182708007664855661618046230779051371)),
-        (PathMap._MAP_HASH_SEED, UInt8[],        nothing,
+        (PathMap._MAP_HASH_SEED, UInt8[], nothing,
             UInt128(307095087557724141754317945346449730642)),
         (PathMap._MAP_HASH_SEED, UInt8[i for i in 0x00:0x1f], nothing,
             UInt128(307095087557724141747313161787170070674)),
         (PathMap._MAP_HASH_SEED, UInt8[i for i in 0x00:0x1f],
             UInt128(12345678901234567890123456789),
             UInt128(307093591089338380782026710111025841575)),
-        (Int64(7),  UInt8[0x00, 0xff, 0x7f, 0x80], UInt128(1),
+        (Int64(7), UInt8[0x00, 0xff, 0x7f, 0x80], UInt128(1),
             UInt128(220182708007666064533182530213042211867)),
-        (Int64(-1), Vector{UInt8}("xyz"),        typemax(UInt128),
-            UInt128(220182708007667084618597959684965677372)),
+        (Int64(-1), Vector{UInt8}("xyz"), typemax(UInt128),
+            UInt128(220182708007667084618597959684965677372))
     ]
     for (seed, bytes, u, want) in vectors
         h = GxHasher(seed)
@@ -47,22 +47,29 @@ using Test, PathMap
     # write_u128 is NOT equivalent to feeding 16 bytes — it is a distinct lane path with different
     # rotates (17/9 vs 11/3). Upstream uses the byte path for mask+children and this one for the
     # value, so conflating them would silently change every digest that has a value.
-    a = GxHasher(Int64(0)); gx_write_u128!(a, UInt128(1))
-    b = GxHasher(Int64(0)); gx_write!(b, gx_u128_le_bytes(UInt128(1)))
+    a = GxHasher(Int64(0))
+    gx_write_u128!(a, UInt128(1))
+    b = GxHasher(Int64(0))
+    gx_write!(b, gx_u128_le_bytes(UInt128(1)))
     @test gx_finish_u128(a) != gx_finish_u128(b)
 
     # the seed is REINTERPRETED, not converted: -1 and typemax(UInt64) are the same bits
-    @test gx_finish_u128(GxHasher(Int64(-1))) === gx_finish_u128(GxHasher(reinterpret(Int64, typemax(UInt64))))
+    @test gx_finish_u128(GxHasher(Int64(-1))) ===
+        gx_finish_u128(GxHasher(reinterpret(Int64, typemax(UInt64))))
 
     # order sensitivity — a mixer that ignored order would make the Merkle fold meaningless
-    x = GxHasher(Int64(0)); gx_write!(x, UInt8[1, 2])
-    y = GxHasher(Int64(0)); gx_write!(y, UInt8[2, 1])
+    x = GxHasher(Int64(0))
+    gx_write!(x, UInt8[1, 2])
+    y = GxHasher(Int64(0))
+    gx_write!(y, UInt8[2, 1])
     @test gx_finish_u128(x) != gx_finish_u128(y)
 end
 
 @testset "map_hash — 128-bit Merkle fold over the logical trie" begin
-    mk(ps) = (m = PathMap.PathMap{UInt64}();
-              for (k, v) in ps; set_val_at!(m, Vector{UInt8}(k), UInt64(v)); end; m)
+    mk(ps) = (m=PathMap.PathMap{UInt64}();
+        for (k, v) in ps
+            set_val_at!(m, Vector{UInt8}(k), UInt64(v))
+        end; m)
 
     a = mk([("band", 1), ("bandana", 2), ("apple", 3)])
     b = mk([("apple", 3), ("bandana", 2), ("band", 1)])   # same content, different insertion order

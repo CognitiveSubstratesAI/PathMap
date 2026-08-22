@@ -25,25 +25,25 @@ using PathMap, Test
 
 @testset "Bool lattice is 1:1 with upstream (mask included)" begin
     I(m) = (r) -> r isa PathMap.AlgResIdentity && Int(r.mask) == m
-    N     = (r) -> r isa PathMap.AlgResNone
+    N = (r) -> r isa PathMap.AlgResNone
 
     # ring.rs:892  pjoin: `if !*self && *other { Identity(COUNTER_IDENT) } else { Identity(SELF_IDENT) }`
     @test I(1)(PathMap.pjoin(false, false))
     @test I(2)(PathMap.pjoin(false, true))     # result is `other`
-    @test I(1)(PathMap.pjoin(true,  false))
-    @test I(1)(PathMap.pjoin(true,  true))     # NOT 3 — upstream claims SELF only
+    @test I(1)(PathMap.pjoin(true, false))
+    @test I(1)(PathMap.pjoin(true, true))     # NOT 3 — upstream claims SELF only
 
     # ring.rs:899  pmeet: `if *self && !*other { Identity(COUNTER_IDENT) } else { Identity(SELF_IDENT) }`
     @test I(1)(PathMap.pmeet(false, false))
     @test I(1)(PathMap.pmeet(false, true))
-    @test I(2)(PathMap.pmeet(true,  false))    # result is `other`
-    @test I(1)(PathMap.pmeet(true,  true))     # NOT 3
+    @test I(2)(PathMap.pmeet(true, false))    # result is `other`
+    @test I(1)(PathMap.pmeet(true, true))     # NOT 3
 
     # ring.rs:882  psubtract: `if *self == *other { None } else { Identity(SELF_IDENT) }`
     @test N(PathMap.psubtract(false, false))
     @test I(1)(PathMap.psubtract(false, true))  # ← was None: the entry used to be DELETED
-    @test I(1)(PathMap.psubtract(true,  false))
-    @test N(PathMap.psubtract(true,  true))
+    @test I(1)(PathMap.psubtract(true, false))
+    @test N(PathMap.psubtract(true, true))
 
     # The INTEGER divergence is genuinely deliberate and STAYS — upstream's u64 impl really is tagged
     # `//GOAT trash` (ring.rs:836) and returns Identity(SELF) unconditionally, ignoring its operands.

@@ -48,8 +48,8 @@ function _cnt_resize!(c::PathMapCounters, depth::Int)
         c.list_node_single_byte_keys_by_depth
     ]
         while length(v) <= depth
-            ;
-            push!(v, 0);
+
+            push!(v, 0)
         end
     end
 end
@@ -81,8 +81,8 @@ function _cnt_push_run!(c::PathMapCounters, run_len::Int, byte_depth::Int)
     end
     h = c.run_length_histogram[run_len + 1]
     while length(h) <= byte_depth
-        ;
-        push!(h, 0);
+
+        push!(h, 0)
     end
     h[byte_depth + 1] += 1
 end

@@ -69,7 +69,9 @@ end
 # DFS pre-order copy old→new: write the node first (same type), place children immediately after
 # (recursively), backpatch child handles. Lays each root→leaf path near-contiguously (cache-friendly)
 # and drops the append-only leaks (only reachable nodes copied). Recursive; no sharing ⇒ visit once.
-function _compact_node!(old::NodeSlab, new::NodeSlab, old_h::SlabHandle, ::Type{V}) where {V}
+function _compact_node!(
+    old::NodeSlab, new::NodeSlab, old_h::SlabHandle, ::Type{V}
+) where {V}
     if old_h.tag == TAG_DENSEBYTE
         mask = dbn_mask(old, old_h)
         ne = dbn_nentries(old, old_h)
@@ -89,7 +91,12 @@ function _compact_node!(old::NodeSlab, new::NodeSlab, old_h::SlabHandle, ::Type{
         cnt = lln_count(old, old_h)
         items = Vector{Tuple{UInt8, SlabHandle, V, Bool}}(undef, cnt)
         @inbounds for i in 1:cnt
-            items[i] = (lln_byte(old, old_h, i, V), lln_child(old, old_h, i, V), lln_val(old, old_h, i, V), lln_hasval(old, old_h, i, V))
+            items[i] = (
+                lln_byte(old, old_h, i, V),
+                lln_child(old, old_h, i, V),
+                lln_val(old, old_h, i, V),
+                lln_hasval(old, old_h, i, V)
+            )
         end
         new_h = lln_pack!(new, items)
         @inbounds for i in 1:cnt

@@ -27,13 +27,16 @@ const P = PathMap
 
 @testset "ProductZipperG now implements the battery ops" begin
     m = PM{UnitVal}()
-    for k in ["romane", "romanus", "romulus", "rubens", "ruber", "rubicon", "rubicundus", "rom'i"]
+    for k in [
+        "romane", "romanus", "romulus", "rubens", "ruber", "rubicon", "rubicundus", "rom'i"
+    ]
         set_val_at!(m, Vector{UInt8}(k), UNIT_VAL)
     end
     mk() = P.ProductZipperG(read_zipper(m), P.ReadZipperCore{UnitVal, P.GlobalAlloc}[])
     pstr(z) = String(copy(collect(P.pzg_path(z))))
 
-    z = mk(); P.pzg_descend_to!(z, b"rom")
+    z = mk()
+    P.pzg_descend_to!(z, b"rom")
     @test P.pzg_descend_indexed_byte!(z, 0)
     @test pstr(z) == "rom'"
     @test P.pzg_ascend!(z, 1)
@@ -41,13 +44,16 @@ const P = PathMap
     @test pstr(z) == "roma"
     @test !P.pzg_descend_indexed_byte!(mk(), 99)
 
-    z2 = mk(); P.pzg_descend_to!(z2, b"roma")
+    z2 = mk()
+    P.pzg_descend_to!(z2, b"roma")
     @test P.pzg_to_prev_sibling_byte!(z2)
     @test pstr(z2) == "rom'"
 
-    z3 = mk(); P.pzg_descend_to!(z3, b"romane")
+    z3 = mk()
+    P.pzg_descend_to!(z3, b"romane")
     @test P.pzg_val(z3) === UNIT_VAL
-    z3b = mk(); P.pzg_descend_to!(z3b, b"roman")
+    z3b = mk()
+    P.pzg_descend_to!(z3b, b"roman")
     @test P.pzg_val(z3b) === nothing
 
     @test P.pzg_to_next_step!(mk())

@@ -68,18 +68,19 @@ const _VALUE_CASES = Tuple{String, String, String}[
     # cannot fail. `a:` in S (and not in A) is what forces the CoFree for 'a' to hold a value AND
     # an onward link, i.e. the exact shape 2683d7c is about.
     ("meet picks the operand the MASK names, not `self`",
-     "VT bits\nA :=5 a=3 ab=5 b=5\nAROOTVAL 0\nS :=5 a=1 a:=5 b=5\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
-     "Element;|[:=5,a=1,b=5] vc=3"),
+        "VT bits\nA :=5 a=3 ab=5 b=5\nAROOTVAL 0\nS :=5 a=1 a:=5 b=5\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
+        "Element;|[:=5,a=1,b=5] vc=3"),
 
     # ── the three ops, with payloads that actually merge ──────────────────────────────────────────
-    ("join unions the bitsets", "VT bits\nA a=3 b=c\nAROOTVAL 0\nS a=5 b=3\nSROOTVAL 0\nORIGIN -\nOP JOINMAP\n",
-     "Element;|[a=7,b=f] vc=2"),
+    ("join unions the bitsets",
+        "VT bits\nA a=3 b=c\nAROOTVAL 0\nS a=5 b=3\nSROOTVAL 0\nORIGIN -\nOP JOINMAP\n",
+        "Element;|[a=7,b=f] vc=2"),
     ("subtract clears the shared bits; b's value annihilates",
-     "VT bits\nA a=7 b=3\nAROOTVAL 0\nS a=5 b=3\nSROOTVAL 0\nORIGIN -\nOP SUB 0\n",
-     "Element;|[a=2] vc=1"),
+        "VT bits\nA a=7 b=3\nAROOTVAL 0\nS a=5 b=3\nSROOTVAL 0\nORIGIN -\nOP SUB 0\n",
+        "Element;|[a=2] vc=1"),
     ("SETVAL takes its argument as the payload",
-     "VT bits\nA a=3\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN -\nOP DESCEND a\nOP SETVAL c\n",
-     "-;true;|[a=c] vc=1"),
+        "VT bits\nA a=3\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN -\nOP DESCEND a\nOP SETVAL c\n",
+        "-;true;|[a=c] vc=1"),
 
     # ── ONE PROBE PER OPERAND-SELECTION SITE in `_cf_combine_results` ────────────────────────────
     # Established by MUTATION TESTING (tools/mutation_check.jl), not by reading: each site was
@@ -97,33 +98,33 @@ const _VALUE_CASES = Tuple{String, String, String}[
     # line 413/414 — rec and val Identity with DISAGREEING masks (rm & vm == 0).
     #   val 3&1=1 == S -> COUNTER   |   rec {':'=5} meet {':'=7} = 5 == A -> SELF
     ("413/414 masks disagree (rec SELF, val COUNTER)",
-     "VT bits\nA a=3 a:=5 b=1 :=1\nAROOTVAL 0\nS a=1 a:=7 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
-     "Element;|[:=1,a=1,a:=5,b=1] vc=4"),
+        "VT bits\nA a=3 a:=5 b=1 :=1\nAROOTVAL 0\nS a=1 a:=7 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
+        "Element;|[:=1,a=1,a:=5,b=1] vc=4"),
     ("413 mirror (rec COUNTER, val SELF) — kills the equivalent mutant",
-     "VT bits\nA a=1 a:=7 b=1 :=1\nAROOTVAL 0\nS a=3 a:=5 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
-     "Element;|[:=1,a=1,a:=5,b=1] vc=4"),
+        "VT bits\nA a=1 a:=7 b=1 :=1\nAROOTVAL 0\nS a=3 a:=5 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
+        "Element;|[:=1,a=1,a:=5,b=1] vc=4"),
 
     # line 447 — rec Identity, val None. Reached, but only ever with SELF set; see the note below.
     ("447 rec Identity + val None (subtract annihilates the value)",
-     "VT bits\nA a=3 a:=5 b=1 :=1\nAROOTVAL 0\nS a=3 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP SUB 0\n",
-     "Element;|[a:=5] vc=1"),
+        "VT bits\nA a=3 a:=5 b=1 :=1\nAROOTVAL 0\nS a=3 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP SUB 0\n",
+        "Element;|[a:=5] vc=1"),
 
     # lines 455/463 — the tail arm, where at least one side is Element.
     ("463 tail with val Identity (rec is Element: 6&3=2)",
-     "VT bits\nA a=3 a:=5 ab=6 b=1 :=1\nAROOTVAL 0\nS a=1 a:=5 ab=3 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
-     "Element;|[:=1,a=1,a:=5,ab=2,b=1] vc=5"),
+        "VT bits\nA a=3 a:=5 ab=6 b=1 :=1\nAROOTVAL 0\nS a=1 a:=5 ab=3 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
+        "Element;|[:=1,a=1,a:=5,ab=2,b=1] vc=5"),
     ("455 tail with rec Identity SELF|COUNTER (val is Element: 3&6=2)",
-     "VT bits\nA a=3 a:=5 b=1 :=1\nAROOTVAL 0\nS a=6 a:=5 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
-     "Element;|[:=1,a=2,a:=5,b=1] vc=4"),
+        "VT bits\nA a=3 a:=5 b=1 :=1\nAROOTVAL 0\nS a=6 a:=5 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
+        "Element;|[:=1,a=2,a:=5,b=1] vc=4"),
     ("455 mirror (rec COUNTER only) — kills the equivalent mutant",
-     "VT bits\nA a=3 a:=7 b=1 :=1\nAROOTVAL 0\nS a=6 a:=5 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
-     "Element;|[:=1,a=2,a:=5,b=1] vc=4"),
+        "VT bits\nA a=3 a:=7 b=1 :=1\nAROOTVAL 0\nS a=6 a:=5 b=1 :=1\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n",
+        "Element;|[:=1,a=2,a:=5,b=1] vc=4"),
 
     # ── CONTROL: no VT header ⇒ the unit path, byte-identical to before this file existed ─────────
     # Without this a future change could silently switch the DEFAULT value type and every generated
     # case would start comparing something other than what expected.tsv was built from.
     ("no VT header still runs the UNIT path",
-     "A a b\nAROOTVAL 0\nS a\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n", "Element;|[a] vc=1"),
+        "A a b\nAROOTVAL 0\nS a\nSROOTVAL 0\nORIGIN -\nOP MEET 0\n", "Element;|[a] vc=1")
 ]
 
 @testset "value-payload algebra is 1:1 with upstream (VT bits)" begin
@@ -137,7 +138,8 @@ const _VALUE_CASES = Tuple{String, String, String}[
         # through to `()`, every value renders as "", and both engines agree on a dump that tested
         # nothing. Both parsers hard-error instead; this pins the Julia half.
         @test_throws ErrorException Base.invokelatest(
-            fuzz_run_text, "VT bytes\nA a=3\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN -\nOP SETVAL\n")
+            fuzz_run_text,
+            "VT bytes\nA a=3\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN -\nOP SETVAL\n")
     end
 
     @testset "a value token under the UNIT path is an error, not a silent drop" begin

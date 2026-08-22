@@ -51,8 +51,12 @@ end
 _share(m) = PathMap.PathMap{PathMap.UnitVal, PathMap.GlobalAlloc}(
     m.root === nothing ? nothing : copy(m.root), m.root_val, m.alloc)
 
-_anr(s) = s.root === nothing ? PathMap.ANRNone{PathMap.UnitVal, PathMap.GlobalAlloc}() :
-                               PathMap.ANRBorrowedRc{PathMap.UnitVal, PathMap.GlobalAlloc}(s.root)
+_anr(s) =
+    if s.root === nothing
+        PathMap.ANRNone{PathMap.UnitVal, PathMap.GlobalAlloc}()
+    else
+        PathMap.ANRBorrowedRc{PathMap.UnitVal, PathMap.GlobalAlloc}(s.root)
+    end
 
 @testset "a join never writes into its source operand" begin
 
@@ -114,11 +118,17 @@ _anr(s) = s.root === nothing ? PathMap.ANRNone{PathMap.UnitVal, PathMap.GlobalAl
         for (name, op) in (
             ("graft_map", (wz, s) -> PathMap.wz_graft_map!(wz, s)),
             ("meet_into", (wz, s) -> PathMap.wz_meet_into!(wz, _anr(s), false, s.root_val)),
-            ("meet_into prune", (wz, s) -> PathMap.wz_meet_into!(wz, _anr(s), true, s.root_val)),
-            ("subtract_into", (wz, s) -> PathMap.wz_subtract_into!(wz, _anr(s), false, s.root_val)),
+            (
+                "meet_into prune",
+                (wz, s) -> PathMap.wz_meet_into!(wz, _anr(s), true, s.root_val)
+            ),
+            (
+                "subtract_into",
+                (wz, s) -> PathMap.wz_subtract_into!(wz, _anr(s), false, s.root_val)
+            ),
             ("subtract_into prune",
-             (wz, s) -> PathMap.wz_subtract_into!(wz, _anr(s), true, s.root_val)),
-            ("restrict", (wz, s) -> PathMap.wz_restrict!(wz, _anr(s))),
+                (wz, s) -> PathMap.wz_subtract_into!(wz, _anr(s), true, s.root_val)),
+            ("restrict", (wz, s) -> PathMap.wz_restrict!(wz, _anr(s)))
         )
             @testset "$name" begin
                 direct = _mk(S_MIN)

@@ -218,8 +218,8 @@ zipper_to_next_val!(dpz::DependentZipper) = dpz_to_next_val!(dpz)
 function dpz_reset!(dpz::DependentZipper)
     empty!(dpz.factor_paths)
     for sz in dpz.secondary
-        ;
-        sz isa ReadZipperCore && zipper_reset!(sz);
+
+        sz isa ReadZipperCore && zipper_reset!(sz)
     end
     empty!(dpz.secondary)
     zipper_reset!(dpz.primary)
@@ -392,8 +392,8 @@ function dpz_to_next_val!(dpz::DependentZipper)
         if dpz_descend_first_byte!(dpz)
             dpz_is_val(dpz) && return true
             if dpz_descend_until!(dpz)
-                ;
-                dpz_is_val(dpz) && return true;
+
+                dpz_is_val(dpz) && return true
             end
         else
             ascending = true
@@ -416,7 +416,8 @@ end
 
 export DependentZipper
 export dpz_path, dpz_path_exists, dpz_is_val, dpz_child_count, dpz_child_mask
-export dpz_val, dpz_val_at, dpz_at_root, dpz_factor_count, dpz_focus_factor, dpz_path_indices
+export dpz_val,
+    dpz_val_at, dpz_at_root, dpz_factor_count, dpz_focus_factor, dpz_path_indices
 export dpz_reset!, dpz_descend_to!, dpz_descend_to_byte!
 export dpz_descend_to_existing!, dpz_descend_indexed_byte!
 export dpz_descend_first_byte!, dpz_descend_until!

@@ -256,8 +256,8 @@ function _paths_ser_to_next_val!(z::ReadZipperCore)
         if zipper_descend_first_byte!(z)
             zipper_is_val(z) && return true
             if zipper_descend_until!(z)
-                ;
-                zipper_is_val(z) && return true;
+
+                zipper_is_val(z) && return true
             end
         else
             advanced = false

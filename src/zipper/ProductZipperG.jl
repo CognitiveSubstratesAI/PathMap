@@ -142,13 +142,14 @@ mutable struct ProductZipperG{P, S}
     primary::P
     secondary::Vector{S}
     total_iters::Int   # CUMULATIVE product-DFS steps across ALL pzg_to_next_val! calls on this zipper.
-                       # Fresh per query (space_query_multi_i builds a new zipper each call).
+    # Fresh per query (space_query_multi_i builds a new zipper each call).
     deadline::Float64  # wall-clock fail-loud: set on the FIRST budget tick to time()+PZG_QUERY_TIME_BUDGET;
-                       # a runaway query (naive source-join explosion) errors here. Robust — no threshold
-                       # to tune, since a legit query's whole product-DFS finishes in well under a second.
+    # a runaway query (naive source-join explosion) errors here. Robust — no threshold
+    # to tune, since a legit query's whole product-DFS finishes in well under a second.
 end
 
-ProductZipperG(primary, secondaries) = ProductZipperG(Int[], primary, collect(secondaries), 0, 0.0)
+ProductZipperG(primary, secondaries) =
+    ProductZipperG(Int[], primary, collect(secondaries), 0, 0.0)
 
 # =====================================================================
 # Internal helpers (mirrors ProductZipperG private methods)
@@ -243,8 +244,8 @@ function pzg_reset!(prz::ProductZipperG)
     empty!(prz.factor_paths)
     prz.total_iters = 0
     for s in prz.secondary
-        ;
-        _zpg_reset!(s);
+
+        _zpg_reset!(s)
     end
     _zpg_reset!(prz.primary)
 end
@@ -470,17 +471,21 @@ const PZG_PEAK_ITERS = Ref(0)             # diagnostic: high-water mark of per-q
     if prz.total_iters == 1
         prz.deadline = time() + PZG_QUERY_TIME_BUDGET[]        # arm the wall-clock on the first step
     elseif prz.total_iters & 0xffff == 0 && time() > prz.deadline
-        error("ProductZipperG product-DFS exceeded the $(PZG_QUERY_TIME_BUDGET[])s per-query wall-clock \
+        error(
+            "ProductZipperG product-DFS exceeded the $(PZG_QUERY_TIME_BUDGET[])s per-query wall-clock \
                budget — a naive product/source join is EXPLODING (no coreferential pruning on this path). \
                This was previously a SILENT `return false` that truncated the join and returned a \
                wrong/partial answer — a hang/wrong-result that reads as 'working'. Port the coreferential \
                join to the source path, fix the pattern, or raise `PathMap.PZG_QUERY_TIME_BUDGET[]`. See \
-               reference_mork_port_state_and_rule64.")
+               reference_mork_port_state_and_rule64."
+        )
     end
     if prz.total_iters > PZG_QUERY_ITER_CAP[]                  # backstop for a fast (non-slow) explosion
-        error("ProductZipperG product-DFS exceeded $(PZG_QUERY_ITER_CAP[]) CUMULATIVE steps for one query \
+        error(
+            "ProductZipperG product-DFS exceeded $(PZG_QUERY_ITER_CAP[]) CUMULATIVE steps for one query \
                — naive product/source join explosion; see the wall-clock message / \
-               reference_mork_port_state_and_rule64.")
+               reference_mork_port_state_and_rule64."
+        )
     end
     nothing
 end
@@ -589,29 +594,29 @@ export pzg_to_prev_sibling_byte!, pzg_descend_indexed_byte!, pzg_val, pzg_val_at
 # These live in the package deliberately. Defining them in a test file extends PathMap's generics
 # from Main, which INVALIDATES the precompiled package: measured 1.6s -> 49.3s on one battery run
 # and a >20min suite. Here they compile once with everything else.
-zipper_descend_to!(z::ProductZipperG, k)              = pzg_descend_to!(z, k)
-zipper_descend_to_byte!(z::ProductZipperG, b)         = pzg_descend_to_byte!(z, b)
-zipper_descend_to_existing!(z::ProductZipperG, k)     = pzg_descend_to_existing!(z, k)
-zipper_descend_first_byte!(z::ProductZipperG)         = pzg_descend_first_byte!(z)
-zipper_descend_indexed_byte!(z::ProductZipperG, i)    = pzg_descend_indexed_byte!(z, i)
-zipper_descend_until!(z::ProductZipperG)              = pzg_descend_until!(z)
+zipper_descend_to!(z::ProductZipperG, k) = pzg_descend_to!(z, k)
+zipper_descend_to_byte!(z::ProductZipperG, b) = pzg_descend_to_byte!(z, b)
+zipper_descend_to_existing!(z::ProductZipperG, k) = pzg_descend_to_existing!(z, k)
+zipper_descend_first_byte!(z::ProductZipperG) = pzg_descend_first_byte!(z)
+zipper_descend_indexed_byte!(z::ProductZipperG, i) = pzg_descend_indexed_byte!(z, i)
+zipper_descend_until!(z::ProductZipperG) = pzg_descend_until!(z)
 zipper_descend_until_max_bytes!(z::ProductZipperG, n) = pzg_descend_until_max_bytes!(z, n)
-zipper_ascend!(z::ProductZipperG, n)                  = pzg_ascend!(z, n)
-zipper_ascend_byte!(z::ProductZipperG)                = pzg_ascend_byte!(z)
-zipper_ascend_until!(z::ProductZipperG)               = pzg_ascend_until!(z)
-zipper_ascend_until_branch!(z::ProductZipperG)        = pzg_ascend_until_branch!(z)
-zipper_to_next_sibling_byte!(z::ProductZipperG)       = pzg_to_next_sibling_byte!(z)
-zipper_to_prev_sibling_byte!(z::ProductZipperG)       = pzg_to_prev_sibling_byte!(z)
-zipper_to_next_val!(z::ProductZipperG)                = pzg_to_next_val!(z)
-zipper_to_next_step!(z::ProductZipperG)               = pzg_to_next_step!(z)
-zipper_reset!(z::ProductZipperG)                      = pzg_reset!(z)
-zipper_path(z::ProductZipperG)                        = pzg_path(z)
-zipper_path_exists(z::ProductZipperG)                 = pzg_path_exists(z)
-zipper_child_mask(z::ProductZipperG)                  = pzg_child_mask(z)
-zipper_child_count(z::ProductZipperG)                 = pzg_child_count(z)
-zipper_is_val(z::ProductZipperG)                      = pzg_is_val(z)
-zipper_val(z::ProductZipperG)                         = pzg_val(z)
+zipper_ascend!(z::ProductZipperG, n) = pzg_ascend!(z, n)
+zipper_ascend_byte!(z::ProductZipperG) = pzg_ascend_byte!(z)
+zipper_ascend_until!(z::ProductZipperG) = pzg_ascend_until!(z)
+zipper_ascend_until_branch!(z::ProductZipperG) = pzg_ascend_until_branch!(z)
+zipper_to_next_sibling_byte!(z::ProductZipperG) = pzg_to_next_sibling_byte!(z)
+zipper_to_prev_sibling_byte!(z::ProductZipperG) = pzg_to_prev_sibling_byte!(z)
+zipper_to_next_val!(z::ProductZipperG) = pzg_to_next_val!(z)
+zipper_to_next_step!(z::ProductZipperG) = pzg_to_next_step!(z)
+zipper_reset!(z::ProductZipperG) = pzg_reset!(z)
+zipper_path(z::ProductZipperG) = pzg_path(z)
+zipper_path_exists(z::ProductZipperG) = pzg_path_exists(z)
+zipper_child_mask(z::ProductZipperG) = pzg_child_mask(z)
+zipper_child_count(z::ProductZipperG) = pzg_child_count(z)
+zipper_is_val(z::ProductZipperG) = pzg_is_val(z)
+zipper_val(z::ProductZipperG) = pzg_val(z)
 zipper_val_at(z::ProductZipperG, p::AbstractVector{UInt8}) = pzg_val_at(z, p)
-zipper_at_root(z::ProductZipperG)                     = pzg_at_root(z)
+zipper_at_root(z::ProductZipperG) = pzg_at_root(z)
 
 export pzg_to_next_step!, pzg_descend_until_max_bytes!

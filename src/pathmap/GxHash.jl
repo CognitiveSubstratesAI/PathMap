@@ -80,7 +80,7 @@ lanes and uses rotates 17/9. Upstream's `hash_with` uses this for the VALUE hash
 byte-wise `write` for the mask and the child hashes, so the two must stay separate here too.
 """
 @inline function gx_write_u128!(h::GxHasher, i::UInt128)
-    low  = UInt64(i & typemax(UInt64))
+    low = UInt64(i & typemax(UInt64))
     high = UInt64(i >> 64)
     h.state_lo = h.state_lo + low
     h.state_hi ⊻= bitrotate(high, 17)
@@ -89,7 +89,8 @@ byte-wise `write` for the mask and the child hashes, so the two must stay separa
 end
 
 "`finish_u128` (lib.rs:31-33)."
-@inline gx_finish_u128(h::GxHasher)::UInt128 = (UInt128(h.state_hi) << 64) | UInt128(h.state_lo)
+@inline gx_finish_u128(h::GxHasher)::UInt128 =
+    (UInt128(h.state_hi) << 64) | UInt128(h.state_lo)
 
 "Little-endian bytes of a `UInt128`, matching how upstream reinterprets a `&[u128]` as `&[u8]` on a little-endian target."
 @inline function gx_u128_le_bytes(x::UInt128)
@@ -110,4 +111,4 @@ end
 end
 
 export GxHasher, gx_write!, gx_write_u8!, gx_write_u128!, gx_finish_u128,
-       gx_u128_le_bytes, gx_u64_le_bytes
+    gx_u128_le_bytes, gx_u64_le_bytes

@@ -22,17 +22,21 @@ if _HAS_ALLOCCHECK
     @testset "AllocCheck read-path residual (regression guard)" begin
         m = PathMap.PathMap{Int32}()
         for i in 1:64
-            PathMap.set_val_at!(m, vcat(Vector{UInt8}("k" * lpad(string(i), 3, '0') * ":"), UInt8[i % 251]), Int32(i))
+            PathMap.set_val_at!(
+                m,
+                vcat(Vector{UInt8}("k" * lpad(string(i), 3, '0') * ":"), UInt8[i % 251]),
+                Int32(i)
+            )
         end
         rz = PathMap.read_zipper(m)
-        nallocs(f, ts) = length(AllocCheck.check_allocs(f, ts; ignore_throw = true))
+        nallocs(f, ts) = length(AllocCheck.check_allocs(f, ts; ignore_throw=true))
 
         # zero-alloc INVARIANT — the coref de-box S1 (_coref_path_length) + S5 (@view) rely on this
         @test nallocs(PathMap.zipper_path, (typeof(rz),)) == 0
 
         # read-path residual — must not GROW beyond the measured optimized floor (ADR-001-gated:
         # node_get_child_nb Tuple boxing + Int64 Union returns → zero only under the isbits node slab)
-        @test nallocs(PathMap.get_val_at,     (typeof(m), Vector{UInt8})) <= 8
+        @test nallocs(PathMap.get_val_at, (typeof(m), Vector{UInt8})) <= 8
         # path_exists_at: floor moved 8 -> 11 on 2026-07-27, DELIBERATELY. The old floor was
         # measured on an implementation that answered WRONG for mid-edge prefixes (it reported
         # "a"/"abcd"/"abcdefghi" as absent in {abc, abcdefghij}, disagreeing with our own
@@ -44,9 +48,9 @@ if _HAS_ALLOCCHECK
         @test nallocs(PathMap.path_exists_at, (typeof(m), Vector{UInt8})) <= 11
 
         # cheap read-cursor primitives — locked at their measured floors
-        @test nallocs(PathMap.zipper_child_mask,   (typeof(rz),)) <= 4
+        @test nallocs(PathMap.zipper_child_mask, (typeof(rz),)) <= 4
         @test nallocs(PathMap.zipper_ascend_byte!, (typeof(rz),)) <= 3
-        @test nallocs(PathMap.zipper_val,          (typeof(rz),)) <= 4
+        @test nallocs(PathMap.zipper_val, (typeof(rz),)) <= 4
 
         # write path: type-cascade de-box via call-site assertions (2026-07-06) took set_val_at!
         # dynamic dispatch 30 → 20 (descend `node_get_child`) → 17 (`clone_self` ×2 + the `node_set_val!`
@@ -73,7 +77,9 @@ if _HAS_ALLOCCHECK
         # difference is passing the already-narrowed `inner` from `_fnode`; that is what this
         # ratchet is really protecting, so do not "fix" the count by reverting to the abstract call.
         set_dyn = count(a -> a isa AllocCheck.DynamicDispatch,
-                        AllocCheck.check_allocs(PathMap.set_val_at!, (typeof(m), Vector{UInt8}, Int32); ignore_throw = true))
+            AllocCheck.check_allocs(
+                PathMap.set_val_at!, (typeof(m), Vector{UInt8}, Int32); ignore_throw=true
+            ))
         @test set_dyn <= 21
     end
 else

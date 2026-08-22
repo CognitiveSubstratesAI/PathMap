@@ -307,12 +307,12 @@ function from_range(range::AbstractRange)::ByteMask
     start_i = Int(start)
     end_i = Int(stop_incl)   # inclusive
     if start_i < 0
-        ;
-        start_i = 0;
+
+        start_i = 0
     end
     if end_i > 255
-        ;
-        end_i = 255;
+
+        end_i = 255
     end
     start_i > end_i && return ByteMask()
 
@@ -625,7 +625,7 @@ end
 Base.IteratorSize(::Type{ByteMask}) = Base.HasLength()
 Base.eltype(::Type{ByteMask}) = UInt8
 Base.length(m::ByteMask) = count_bits(m)
-function Base.iterate(m::ByteMask, state::Tuple{Int, UInt64} = (1, @inbounds m.bits[1]))
+function Base.iterate(m::ByteMask, state::Tuple{Int, UInt64}=(1, @inbounds m.bits[1]))
     # ctz word-walk (non-destructive): O(popcount) per full pass, not O(256).
     # Mirrors next_bit / ByteMaskIter (trailing_zeros + clear-lowest-set-bit),
     # non-allocating, ascending byte order. Replaces a 256-way linear test_bit

@@ -9,12 +9,12 @@ using PathMap
 # the same log for `basic CRUD` / `write zipper` / `morphisms`, which are also absent.
 # The try/catch is still correct: it covers an environment where the shared env lacks Aqua.
 const _HAS_AQUA = try
-    ;
-    @eval using Aqua;
-    true;
+
+    @eval using Aqua
+    true
 catch
-    ;
-    false;
+
+    false
 end
 const PM = PathMap.PathMap   # PathMap module and PathMap type share the same name
 
@@ -81,9 +81,9 @@ const _PM_TS = @testset "PathMap" begin
     @testset "algebraic ops (psubtract)" begin
         a = PM{Bool}()
         b = PM{Bool}()
-        set_val_at!(a, b"x", true);
+        set_val_at!(a, b"x", true)
         set_val_at!(a, b"y", true)
-        set_val_at!(b, b"y", true);
+        set_val_at!(b, b"y", true)
         set_val_at!(b, b"z", true)
 
         # Subtract: a - b = {x}
@@ -98,9 +98,9 @@ const _PM_TS = @testset "PathMap" begin
     @testset "policy API" begin
         a = PM{Int}()
         b = PM{Int}()
-        set_val_at!(a, b"x", 3);
+        set_val_at!(a, b"x", 3)
         set_val_at!(a, b"y", 1)
-        set_val_at!(b, b"x", 2);
+        set_val_at!(b, b"x", 2)
         set_val_at!(b, b"z", 5)
 
         r = pjoin_policy(a, b, SumPolicy())
@@ -334,10 +334,10 @@ const _PM_TS = @testset "PathMap" begin
 
         # (1) branching prefix: {foo,bar} under "a/"  vs  flat {foo,bar}
         flatAB = PM{UnitVal}()
-        set_val_at!(flatAB, b"foo", UNIT_VAL);
+        set_val_at!(flatAB, b"foo", UNIT_VAL)
         set_val_at!(flatAB, b"bar", UNIT_VAL)
         preAB = PM{UnitVal}()
-        set_val_at!(preAB, b"a/foo", UNIT_VAL);
+        set_val_at!(preAB, b"a/foo", UNIT_VAL)
         set_val_at!(preAB, b"a/bar", UNIT_VAL)
         @test drive(anchored_pz(preAB, "a/", 2)) == drive(root_pz(flatAB, 2))
         # and no result carries the raw prefix byte 'a'
@@ -348,9 +348,9 @@ const _PM_TS = @testset "PathMap" begin
 
         # (2) single-path prefix: {foo} under "b/" vs flat {foo}
         #     (mid-compressed-edge — the case that returned empty pre-fix)
-        flatC = PM{UnitVal}();
+        flatC = PM{UnitVal}()
         set_val_at!(flatC, b"foo", UNIT_VAL)
-        preC = PM{UnitVal}();
+        preC = PM{UnitVal}()
         set_val_at!(preC, b"b/foo", UNIT_VAL)
         @test drive(anchored_pz(preC, "b/", 2)) == drive(root_pz(flatC, 2))
         @test !isempty(drive(anchored_pz(preC, "b/", 2)))   # not silently empty
@@ -569,9 +569,13 @@ const _PM_TS = @testset "PathMap" begin
         # computes `dpz_factor_count(src) - 1`. Removing it would break working code to mirror a
         # change that does not apply here.
         m_primary = PM{UnitVal}()
-        for k in (b"X", b"Y", b"Z"); set_val_at!(m_primary, k, UNIT_VAL); end
+        for k in (b"X", b"Y", b"Z")
+            set_val_at!(m_primary, k, UNIT_VAL)
+        end
         m_ext = PM{UnitVal}()
-        for k in (b"!", b"?"); set_val_at!(m_ext, k, UNIT_VAL); end
+        for k in (b"!", b"?")
+            set_val_at!(m_ext, k, UNIT_VAL)
+        end
 
         rz = read_zipper(m_primary)
         enroll_cb(payload, path::AbstractVector{UInt8}, factor_idx::Int) =
@@ -726,9 +730,9 @@ const _PM_TS = @testset "PathMap" begin
     #    the fuzz generator emits.
     @testset "join_k_path_into(prune) leaves no dangling path — assert via path_exists" begin
         for (tag, keys, origin, k) in (
-                ("focus INSIDE a node key", [b"abc"],        b"ab",    5),
-                ("focus at a node boundary", [b"ab", b"ac"],  b"a",     5),
-                ("deep dangling spine",      [b"aaaabc"],     b"aaaab", 9))
+            ("focus INSIDE a node key", [b"abc"], b"ab", 5),
+            ("focus at a node boundary", [b"ab", b"ac"], b"a", 5),
+            ("deep dangling spine", [b"aaaabc"], b"aaaab", 9))
             m = PM{Int}()
             for key in keys
                 set_val_at!(m, key, 1)
@@ -796,8 +800,8 @@ const _PM_TS = @testset "PathMap" begin
         set_val_at!(m, b"Sab", 1)
         set_val_at!(m, b"Scd", 2)
         src_anr = PathMap.tr_get_focus_anr(PathMap.trie_ref_at_path(m, b"S"))
-        wz = write_zipper(m);
-        wz_descend_to!(wz, b"D");
+        wz = write_zipper(m)
+        wz_descend_to!(wz, b"D")
         PathMap.wz_graft!(wz, src_anr)
         @test get_val_at(m, b"Dab") == 1 && get_val_at(m, b"Dcd") == 2   # graft copied
         set_val_at!(m, b"Dab", 99)                                       # mutate shared graft
@@ -846,11 +850,14 @@ const _PM_TS = @testset "PathMap" begin
     #    trigger is a ROOT-shared snapshot + same-subtrie write via `set_val_at!`.
     @testset "COW — root-shared snapshot + same-subtrie write preserves snapshot (EU-bug regression)" begin
         m = PM{Int}()
-        set_val_at!(m, b"Ea", 1); set_val_at!(m, b"Eb", 2); set_val_at!(m, b"Ec", 3)
+        set_val_at!(m, b"Ea", 1)
+        set_val_at!(m, b"Eb", 2)
+        set_val_at!(m, b"Ec", 3)
         snap = typeof(m)(copy(m.root::PathMap.TrieNodeODRc), m.root_val, m.alloc)  # share the root
         set_val_at!(m, b"Ed", 4)                                                    # SAME (E*) subtrie
         @test get_val_at(snap, b"Ed") === nothing                                   # snapshot NOT leaked into
-        @test get_val_at(snap, b"Ea") == 1 && get_val_at(snap, b"Eb") == 2 && get_val_at(snap, b"Ec") == 3
+        @test get_val_at(snap, b"Ea") == 1 && get_val_at(snap, b"Eb") == 2 &&
+            get_val_at(snap, b"Ec") == 3
         @test get_val_at(m, b"Ed") == 4                                             # live map reflects the write
         # reverse: writing the snapshot must not corrupt the source
         set_val_at!(snap, b"Ee", 5)

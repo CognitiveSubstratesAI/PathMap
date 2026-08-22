@@ -39,10 +39,25 @@ mutable struct _NodeMeta
 end
 
 # DrawCmd variants (mirror upstream `enum DrawCmd`)
-struct _NodeCmd;  addr::UInt64; ntype::Symbol; end
-struct _EdgeCmd;  src::UInt64;  dst::UInt64;  key::Vector{UInt8}; end
-struct _ValueCmd; parent::UInt64; vaddr::UInt64; key::Vector{UInt8}; vstr::String; end
-struct _MapCmd;   map_idx::Int;  root_addr::UInt64; end
+struct _NodeCmd
+    addr::UInt64
+    ntype::Symbol
+end
+struct _EdgeCmd
+    src::UInt64
+    dst::UInt64
+    key::Vector{UInt8}
+end
+struct _ValueCmd
+    parent::UInt64
+    vaddr::UInt64
+    key::Vector{UInt8}
+    vstr::String
+end
+struct _MapCmd
+    map_idx::Int
+    root_addr::UInt64
+end
 const _DrawCmd = Union{_NodeCmd, _EdgeCmd, _ValueCmd, _MapCmd}
 
 mutable struct _DrawState
@@ -56,23 +71,33 @@ _DrawState() = _DrawState(0, Dict{UInt64, _NodeMeta}(), _DrawCmd[])
 # the low 3 bits (graceful degradation — a 4th+ map's membership is not distinctly colored).
 function _color_for_bitmask(mask::UInt64)
     m = mask & 0b111
-    m == 0b000 ? "black" :
-    m == 0b100 ? "red"   :
-    m == 0b010 ? "green" :
-    m == 0b001 ? "blue"  :
-    m == 0b011 ? "#0aa"  :
-    m == 0b101 ? "#a0a"  :
-    m == 0b110 ? "#aa0"  : "gray"
+    if m == 0b000
+        "black"
+    elseif m == 0b100
+        "red"
+    elseif m == 0b010
+        "green"
+    elseif m == 0b001
+        "blue"
+    elseif m == 0b011
+        "#0aa"
+    elseif m == 0b101
+        "#a0a"
+    elseif m == 0b110
+        "#aa0"
+    else
+        "gray"
+    end
 end
 
 # Node-type label (mirrors the `TaggedNodeRef` match in viz_node_physical).
 _viz_node_type(::DenseByteNode) = :Dense
-_viz_node_type(::CellByteNode)  = :Cell
-_viz_node_type(::LineListNode)  = :Pair
-_viz_node_type(::TinyRefNode)   = :Tiny
-_viz_node_type(::BridgeNode)    = :Bridge
-_viz_node_type(::EmptyNode)     = :Empty
-_viz_node_type(::Any)           = :Node
+_viz_node_type(::CellByteNode) = :Cell
+_viz_node_type(::LineListNode) = :Pair
+_viz_node_type(::TinyRefNode) = :Tiny
+_viz_node_type(::BridgeNode) = :Bridge
+_viz_node_type(::EmptyNode) = :Empty
+_viz_node_type(::Any) = :Node
 
 # Mirrors `update_node_hash`: record/accumulate the node's map bitmask + ref count.
 # Returns true on the FIRST visit (⇒ caller descends the subtrie).
@@ -93,7 +118,7 @@ end
 function _viz_node_physical!(rc::TrieNodeODRc, dc::DrawConfig, ds::_DrawState)
     addr = shared_node_id(rc)
     node = rc.node
-    node === nothing && return
+    node === nothing && return nothing
     push!(ds.cmds, _NodeCmd(addr, _viz_node_type(node)))
     # TinyRefNode is a transient borrowed form that can't be iterated directly (its new_iter_token
     # errors); expand it via into_full (mirrors clone_self) so its edge/value renders vs throwing.
@@ -108,7 +133,12 @@ function _viz_node_physical!(rc::TrieNodeODRc, dc::DrawConfig, ds::_DrawState)
         end
         if value !== nothing
             # unique per (parent, edge); mirrors upstream's per-value pointer id (hash is UInt64)
-            push!(ds.cmds, _ValueCmd(addr, hash((addr, key_bytes)), Vector{UInt8}(key_bytes), string(value)))
+            push!(
+                ds.cmds,
+                _ValueCmd(
+                    addr, hash((addr, key_bytes)), Vector{UInt8}(key_bytes), string(value)
+                )
+            )
         end
     end
 end
@@ -116,7 +146,7 @@ end
 function _viz_map_physical!(m::PathMap, dc::DrawConfig, ds::_DrawState)
     _ensure_root!(m)
     root_rc = m.root
-    root_rc === nothing && return
+    root_rc === nothing && return nothing
     push!(ds.cmds, _MapCmd(ds.root, shared_node_id(root_rc)))
     _update_node_hash!(root_rc, ds)
     _viz_node_physical!(root_rc, dc, ds)
@@ -146,29 +176,44 @@ function _render_mermaid(ds::_DrawState, dc::DrawConfig, io::IO)
     println(io, "flowchart LR")
     for cmd in ds.cmds
         if cmd isa _MapCmd
-            println(io, "m$(cmd.map_idx)@{ shape: cylinder, label: \"PathMap[$(cmd.map_idx)]\"}")
+            println(
+                io, "m$(cmd.map_idx)@{ shape: cylinder, label: \"PathMap[$(cmd.map_idx)]\"}"
+            )
             println(io, "m$(cmd.map_idx) --> g$(cmd.root_addr)")
         elseif cmd isa _NodeCmd
             println(io, "g$(cmd.addr)@{ shape: rect, label: \"$(cmd.ntype)\"}")
             if dc.color
                 meta = get(ds.nodes, cmd.addr, nothing)
-                meta !== nothing && println(io, "style g$(cmd.addr) fill:$(_color_for_bitmask(meta.shared))")
+                meta !== nothing && println(
+                    io, "style g$(cmd.addr) fill:$(_color_for_bitmask(meta.shared))"
+                )
             end
         elseif cmd isa _EdgeCmd
             jump = _mermaid_escape(_render_key(cmd.key, dc.ascii_path))
-            isempty(cmd.key) ? println(io, "g$(cmd.src) --> g$(cmd.dst)") :
-                               println(io, "g$(cmd.src) --\"$(jump)\"--> g$(cmd.dst)")
+            if isempty(cmd.key)
+                println(io, "g$(cmd.src) --> g$(cmd.dst)")
+            else
+                println(io, "g$(cmd.src) --\"$(jump)\"--> g$(cmd.dst)")
+            end
         elseif cmd isa _ValueCmd
             dc.hide_value_paths && continue
             jump = _mermaid_escape(_render_key(cmd.key, dc.ascii_path))
             vid = "v$(cmd.vaddr)_$(cmd.parent)"   # underscore delimiter: distinct (vaddr,parent) never alias
-            isempty(cmd.key) ? println(io, "g$(cmd.parent) --> $(vid)") :
-                               println(io, "g$(cmd.parent) --\"$(jump)\"--> $(vid)")
+            if isempty(cmd.key)
+                println(io, "g$(cmd.parent) --> $(vid)")
+            else
+                println(io, "g$(cmd.parent) --\"$(jump)\"--> $(vid)")
+            end
             if dc.minimize_values
                 println(io, "$(vid)@{ shape: circle, label: \".\"}")
-                println(io, "style $(vid) fill:black,stroke:none,color:transparent,font-size:0px")
+                println(
+                    io,
+                    "style $(vid) fill:black,stroke:none,color:transparent,font-size:0px"
+                )
             else
-                println(io, "$(vid)@{ shape: rounded, label: \"$(_mermaid_escape(cmd.vstr))\" }")
+                println(
+                    io, "$(vid)@{ shape: rounded, label: \"$(_mermaid_escape(cmd.vstr))\" }"
+                )
             end
         end
     end
@@ -183,9 +228,9 @@ end
 # recursive prepass: populate ds.nodes with per-node ref_cnt + map-bitmask across ALL maps (mirrors
 # upstream pre_init_node_hashes). Needed BEFORE rendering so shared nodes (ref_cnt>1) are known.
 function _pre_init_node_hashes!(rc::TrieNodeODRc, ds::_DrawState)
-    _update_node_hash!(rc, ds) || return
+    _update_node_hash!(rc, ds) || return nothing
     node = rc.node
-    node === nothing && return
+    node === nothing && return nothing
     iter_node = node isa TinyRefNode ? into_full(node) : node
     token = new_iter_token(iter_node)
     while token != NODE_ITER_FINISHED
@@ -194,8 +239,18 @@ function _pre_init_node_hashes!(rc::TrieNodeODRc, ds::_DrawState)
     end
 end
 
-struct _AEdge; label::Vector{UInt8}; is_node::Bool; node_id::UInt64; vstr::String; end
-mutable struct _ANode; ntype::Symbol; inline::Union{Nothing, String}; edges::Vector{_AEdge}; shared::Bool; end
+struct _AEdge
+    label::Vector{UInt8}
+    is_node::Bool
+    node_id::UInt64
+    vstr::String
+end
+mutable struct _ANode
+    ntype::Symbol
+    inline::Union{Nothing, String}
+    edges::Vector{_AEdge}
+    shared::Bool
+end
 
 # Build the physical adjacency graph for one map (each node once — a DAG under sharing).
 function _build_ascii!(rc::TrieNodeODRc, ds::_DrawState, graph::Dict{UInt64, _ANode})
@@ -204,7 +259,9 @@ function _build_ascii!(rc::TrieNodeODRc, ds::_DrawState, graph::Dict{UInt64, _AN
     node = rc.node
     node === nothing && return addr
     meta = get(ds.nodes, addr, nothing)
-    an = _ANode(_viz_node_type(node), nothing, _AEdge[], meta !== nothing && meta.ref_cnt > 1)
+    an = _ANode(
+        _viz_node_type(node), nothing, _AEdge[], meta !== nothing && meta.ref_cnt > 1
+    )
     graph[addr] = an
     iter_node = node isa TinyRefNode ? into_full(node) : node
     token = new_iter_token(iter_node)
@@ -237,27 +294,33 @@ function _shared_marker(id::Int, dc::DrawConfig)
     end
 end
 
-function _render_ascii(map_idx::Int, root_id::UInt64, graph::Dict{UInt64, _ANode}, dc::DrawConfig, io::IO)
+function _render_ascii(
+    map_idx::Int, root_id::UInt64, graph::Dict{UInt64, _ANode}, dc::DrawConfig, io::IO
+)
     shared_addrs = sort!(UInt64[a for (a, n) in graph if n.shared])
     shared_ids = Dict{UInt64, Int}(a => i for (i, a) in enumerate(shared_addrs))
     visited = Set{UInt64}()
     root = get(graph, root_id, nothing)
     if root === nothing
-        println(io, "PathMap[$map_idx]"); println(io, "(empty)"); return
+        println(io, "PathMap[$map_idx]")
+        println(io, "(empty)")
+        return nothing
     end
     line = "PathMap[$map_idx]" * _val_part(root.inline, dc)
     if root.shared && haskey(shared_ids, root_id)
-        push!(visited, root_id); line *= " " * _shared_marker(shared_ids[root_id], dc)
+        push!(visited, root_id)
+        line *= " " * _shared_marker(shared_ids[root_id], dc)
     end
     println(io, line)
     if isempty(root.edges) && root.inline === nothing
-        println(io, "(empty)"); return
+        println(io, "(empty)")
+        return nothing
     end
     _render_ascii_children(root, graph, dc, shared_ids, visited, "", io)
 end
 
 function _render_ascii_children(node::_ANode, graph, dc, shared_ids, visited, prefix, io)
-    edges = sort(node.edges; by = e -> e.label)
+    edges = sort(node.edges; by=e -> e.label)
     for (i, e) in enumerate(edges)
         last = i == length(edges)
         connector = last ? "└── " : "├── "
@@ -271,15 +334,22 @@ function _render_ascii_children(node::_ANode, graph, dc, shared_ids, visited, pr
             if child.shared && haskey(shared_ids, e.node_id)
                 sid = shared_ids[e.node_id]
                 if e.node_id in visited
-                    println(io, "$(prefix)$(connector)$(label)$(vpart) ↩ $(_shared_marker(sid, dc))")
+                    println(
+                        io,
+                        "$(prefix)$(connector)$(label)$(vpart) ↩ $(_shared_marker(sid, dc))"
+                    )
                     continue
                 end
                 push!(visited, e.node_id)
-                println(io, "$(prefix)$(connector)$(label)$(vpart) $(_shared_marker(sid, dc))")
+                println(
+                    io, "$(prefix)$(connector)$(label)$(vpart) $(_shared_marker(sid, dc))"
+                )
             else
                 println(io, "$(prefix)$(connector)$(label)$(vpart)")
             end
-            _render_ascii_children(child, graph, dc, shared_ids, visited, prefix * (last ? "    " : "│   "), io)
+            _render_ascii_children(
+                child, graph, dc, shared_ids, visited, prefix * (last ? "    " : "│   "), io
+            )
         end
     end
 end
@@ -290,15 +360,22 @@ end
 # physical _ANode graph. A pass-through has ref_cnt==1 (not shared), so it has exactly one parent ⇒
 # splicing can't lose a reference.
 function _collapse_logical!(graph::Dict{UInt64, _ANode}, roots::Set{UInt64})
-    ispass(id) = !(id in roots) && haskey(graph, id) &&
-        (n = graph[id]; length(n.edges) == 1 && n.edges[1].is_node && n.inline === nothing && !n.shared)
+    ispass(id) =
+        !(id in roots) && haskey(graph, id) &&
+        (
+            n=graph[id];
+            length(n.edges) == 1 && n.edges[1].is_node && n.inline === nothing && !n.shared
+        )
     for (_id, node) in graph
         newedges = _AEdge[]
         for e in node.edges
             if e.is_node
-                label = copy(e.label); tgt = e.node_id
+                label = copy(e.label)
+                tgt = e.node_id
                 while ispass(tgt)
-                    te = graph[tgt].edges[1]; append!(label, te.label); tgt = te.node_id
+                    te = graph[tgt].edges[1]
+                    append!(label, te.label)
+                    tgt = te.node_id
                 end
                 push!(newedges, _AEdge(label, true, tgt, ""))
             else
@@ -307,7 +384,9 @@ function _collapse_logical!(graph::Dict{UInt64, _ANode}, roots::Set{UInt64})
         end
         node.edges = newedges
     end
-    for id in collect(keys(graph)); ispass(id) && delete!(graph, id); end
+    for id in collect(keys(graph))
+        ispass(id) && delete!(graph, id)
+    end
 end
 
 function _emit_value_box(io::IO, vid::AbstractString, vstr::AbstractString, dc::DrawConfig)
@@ -322,7 +401,13 @@ end
 # Render an _ANode graph (physical or logically-collapsed) as ONE Mermaid flowchart across all maps
 # (used for logical Mermaid — the physical Mermaid uses the DrawCmd path). Shared nodes appear once
 # (graph is deduped by objectid); color comes from the map bitmask in ds.nodes.
-function _render_mermaid_graph(map_roots::Vector{UInt64}, graph::Dict{UInt64, _ANode}, ds::_DrawState, dc::DrawConfig, io::IO)
+function _render_mermaid_graph(
+    map_roots::Vector{UInt64},
+    graph::Dict{UInt64, _ANode},
+    ds::_DrawState,
+    dc::DrawConfig,
+    io::IO
+)
     println(io, "flowchart LR")
     for (i, rid) in enumerate(map_roots)
         rid == 0 && continue
@@ -333,21 +418,29 @@ function _render_mermaid_graph(map_roots::Vector{UInt64}, graph::Dict{UInt64, _A
         println(io, "g$(addr)@{ shape: rect, label: \"$(node.ntype)\"}")
         if dc.color
             meta = get(ds.nodes, addr, nothing)
-            meta !== nothing && println(io, "style g$(addr) fill:$(_color_for_bitmask(meta.shared))")
+            meta !== nothing &&
+                println(io, "style g$(addr) fill:$(_color_for_bitmask(meta.shared))")
         end
         if node.inline !== nothing && !dc.hide_value_paths
             vid = "v$(hash((addr, UInt8[])))_$(addr)"
-            println(io, "g$(addr) --> $(vid)"); _emit_value_box(io, vid, node.inline, dc)
+            println(io, "g$(addr) --> $(vid)")
+            _emit_value_box(io, vid, node.inline, dc)
         end
         for e in node.edges
             jump = _mermaid_escape(_render_key(e.label, dc.ascii_path))
             if e.is_node
-                isempty(e.label) ? println(io, "g$(addr) --> g$(e.node_id)") :
-                                   println(io, "g$(addr) --\"$(jump)\"--> g$(e.node_id)")
+                if isempty(e.label)
+                    println(io, "g$(addr) --> g$(e.node_id)")
+                else
+                    println(io, "g$(addr) --\"$(jump)\"--> g$(e.node_id)")
+                end
             elseif !dc.hide_value_paths
                 vid = "v$(hash((addr, e.label)))_$(addr)"
-                isempty(e.label) ? println(io, "g$(addr) --> $(vid)") :
-                                   println(io, "g$(addr) --\"$(jump)\"--> $(vid)")
+                if isempty(e.label)
+                    println(io, "g$(addr) --> $(vid)")
+                else
+                    println(io, "g$(addr) --\"$(jump)\"--> $(vid)")
+                end
                 _emit_value_box(io, vid, e.vstr, dc)
             end
         end
@@ -376,16 +469,29 @@ function viz_maps(maps::AbstractVector{<:PathMap}, dc::DrawConfig, io::IO)
     if dc.mode === ASCII || dc.logical
         ds = _DrawState()
         for m in maps
-            _ensure_root!(m); m.root !== nothing && _pre_init_node_hashes!(m.root, ds); ds.root += 1
+            _ensure_root!(m)
+            m.root !== nothing && _pre_init_node_hashes!(m.root, ds)
+            ds.root += 1
         end
-        _map_inline!(g, m, rid) = (m.root_val !== nothing &&
-            (an = get(g, rid, nothing); an !== nothing && an.inline === nothing && (an.inline = string(m.root_val))))
+        _map_inline!(g, m, rid) = (
+            m.root_val !== nothing &&
+            (
+                an=get(g, rid, nothing);
+                an !== nothing && an.inline === nothing && (an.inline = string(m.root_val))
+            )
+        )
         if dc.mode === MERMAID           # logical Mermaid: one collapsed graph across all maps
-            graph = Dict{UInt64, _ANode}(); map_roots = UInt64[]
+            graph = Dict{UInt64, _ANode}()
+            map_roots = UInt64[]
             for m in maps
                 _ensure_root!(m)
-                if m.root === nothing; push!(map_roots, UInt64(0)); continue; end
-                rid = shared_node_id(m.root); _build_ascii!(m.root, ds, graph); _map_inline!(graph, m, rid)
+                if m.root === nothing
+                    push!(map_roots, UInt64(0))
+                    continue
+                end
+                rid = shared_node_id(m.root)
+                _build_ascii!(m.root, ds, graph)
+                _map_inline!(graph, m, rid)
                 push!(map_roots, rid)
             end
             _collapse_logical!(graph, Set(map_roots))
@@ -393,12 +499,16 @@ function viz_maps(maps::AbstractVector{<:PathMap}, dc::DrawConfig, io::IO)
         else                             # ASCII (physical or logical): per-map tree
             r = 0
             for m in maps
-                r > 0 && println(io); _ensure_root!(m)
+                r > 0 && println(io)
+                _ensure_root!(m)
                 if m.root === nothing
-                    println(io, "PathMap[$r]"); println(io, "(empty)")
+                    println(io, "PathMap[$r]")
+                    println(io, "(empty)")
                 else
-                    graph = Dict{UInt64, _ANode}(); rid = shared_node_id(m.root)
-                    _build_ascii!(m.root, ds, graph); _map_inline!(graph, m, rid)
+                    graph = Dict{UInt64, _ANode}()
+                    rid = shared_node_id(m.root)
+                    _build_ascii!(m.root, ds, graph)
+                    _map_inline!(graph, m, rid)
                     dc.logical && _collapse_logical!(graph, Set([rid]))
                     _render_ascii(r, rid, graph, dc, io)
                 end
@@ -426,4 +536,4 @@ function viz_maps(m::PathMap; kwargs...)
     String(take!(buf))
 end
 viz_maps(maps::AbstractVector{<:PathMap}; kwargs...) =
-    (buf = IOBuffer(); viz_maps(maps, DrawConfig(; kwargs...), buf); String(take!(buf)))
+    (buf=IOBuffer(); viz_maps(maps, DrawConfig(; kwargs...), buf); String(take!(buf)))

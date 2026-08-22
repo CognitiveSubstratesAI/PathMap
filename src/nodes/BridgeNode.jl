@@ -53,8 +53,8 @@ function BridgeNode(
     if length(key) <= BRIDGE_KEY_MAX
         # Use fully-qualified constructor to avoid ambiguity with struct auto-ctor
         n = BridgeNode{V, A}(alloc)
-        n.key = Vector{UInt8}(key);
-        n.is_child = is_child;
+        n.key = Vector{UInt8}(key)
+        n.is_child = is_child
         n.payload = payload
         n
     else
@@ -116,8 +116,8 @@ end
 
 function node_set_val!(n::BridgeNode{V, A}, key::AbstractVector{UInt8}, val::V) where {V, A}
     node_is_empty(n) || return _bridge_splice!(n, key, false, ValOrChild(val), Val{false}())
-    n.key = Vector{UInt8}(key);
-    n.is_child = false;
+    n.key = Vector{UInt8}(key)
+    n.is_child = false
     n.payload = ValOrChild(val)
     (nothing, false)
 end
@@ -127,8 +127,8 @@ function node_set_branch!(
 ) where {V, A}
     node_is_empty(n) ||
         return _bridge_splice!(n, key, true, ValOrChild(new_rc), Val{true}())
-    n.key = Vector{UInt8}(key);
-    n.is_child = true;
+    n.key = Vector{UInt8}(key)
+    n.is_child = true
     n.payload = ValOrChild(new_rc)
     true
 end
@@ -138,8 +138,8 @@ function node_remove_val!(
 ) where {V, A}
     !n.is_child && !node_is_empty(n) && n.key == key || return nothing
     old = into_val(_bn_pl(n))
-    n.key = UInt8[];
-    n.is_child = false;
+    n.key = UInt8[]
+    n.is_child = false
     n.payload = nothing
     old
 end
@@ -149,8 +149,8 @@ function node_remove_all_branches!(
 ) where {V, A}
     node_is_empty(n) && return false
     slice_starts_with(n.key, key) && (key < n.key || n.is_child) || return false
-    n.key = UInt8[];
-    n.is_child = false;
+    n.key = UInt8[]
+    n.is_child = false
     n.payload = nothing
     true
 end
@@ -164,8 +164,8 @@ function node_remove_unmasked_branches!(
         byte = n.key[length(key) + 1]
         test_bit(mask, byte) && return nothing
     end
-    n.key = UInt8[];
-    n.is_child = false;
+    n.key = UInt8[]
+    n.is_child = false
     n.payload = nothing
 end
 
@@ -176,7 +176,7 @@ node_remove_dangling!(n::BridgeNode{V, A}, key::AbstractVector{UInt8}) where {V,
 function node_get_payloads(n::BridgeNode{V, A}, keys_expect_val, results_buf) where {V, A}
     node_is_empty(n) && return false
     requested = false
-    nk = n.key;
+    nk = n.key
     nklen = length(nk)
     for (i, (key, expect_val)) in enumerate(keys_expect_val)
         slice_starts_with(key, nk) || continue
@@ -228,7 +228,7 @@ end
 # Iteration — BridgeNode is similar to TinyRefNode (unreachable in normal iteration)
 new_iter_token(::BridgeNode) = UInt128(0)
 function iter_token_for_path(n::BridgeNode, key::AbstractVector{UInt8})
-    nk = n.key;
+    nk = n.key
     nklen = length(nk)
     length(key) <= nklen || return (NODE_ITER_FINISHED, UInt8[])
     short = nk[1:length(key)]
@@ -254,7 +254,7 @@ end
 
 function node_branches_mask(n::BridgeNode, key::AbstractVector{UInt8})
     node_is_empty(n) && return ByteMask()
-    nk = n.key;
+    nk = n.key
     klen = length(key)
     length(nk) > klen && slice_starts_with(nk, key) ? ByteMask(nk[klen + 1]) : ByteMask()
 end
@@ -270,7 +270,7 @@ function nth_child_from_key(
     n::BridgeNode{V, A}, key::AbstractVector{UInt8}, idx::Int
 ) where {V, A}
     idx != 0 && return (nothing, nothing)
-    nk = n.key;
+    nk = n.key
     klen = length(key)
     length(nk) > klen && slice_starts_with(nk, key) || return (nothing, nothing)
     byte = nk[klen + 1]
@@ -278,7 +278,7 @@ function nth_child_from_key(
 end
 
 function first_child_from_key(n::BridgeNode{V, A}, key::AbstractVector{UInt8}) where {V, A}
-    nk = n.key;
+    nk = n.key
     klen = length(key)
     length(nk) > klen && slice_starts_with(nk, key) || return (nothing, nothing)
     rest = nk[(klen + 1):end]
@@ -303,8 +303,8 @@ function take_node_at_key!(
     slice_starts_with(nk, key) || return nothing
     length(nk) == length(key) && n.is_child || return nothing
     rc = into_child(_bn_pl(n))
-    n.key = UInt8[];
-    n.is_child = false;
+    n.key = UInt8[]
+    n.is_child = false
     n.payload = nothing
     rc
 end
@@ -389,7 +389,7 @@ function _bridge_splice!(
         node_add_payload!(dense, nk[(overlap + 1):end], n.is_child, _bn_pl(n))
         node_add_payload!(dense, collect(key)[(overlap + 1):end], is_child, payload)
         if overlap > 0
-            n.key = nk[1:overlap];
+            n.key = nk[1:overlap]
             n.is_child = true
             n.payload = ValOrChild(TrieNodeODRc(dense, n.alloc))
             return IS_CHILD ? true : (nothing, true)

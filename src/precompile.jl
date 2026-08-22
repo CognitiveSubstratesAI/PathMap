@@ -53,9 +53,9 @@ using PrecompileTools
     # ── Algebraic ops ─────────────────────────────────────────────────
     a = PathMap{Nothing}()
     b = PathMap{Nothing}()
-    set_val_at!(a, b"p", nothing);
+    set_val_at!(a, b"p", nothing)
     set_val_at!(a, b"q", nothing)
-    set_val_at!(b, b"q", nothing);
+    set_val_at!(b, b"q", nothing)
     set_val_at!(b, b"r", nothing)
 
     pjoin(a, b)
@@ -110,9 +110,9 @@ using PrecompileTools
     # ── Policy API ───────────────────────────────────────────────────
     mf = PathMap{Float64}()
     mg = PathMap{Float64}()
-    set_val_at!(mf, b"x", 1.0);
+    set_val_at!(mf, b"x", 1.0)
     set_val_at!(mf, b"y", 2.0)
-    set_val_at!(mg, b"y", 3.0);
+    set_val_at!(mg, b"y", 3.0)
     set_val_at!(mg, b"z", 4.0)
 
     pjoin_policy(mf, mg, SumPolicy())

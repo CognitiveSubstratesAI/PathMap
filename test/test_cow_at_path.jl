@@ -49,14 +49,15 @@ function _shared_pair()
 end
 
 _snapshot(m) = (PathMap.val_count(m),
-                PathMap.get_val_at(m, _b("x:1")),
-                PathMap.get_val_at(m, _b("x:2")),
-                PathMap.get_val_at(m, _b("x:3")))
+    PathMap.get_val_at(m, _b("x:1")),
+    PathMap.get_val_at(m, _b("x:2")),
+    PathMap.get_val_at(m, _b("x:3")))
 
 @testset "writes through write_zipper_at_path do not corrupt a sharing map" begin
 
     @testset "remove_val_at! — the shape that surfaced it" begin
-        (s, t) = _shared_pair(); before = _snapshot(s)
+        (s, t) = _shared_pair()
+        before = _snapshot(s)
         PathMap.remove_val_at!(t, _b("g:x:1"), false)
         @test PathMap.get_val_at(t, _b("g:x:1")) === nothing   # the target really changed
         @test _snapshot(s) == before                            # and the source did not
@@ -65,7 +66,8 @@ _snapshot(m) = (PathMap.val_count(m),
     @testset "wz_set_val! OVERWRITING an existing value" begin
         # Int payloads, so overwriting is observable. With UnitVal it is not, and this case reads
         # as passing on the broken code.
-        (s, t) = _shared_pair(); before = _snapshot(s)
+        (s, t) = _shared_pair()
+        before = _snapshot(s)
         z = PathMap.write_zipper_at_path(t, _b("g:x:1"))
         PathMap.wz_set_val!(z, 999)
         @test PathMap.get_val_at(t, _b("g:x:1")) == 999
@@ -73,7 +75,8 @@ _snapshot(m) = (PathMap.val_count(m),
     end
 
     @testset "wz_set_val! creating a NEW sibling" begin
-        (s, t) = _shared_pair(); before = _snapshot(s)
+        (s, t) = _shared_pair()
+        before = _snapshot(s)
         z = PathMap.write_zipper_at_path(t, _b("g:x:4"))
         PathMap.wz_set_val!(z, 444)
         @test PathMap.get_val_at(t, _b("g:x:4")) == 444
@@ -82,7 +85,8 @@ _snapshot(m) = (PathMap.val_count(m),
     end
 
     @testset "wz_remove_val! with prune" begin
-        (s, t) = _shared_pair(); before = _snapshot(s)
+        (s, t) = _shared_pair()
+        before = _snapshot(s)
         z = PathMap.write_zipper_at_path(t, _b("g:x:1"))
         PathMap.wz_remove_val!(z, true)
         @test PathMap.get_val_at(t, _b("g:x:1")) === nothing
@@ -90,14 +94,16 @@ _snapshot(m) = (PathMap.val_count(m),
     end
 
     @testset "wz_take_map! removes the subtrie from the target only" begin
-        (s, t) = _shared_pair(); before = _snapshot(s)
+        (s, t) = _shared_pair()
+        before = _snapshot(s)
         z = PathMap.write_zipper_at_path(t, _b("g:x:1"))
         PathMap.wz_take_map!(z, false)
         @test _snapshot(s) == before
     end
 
     @testset "wz_graft_map! over a shared position" begin
-        (s, t) = _shared_pair(); before = _snapshot(s)
+        (s, t) = _shared_pair()
+        before = _snapshot(s)
         other = PathMap.PathMap{Int}()
         PathMap.set_val_at!(other, _b("q"), 7)
         z = PathMap.write_zipper_at_path(t, _b("g:x:1"))
@@ -115,7 +121,9 @@ _snapshot(m) = (PathMap.val_count(m),
         PathMap.set_val_at!(btm, _b("a:1"), 1)
         PathMap.set_val_at!(btm, _b("a:2"), 2)
         PathMap.set_val_at!(btm, _b("b:1"), 3)
-        read_btm = PathMap.PathMap{Int, PathMap.GlobalAlloc}(copy(btm.root), btm.root_val, btm.alloc)
+        read_btm = PathMap.PathMap{Int, PathMap.GlobalAlloc}(
+            copy(btm.root), btm.root_val, btm.alloc
+        )
         before = PathMap.val_count(read_btm)
 
         PathMap.remove_val_at!(btm, _b("a:1"), false)

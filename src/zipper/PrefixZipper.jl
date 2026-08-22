@@ -169,8 +169,8 @@ function _pz_ascend_until_n!(pz::PrefixZipper, val::Bool)::Union{Nothing, Int}
 
     depth = _pos_prefixed_depth(pz.position)
     if depth === nothing
-        ;
-        return nothing;
+
+        return nothing
     end
     ascended += depth
     _pz_set_valid!(pz, 0)
@@ -231,7 +231,10 @@ end
 
 # ── val_at — upstream prefix_zipper.rs:245-248
 pz_val_at(pz::PrefixZipper, path::AbstractVector{UInt8}) =
-    (a = _pz_adjust_lookup_path(pz, path); a === nothing ? nothing : zipper_val_at(pz.source, a))
+    (
+        a=_pz_adjust_lookup_path(pz, path);
+        a === nothing ? nothing : zipper_val_at(pz.source, a)
+    )
 
 function pz_at_root(pz::PrefixZipper)
     if pz.position.tag == PREFIX_POS_PREFIX

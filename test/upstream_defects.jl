@@ -33,8 +33,12 @@ function _defect_run(tag::String, script::String)
     out
 end
 
-_atoms(out) = (m = match(r"\|\[(.*?)\] vc=", out)) === nothing ? String[] :
-              (isempty(m.captures[1]) ? String[] : sort(String.(split(m.captures[1], ","))))
+_atoms(out) =
+    if (m = match(r"\|\[(.*?)\] vc=", out)) === nothing
+        String[]
+    else
+        (isempty(m.captures[1]) ? String[] : sort(String.(split(m.captures[1], ","))))
+    end
 
 @testset "upstream defects we deliberately do NOT reproduce" begin
 
@@ -43,27 +47,27 @@ _atoms(out) = (m = match(r"\|\[(.*?)\] vc=", out)) === nothing ? String[] :
         #   upstream -> [a]     it drops `b`, a proper prefix of the subtracted `bbba`
         #   ours     -> [a,b]   correct: only `bbba` is subtracted
         out = _defect_run("MINIMAL — 3 distinct first bytes => dense node",
-                          "A a b bbba\nAROOTVAL 0\nS bbba\nSROOTVAL 0\nORIGIN -\nOP SUB 1\n")
+            "A a b bbba\nAROOTVAL 0\nS bbba\nSROOTVAL 0\nORIGIN -\nOP SUB 1\n")
         @test _atoms(out) == ["a", "b"]
 
         # Each condition shown NECESSARY. Two distinct first bytes keeps the node a Pair, and
         # upstream is CORRECT there — which is why every hand-built probe missed this for so long.
         two = _defect_run("2 first bytes — Pair, upstream agrees",
-                          "A b bbba\nAROOTVAL 0\nS bbba\nSROOTVAL 0\nORIGIN -\nOP SUB 1\n")
+            "A b bbba\nAROOTVAL 0\nS bbba\nSROOTVAL 0\nORIGIN -\nOP SUB 1\n")
         @test _atoms(two) == ["b"]
 
         four = _defect_run("4 first bytes — still dense",
-                           "A a c b bbba\nAROOTVAL 0\nS bbba\nSROOTVAL 0\nORIGIN -\nOP SUB 1\n")
+            "A a c b bbba\nAROOTVAL 0\nS bbba\nSROOTVAL 0\nORIGIN -\nOP SUB 1\n")
         @test _atoms(four) == ["a", "b", "c"]
 
         # No value at a prefix of the subtracted path -> nothing to over-remove, both agree.
         nopfx = _defect_run("no value at a prefix — both agree",
-                            "A a c bbba\nAROOTVAL 0\nS bbba\nSROOTVAL 0\nORIGIN -\nOP SUB 1\n")
+            "A a c bbba\nAROOTVAL 0\nS bbba\nSROOTVAL 0\nORIGIN -\nOP SUB 1\n")
         @test _atoms(nopfx) == ["a", "c"]
 
         # prune is IRRELEVANT — the same divergence with SUB 0.
         np = _defect_run("prune=0 — same result",
-                         "A a b bbba\nAROOTVAL 0\nS bbba\nSROOTVAL 0\nORIGIN -\nOP SUB 0\n")
+            "A a b bbba\nAROOTVAL 0\nS bbba\nSROOTVAL 0\nORIGIN -\nOP SUB 0\n")
         @test _atoms(np) == ["a", "b"]
     end
 
@@ -112,31 +116,31 @@ _atoms(out) = (m = match(r"\|\[(.*?)\] vc=", out)) === nothing ? String[] :
 
         # --- PAIR 1: graft, no source root value -------------------------------------------------
         a = _defect_run("graft alone — engines AGREE (control)",
-                        "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\n")
+            "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\n")
         @test _atoms(a) == ["::aa", ":ab::"]
 
         b = _defect_run("graft then SETVAL — upstream drops the graft",
-                        "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n")
+            "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n")
         @test _atoms(b) == [":", "::aa", ":ab::"]     # upstream: [:, ::aa] — `:ab::` gone
         @test ":ab::" in _atoms(b)                     # the grafted path SURVIVES the set_val
 
         # --- PAIR 2: insert_prefix. NO graft involved, which is what generalises the defect --------
         c = _defect_run("insert_prefix alone — engines AGREE (control)",
-                        "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN bb\nOP INSPREFIX a\n")
+            "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN bb\nOP INSPREFIX a\n")
         @test _atoms(c) == ["bb:", "bba:"]
 
         d = _defect_run("insert_prefix then SETVAL — upstream reverts the prefix insertion",
-                        "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN bb\nOP INSPREFIX a\nOP SETVAL\n")
+            "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN bb\nOP INSPREFIX a\nOP SETVAL\n")
         @test _atoms(d) == ["bb", "bb:", "bba:"]      # upstream: [bb, bb:] — `bba:` gone
         @test "bba:" in _atoms(d)
 
         # --- PAIR 3: join_map_into --------------------------------------------------------------
         e = _defect_run("join alone — engines AGREE (control)",
-                        "A ::\nAROOTVAL 0\nS :aa ab ba\nSROOTVAL 0\nORIGIN :\nOP JOINMAP\n")
+            "A ::\nAROOTVAL 0\nS :aa ab ba\nSROOTVAL 0\nORIGIN :\nOP JOINMAP\n")
         @test _atoms(e) == ["::", "::", "::aa", ":ab", ":ba"]   # `::` twice: SHARED duplicate, see below
 
         f = _defect_run("join then SETVAL — upstream drops everything the join added",
-                        "A ::\nAROOTVAL 0\nS :aa ab ba\nSROOTVAL 0\nORIGIN :\nOP JOINMAP\nOP SETVAL\n")
+            "A ::\nAROOTVAL 0\nS :aa ab ba\nSROOTVAL 0\nORIGIN :\nOP JOINMAP\nOP SETVAL\n")
         @test _atoms(f) == [":", "::", "::aa", ":ab", ":ba"]    # upstream: [:, ::] — 3 paths gone
         @test all(p -> p in _atoms(f), ["::aa", ":ab", ":ba"])
 
@@ -145,14 +149,15 @@ _atoms(out) = (m = match(r"\|\[(.*?)\] vc=", out)) === nothing ? String[] :
         # wrong and would send a reader hunting in the wrong function. It is destructive only when
         # it follows an op that replaced the node at the focus.
         g = _defect_run("SETVAL with no preceding op — engines AGREE",
-                        "A ::aa\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN :\nOP SETVAL\n")
+            "A ::aa\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN :\nOP SETVAL\n")
         @test _atoms(g) == [":", "::aa"]
 
         # --- CONTROL: it is NOT about zippers created at a path ----------------------------------
         # Reaching the same focus by DESCEND from the map root instead of write_zipper_at_path gives
         # byte-identical results on both engines, so `root_key_start` / the origin is not involved.
         h = _defect_run("same as PAIR 2 but focus reached by DESCEND — identical",
-                        "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN -\nOP DESCEND bb\nOP INSPREFIX a\nOP SETVAL\n")
+            "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN -\nOP DESCEND bb\nOP INSPREFIX a\nOP SETVAL\n"
+        )
         @test _atoms(h) == _atoms(d)
 
         # --- THE FOUR DISCRIMINATORS: node SHAPE decides, not op adjacency --------------------
@@ -160,26 +165,30 @@ _atoms(out) = (m = match(r"\|\[(.*?)\] vc=", out)) === nothing ? String[] :
         # both engines. Two of them agree with upstream, which is exactly why they are convincing.
         base = "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\n"
 
-        d1 = _defect_run("D1 graft + SETVAL — upstream loses the graft", base * "OP SETVAL\n")
+        d1 = _defect_run(
+            "D1 graft + SETVAL — upstream loses the graft", base * "OP SETVAL\n"
+        )
         @test _atoms(d1) == [":", "::aa", ":ab::"]              # upstream: [:, ::aa]
 
         # D2 kills "set_val discards the PRECEDING op": put an unrelated op in between and upstream
         # still loses the graft. The graft was already corrupted; set_val only detonates it.
-        d2 = _defect_run("D2 graft + REMOVEVAL + SETVAL — STILL lost, so adjacency is irrelevant",
-                         base * "OP REMOVEVAL 0\nOP SETVAL\n")
+        d2 = _defect_run(
+            "D2 graft + REMOVEVAL + SETVAL — STILL lost, so adjacency is irrelevant",
+            base * "OP REMOVEVAL 0\nOP SETVAL\n")
         @test _atoms(d2) == [":", "::aa", ":ab::"]              # upstream: [:, ::aa] — still
 
         # D3 kills it from the other side: make the parent DENSE already (3 distinct first bytes)
         # and there is no LineList overflow to trigger, so set_val directly after the graft is
         # harmless — and BOTH ENGINES AGREE, including that the graft correctly REPLACED `::aa`.
         d3 = _defect_run("D3 parent already dense — no overflow, engines AGREE",
-                         "A ::aa b c\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n")
+            "A ::aa b c\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n"
+        )
         @test _atoms(d3) == [":", ":ab::", "b", "c"]            # `::aa` correctly gone on BOTH
 
         # D4 isolates the colliding sibling: with slot_1 free there is no ambiguous node to build,
         # so again no loss and the engines AGREE.
         d4 = _defect_run("D4 slot_1 free — no ambiguous node, engines AGREE",
-                         "A :\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n")
+            "A :\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n")
         @test _atoms(d4) == [":", ":ab::"]
     end
 
@@ -193,19 +202,19 @@ _atoms(out) = (m = match(r"\|\[(.*?)\] vc=", out)) === nothing ? String[] :
         #   upstream -> [::,::b]            the source's `bb::` is GONE
         #   ours     -> [::,::b,::bb::]     the graft survives AND the root value is set
         out = _defect_run("source HAS a root value",
-                          "A ::b\nAROOTVAL 0\nS bb::\nSROOTVAL 1\nORIGIN ::\nOP GRAFTMAP\n")
+            "A ::b\nAROOTVAL 0\nS bb::\nSROOTVAL 1\nORIGIN ::\nOP GRAFTMAP\n")
         @test _atoms(out) == ["::", "::b", "::bb::"]
 
         # CONTROL that isolates the cause: same program, root value removed. Upstream keeps the
         # graft here, so the root value is what destroys it — not the graft point's key width.
         ctl = _defect_run("source has NO root value — upstream agrees",
-                          "A ::b\nAROOTVAL 0\nS bb::\nSROOTVAL 0\nORIGIN ::\nOP GRAFTMAP\n")
+            "A ::b\nAROOTVAL 0\nS bb::\nSROOTVAL 0\nORIGIN ::\nOP GRAFTMAP\n")
         @test _atoms(ctl) == ["::b", "::bb::"]
 
         # Single-byte graft point: retires the "multi-byte node key" hypothesis this family was
         # once attributed to — the defect fires here too.
         one = _defect_run("single-byte origin — still diverges upstream",
-                          "A :b\nAROOTVAL 0\nS bb::\nSROOTVAL 1\nORIGIN :\nOP GRAFTMAP\n")
+            "A :b\nAROOTVAL 0\nS bb::\nSROOTVAL 1\nORIGIN :\nOP GRAFTMAP\n")
         @test ":" in [string(c) for c in ":"]           # (guard: origin is a single byte)
         @test _atoms(one) == [":", ":b", ":bb::"]
     end
@@ -217,7 +226,7 @@ _atoms(out) = (m = match(r"\|\[(.*?)\] vc=", out)) === nothing ? String[] :
         # until the join was run alone on both sides; that is the `00020` lesson.
         for (tag, s) in (("S = a:b ab ba", "a:b ab ba"), ("S = ba", "ba"), ("S = a", "a"))
             out = _defect_run("duplicate after join — $tag",
-                              "A bb\nAROOTVAL 0\nS $s\nSROOTVAL 0\nORIGIN b\nOP JOINMAP\n")
+                "A bb\nAROOTVAL 0\nS $s\nSROOTVAL 0\nORIGIN b\nOP JOINMAP\n")
             @test count(==("bb"), _atoms(out)) == 2
         end
     end

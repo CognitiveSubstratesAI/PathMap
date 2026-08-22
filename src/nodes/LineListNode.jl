@@ -551,31 +551,31 @@ function validate_list_node(n::LineListNode)::Bool
     is_used_0(n) && isempty(k0) && (println("Invalid: zero-length key0 $(n)"); return false)
     is_used_1(n) && isempty(k1) && (println("Invalid: zero-length key1 $(n)"); return false)
     if is_child_0(n) && is_used_1(n) && slice_starts_with(k1, k0) && length(k1) > length(k0)
-        println("Invalid: ambiguous path violation");
+        println("Invalid: ambiguous path violation")
         return false
     end
     if is_used_1(n) && length(k0) > length(k1) && slice_starts_with(k0, k1)
-        println("Invalid: ordering violation");
+        println("Invalid: ordering violation")
         return false
     end
     if length(k0) >= 2 && length(k1) >= 2 && k0[1] == k1[1] && k0[2] == k1[2]
-        println("Invalid: prefix too long (>1 byte)");
+        println("Invalid: prefix too long (>1 byte)")
         return false
     end
     if !is_used_1(n) && is_child_1(n)
-        println("Invalid: slot1 child bit set while slot1 empty");
+        println("Invalid: slot1 child bit set while slot1 empty")
         return false
     end
     if length(k0) + length(k1) > KEY_BYTES_CNT
-        println("Invalid: key lengths exceed KEY_BYTES_CNT");
+        println("Invalid: key lengths exceed KEY_BYTES_CNT")
         return false
     end
     if length(k0) == KEY_BYTES_CNT && is_used_1(n)
-        println("Invalid: slot0 saturates key storage but slot1 is filled");
+        println("Invalid: slot0 saturates key storage but slot1 is filled")
         return false
     end
     if is_used_1(n) && k0 > k1
-        println("Invalid: keys not sorted");
+        println("Invalid: keys not sorted")
         return false
     end
     true
@@ -658,42 +658,42 @@ Box site in the engine. A closure whose captures Julia cannot prove immutable bo
 transformation, not a rewrite: same branches, same returns, same hardcoded `true`.
 """
 function _lln_set_recursive(child_rc::TrieNodeODRc{V, A}, sub_key::AbstractVector{UInt8},
-                            is_child::Bool, payload::ValOrChild{V, A}) where {V, A}
-        child = as_tagged(child_rc)
-        if is_child
-            inner_rc = into_child(payload)
-            res = node_set_branch!(child, sub_key, inner_rc)
-            # node_set_branch! returns Bool on success or TrieNodeODRc on upgrade
-            return if res isa TrieNodeODRc
-                SetPayloadUpgrade{V, A}(res)
-            else
-                # `created_subnode` is TRUE unconditionally — upstream hardcodes it in BOTH arms
-                # (`.map(|_| (None, true))` for the child arm, `.map(|(ret_val, _)| (ret_val, true))`
-                # for the value arm; line_list_node.rs:944-951). We reach here only via `split_0`,
-                # which by definition JUST CREATED a subnode at THIS level — what the recursive
-                # call reports about ITS own slot is a different question and must not be
-                # forwarded.
-                #
-                # ⚠️ The value arm below already hardcoded `true`; only this one forwarded `res`,
-                # so the bug was an asymmetry inside this function. Forwarding a `false` made
-                # `node_set_branch!` under-report, `_wz_graft_internal!` then skipped its
-                # `mend_root!` + `descend_to_internal!`, and the zipper kept pointing at the parent
-                # while the split had moved the value down into the new child — so the follow-up
-                # `wz_remove_val!` could not FIND a value the read zipper still enumerated.
-                # Symptom: graft_map at a focus that holds a value left it behind
-                # (`[:ab,:abaaa]` vs upstream `[:abaaa]`). Fuzz 00106/00111/00234/00281.
-                SetPayloadOk{V, A}(nothing, true)
-            end
+    is_child::Bool, payload::ValOrChild{V, A}) where {V, A}
+    child = as_tagged(child_rc)
+    if is_child
+        inner_rc = into_child(payload)
+        res = node_set_branch!(child, sub_key, inner_rc)
+        # node_set_branch! returns Bool on success or TrieNodeODRc on upgrade
+        return if res isa TrieNodeODRc
+            SetPayloadUpgrade{V, A}(res)
         else
-            val = into_val(payload)
-            r2 = node_set_val!(child, sub_key, val)
-            if r2 isa TrieNodeODRc
-                return SetPayloadUpgrade{V, A}(r2)
-            else
-                (old_val, _) = r2
-                return SetPayloadOk{V, A}(old_val, true)
-            end
+            # `created_subnode` is TRUE unconditionally — upstream hardcodes it in BOTH arms
+            # (`.map(|_| (None, true))` for the child arm, `.map(|(ret_val, _)| (ret_val, true))`
+            # for the value arm; line_list_node.rs:944-951). We reach here only via `split_0`,
+            # which by definition JUST CREATED a subnode at THIS level — what the recursive
+            # call reports about ITS own slot is a different question and must not be
+            # forwarded.
+            #
+            # ⚠️ The value arm below already hardcoded `true`; only this one forwarded `res`,
+            # so the bug was an asymmetry inside this function. Forwarding a `false` made
+            # `node_set_branch!` under-report, `_wz_graft_internal!` then skipped its
+            # `mend_root!` + `descend_to_internal!`, and the zipper kept pointing at the parent
+            # while the split had moved the value down into the new child — so the follow-up
+            # `wz_remove_val!` could not FIND a value the read zipper still enumerated.
+            # Symptom: graft_map at a focus that holds a value left it behind
+            # (`[:ab,:abaaa]` vs upstream `[:abaaa]`). Fuzz 00106/00111/00234/00281.
+            SetPayloadOk{V, A}(nothing, true)
         end
+    else
+        val = into_val(payload)
+        r2 = node_set_val!(child, sub_key, val)
+        if r2 isa TrieNodeODRc
+            return SetPayloadUpgrade{V, A}(r2)
+        else
+            (old_val, _) = r2
+            return SetPayloadOk{V, A}(old_val, true)
+        end
+    end
 end
 
 """
@@ -1687,9 +1687,9 @@ function merge_list_nodes(a::LineListNode{V, A}, b::LineListNode{V, A}) where {V
 
     function record!(r, a_idx::Int, b_idx::Int)
         if r isa AlgResElement
-            push!(entries, r.value);
+            push!(entries, r.value)
             push!(identity_masks, UInt64(0))
-            used[a_idx + 1] = true;
+            used[a_idx + 1] = true
             used[b_idx + 1] = true
             return true
         elseif r isa AlgResIdentity
@@ -1700,9 +1700,9 @@ function merge_list_nodes(a::LineListNode{V, A}, b::LineListNode{V, A}) where {V
             else
                 (_lln_key(b, b_slot), _lln_clone_payload(b, b_slot))
             end
-            push!(entries, (Vector{UInt8}(pair[1]), pair[2]));
+            push!(entries, (Vector{UInt8}(pair[1]), pair[2]))
             push!(identity_masks, mask)
-            used[a_idx + 1] = true;
+            used[a_idx + 1] = true
             used[b_idx + 1] = true
             return true
         end
@@ -1761,10 +1761,10 @@ function merge_list_nodes(a::LineListNode{V, A}, b::LineListNode{V, A}) where {V
             imask != 0 && return AlgResIdentity(imask)
             (k0, p0), (k1, p1) = entries[1], entries[2]
             if should_swap_keys(k0, k1)
-                set_slot0!(new_node, k1, p1);
+                set_slot0!(new_node, k1, p1)
                 set_slot1!(new_node, k0, p0)
             else
-                set_slot0!(new_node, k0, p0);
+                set_slot0!(new_node, k0, p0)
                 set_slot1!(new_node, k1, p1)
             end
             return AlgResElement{TrieNodeODRc{V, A}}(TrieNodeODRc(new_node, a.alloc))

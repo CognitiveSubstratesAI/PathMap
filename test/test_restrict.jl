@@ -62,7 +62,11 @@ const _RESTRICT_CASES = Tuple{String, String, String}[
     # ── the defect: LineList self, S a strict superset ───────────────────────────────────────
     ("{a,b} ⊑ {a,b,c}", "A a b\nS a b c\nOP RESTRICT\n", "Identity;|[a,b] vc=2"),
     ("{a,b} ⊑ {a,b,c,d,e}", "A a b\nS a b c d e\nOP RESTRICT\n", "Identity;|[a,b] vc=2"),
-    ("{aa,ab} ⊑ {aa,ab,ac}", "A aa ab\nS aa ab ac\nOP RESTRICT\n", "Identity;|[aa,ab] vc=2"),
+    (
+        "{aa,ab} ⊑ {aa,ab,ac}",
+        "A aa ab\nS aa ab ac\nOP RESTRICT\n",
+        "Identity;|[aa,ab] vc=2"
+    ),
 
     # ── controls: these AGREED before the fix and must not move ──────────────────────────────
     ("control: S exactly equal", "A a b\nS a b\nOP RESTRICT\n", "Identity;|[a,b] vc=2"),
@@ -73,33 +77,62 @@ const _RESTRICT_CASES = Tuple{String, String, String}[
     # ── coverage of the paths the per-slot port introduced ───────────────────────────────────
     # `_lln_restrict_slot_contents` early-outs, `_follow_path_to_value`'s three answers, and
     # `_lln_combine_slot_results_into_node_result`'s four arms.
-    ("one slot survives, one dies", "A aa ab ba\nS aa ba\nOP RESTRICT\n", "Element;|[aa,ba] vc=2"),
+    (
+        "one slot survives, one dies",
+        "A aa ab ba\nS aa ba\nOP RESTRICT\n",
+        "Element;|[aa,ba] vc=2"
+    ),
     ("child slot, S superset below", "A abc abd\nS abc abd abe\nOP RESTRICT\n",
         "Identity;|[abc,abd] vc=2"),
-    ("S holds a VALUE above the path", "A abc abd\nS ab\nOP RESTRICT\n", "Identity;|[abc,abd] vc=2"),
+    (
+        "S holds a VALUE above the path",
+        "A abc abd\nS ab\nOP RESTRICT\n",
+        "Identity;|[abc,abd] vc=2"
+    ),
     ("S only continues past self", "A abc abd\nS abcd\nOP RESTRICT\n", "None;|[] vc=0"),
     ("disjoint ⇒ None", "A a\nS b\nOP RESTRICT\n", "None;|[] vc=0"),
     ("dense self, S subset", "A a b c d e f\nS a b\nOP RESTRICT\n", "Element;|[a,b] vc=2"),
-    ("S root value ignored", "A a b\nS a b c\nSROOTVAL 1\nOP RESTRICT\n", "Identity;|[a,b] vc=2"),
-    ("A root value survives", "A a b\nAROOTVAL 1\nS a b c\nOP RESTRICT\n", "Identity;|[a,b] vc=3"),
+    (
+        "S root value ignored",
+        "A a b\nS a b c\nSROOTVAL 1\nOP RESTRICT\n",
+        "Identity;|[a,b] vc=2"
+    ),
+    (
+        "A root value survives",
+        "A a b\nAROOTVAL 1\nS a b c\nOP RESTRICT\n",
+        "Identity;|[a,b] vc=3"
+    ),
     ("dense below a shared prefix", "A abc abd abe\nS abc abd abe abf\nOP RESTRICT\n",
         "Element;|[abc,abd,abe] vc=3"),
     ("two levels, half kept", "A aaa aab aba abb\nS aaa abb\nOP RESTRICT\n",
         "Element;|[aaa,abb] vc=2"),
-    ("self is a prefix of S's only path", "A abc\nS abcdef\nOP RESTRICT\n", "None;|[] vc=0"),
+    (
+        "self is a prefix of S's only path",
+        "A abc\nS abcdef\nOP RESTRICT\n",
+        "None;|[] vc=0"
+    ),
     ("origin below root, S unshifted", "A ab ac\nS ab ac ad\nORIGIN a\nOP RESTRICT\n",
         "None;|[] vc=0"),
     ("origin below root, S shifted", "A ab ac\nS b c d\nORIGIN a\nOP RESTRICT\n",
         "Identity;|[ab,ac] vc=2"),
-    ("keys longer than KEY_BYTES_CNT", "A abcdefgh abcdefgi\nS abcdefgh abcdefgi abcdefgj\nOP RESTRICT\n",
+    ("keys longer than KEY_BYTES_CNT",
+        "A abcdefgh abcdefgi\nS abcdefgh abcdefgi abcdefgj\nOP RESTRICT\n",
         "Identity;|[abcdefgh,abcdefgi] vc=2"),
     # The saturation idiom the Element-forever bug broke: the SECOND restrict must also say
     # Identity, which is the whole reason the status matters.
     ("idempotent — twice ⇒ Identity twice", "A a b\nS a b c\nOP RESTRICT\nOP RESTRICT\n",
         "Identity;Identity;|[a,b] vc=2"),
     ("value slot under a covering path", "A ab\nS a\nOP RESTRICT\n", "Identity;|[ab] vc=1"),
-    ("value + child at the same key", "A a ab\nS a\nOP RESTRICT\n", "Identity;|[a,ab] vc=2"),
-    ("value + child, only child covered", "A a ab\nS ab\nOP RESTRICT\n", "Element;|[ab] vc=1"),
+    (
+        "value + child at the same key",
+        "A a ab\nS a\nOP RESTRICT\n",
+        "Identity;|[a,ab] vc=2"
+    ),
+    (
+        "value + child, only child covered",
+        "A a ab\nS ab\nOP RESTRICT\n",
+        "Element;|[ab] vc=1"
+    ),
 
     # ── added 2026-08-01 while re-verifying the port: shapes the set above did not reach ──────
     # An EMPTY `other` is the one input that exercises `_lln_restrict_slot_contents`'s
@@ -114,7 +147,11 @@ const _RESTRICT_CASES = Tuple{String, String, String}[
     # together — the `should_swap_keys` invariant, not just the algebra.
     ("':' alphabet, equal", "A a:b a:: b\nS a:b a:: b\nOP RESTRICT\n",
         "Identity;|[a::,a:b,b] vc=3"),
-    ("':' alphabet, partial", "A a:b a:: b\nS a:b b\nOP RESTRICT\n", "Element;|[a:b,b] vc=2"),
+    (
+        "':' alphabet, partial",
+        "A a:b a:: b\nS a:b b\nOP RESTRICT\n",
+        "Element;|[a:b,b] vc=2"
+    )
 ]
 
 @testset "restrict is 1:1 with upstream (STATUS, not just contents)" begin

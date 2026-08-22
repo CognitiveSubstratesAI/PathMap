@@ -62,18 +62,23 @@ end
 function PathMap.psubtract(a::FBits, b::FBits)
     r = FBits(a.b & ~b.b)
     # NEVER sets COUNTER_IDENT — ring.rs:21 forbids a non-commutative op from setting bit 1.
-    r.b == 0 ? PathMap.AlgResNone() :
-    r.b == a.b ? PathMap.AlgResIdentity(PathMap.SELF_IDENT) : PathMap.AlgResElement(r)
+    if r.b == 0
+        PathMap.AlgResNone()
+    elseif r.b == a.b
+        PathMap.AlgResIdentity(PathMap.SELF_IDENT)
+    else
+        PathMap.AlgResElement(r)
+    end
 end
 
 _fparse_val(::Type{PathMap.UnitVal}, tok::AbstractString) =
     (isempty(tok) || error("unit script carries a value token `=$tok` — use `VT bits`");
-     PathMap.UnitVal())
+        PathMap.UnitVal())
 _fparse_val(::Type{FBits}, tok::AbstractString) =
-    isempty(tok) ? FBits(0x1) : FBits(parse(UInt64, tok; base = 16))
+    isempty(tok) ? FBits(0x1) : FBits(parse(UInt64, tok; base=16))
 
 _frender(::PathMap.UnitVal) = ""
-_frender(v::FBits) = "=" * string(v.b; base = 16)
+_frender(v::FBits) = "=" * string(v.b; base=16)
 
 "Split `ab=5` into (\"ab\", \"5\"). Keys never contain `=` — the alphabet is `ab:`."
 function _fsplit_key(tok::AbstractString)
@@ -95,7 +100,8 @@ function _fdump(m)
     # sorts above `:` (0x3a) but below `a`/`b`, so sorting rendered strings would reorder siblings
     # relative to path order. Both engines would still agree, but on a renderer artefact.
     ord = sortperm(paths)
-    "[" * join((paths[i] * vals[i] for i in ord), ",") * "] vc=" * string(PathMap.val_count(m))
+    "[" * join((paths[i] * vals[i] for i in ord), ",") * "] vc=" *
+    string(PathMap.val_count(m))
 end
 
 "Rust prints `AlgebraicStatus` with `{:?}`; match those spellings exactly."
@@ -107,7 +113,7 @@ function _fstatus(s)
 end
 
 function _fmk(::Type{V}, keys::Vector{String}, rootval::Bool,
-              rootval_tok::AbstractString = "") where {V}
+    rootval_tok::AbstractString="") where {V}
     m = FPMT{V}()
     for k in keys
         (path, tok) = _fsplit_key(k)
@@ -121,8 +127,11 @@ end
 # VALUE therefore has to be threaded separately (see wz_meet_into!). Mirrors `_anr` in
 # run_differential.jl.
 _fanr(m::FPMT{V}) where {V} =
-    m.root === nothing ? PathMap.ANRNone{V, PathMap.GlobalAlloc}() :
-                         PathMap.ANRBorrowedRc{V, PathMap.GlobalAlloc}(m.root)
+    if m.root === nothing
+        PathMap.ANRNone{V, PathMap.GlobalAlloc}()
+    else
+        PathMap.ANRBorrowedRc{V, PathMap.GlobalAlloc}(m.root)
+    end
 
 """
     fuzz_cases() -> Dict{String,String}
@@ -156,10 +165,15 @@ A NamedTuple rather than the old 6-tuple: the shape grew by three fields (`vt` a
 root-value tokens) and positional unpacking at four call sites would silently mis-bind.
 """
 function _fparse_text(text::AbstractString)
-    a_keys = String[]; s_keys = String[]
-    a_rootval = false; s_rootval = false
-    a_rootval_tok = ""; s_rootval_tok = ""
-    origin = "-"; ops = String[]; vt = ""
+    a_keys = String[]
+    s_keys = String[]
+    a_rootval = false
+    s_rootval = false
+    a_rootval_tok = ""
+    s_rootval_tok = ""
+    origin = "-"
+    ops = String[]
+    vt = ""
     for ln in split(text, '\n')
         isempty(ln) && continue
         parts = split(ln, ' ')
@@ -211,17 +225,22 @@ function _fuzz_run(::Type{V}, c) where {V}
     # gen_fuzz.rs. See the tail of this function for why the baseline is never taken up front.
     _shared = _fmk(V, s_keys, s_rootval, s_rootval_tok)
     _smk() = FPMT{V, PathMap.GlobalAlloc}(
-        _shared.root === nothing ? nothing : copy(_shared.root), _shared.root_val, _shared.alloc)
+        _shared.root === nothing ? nothing : copy(_shared.root), _shared.root_val,
+        _shared.alloc)
     a = _fmk(V, a_keys, a_rootval, a_rootval_tok)
     trace = IOBuffer()
-    wz = origin == "-" ? PathMap.write_zipper(a) :
-                         PathMap.write_zipper_at_path(a, _fb(origin))
+    wz = if origin == "-"
+        PathMap.write_zipper(a)
+    else
+        PathMap.write_zipper_at_path(a, _fb(origin))
+    end
     for op in ops
         bits = split(op, ' ')
         name = bits[1]
         arg = length(bits) > 1 ? bits[2] : ""
         out = if name == "DESCEND"
-            PathMap.wz_descend_to!(wz, _fb(arg)); "-"
+            PathMap.wz_descend_to!(wz, _fb(arg))
+            "-"
         elseif name == "ASCEND"
             string(PathMap.wz_ascend!(wz, parse(Int, arg)))
         elseif name == "SETVAL"
@@ -229,7 +248,8 @@ function _fuzz_run(::Type{V}, c) where {V}
         elseif name == "REMOVEVAL"
             string(PathMap.wz_remove_val!(wz, arg == "1") !== nothing)
         elseif name == "GRAFTMAP"
-            PathMap.wz_graft_map!(wz, _smk()); "-"
+            PathMap.wz_graft_map!(wz, _smk())
+            "-"
         elseif name == "JOINMAP"
             _fstatus(PathMap.wz_join_map_into!(wz, _smk()))
         elseif name == "MEET"
@@ -253,7 +273,8 @@ function _fuzz_run(::Type{V}, c) where {V}
         elseif name == "REMPREFIX"
             string(PathMap.wz_remove_prefix!(wz, parse(Int, arg)))
         elseif name == "RESET"
-            PathMap.wz_reset!(wz); "-"
+            PathMap.wz_reset!(wz)
+            "-"
         else
             "?"
         end
@@ -267,7 +288,7 @@ function _fuzz_run(::Type{V}, c) where {V}
     _s_now = _fdump(_shared)
     _s_ref = _fdump(_fmk(V, s_keys, s_rootval, s_rootval_tok))
     String(take!(trace)) * "|" * _fdump(a) *
-        (_s_now == _s_ref ? "" : "|SRC-CHANGED:" * _s_now)
+    (_s_now == _s_ref ? "" : "|SRC-CHANGED:" * _s_now)
 end
 
 """
@@ -287,7 +308,7 @@ function fuzz_compare(; limit::Int=typemax(Int))
     for ln in eachline(exp_path)
         isempty(strip(ln)) && continue
         n >= limit && break
-        parts = split(ln, '\t'; limit = 2)
+        parts = split(ln, '\t'; limit=2)
         length(parts) == 2 || continue
         name, want = String(parts[1]), String(parts[2])
         if !haskey(cases, name)

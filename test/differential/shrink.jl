@@ -49,18 +49,20 @@ function _upstream_batch(scripts::Dict{String, String})
     env = copy(ENV)
     env["PATH"] = CARGO * ":" * get(env, "PATH", "")
     out = try
-        read(setenv(Cmd(`cargo run --release --quiet --bin gen_fuzz -- --exec $dir`;
-                        dir = PROBE), env), String)
+        read(
+            setenv(
+                Cmd(`cargo run --release --quiet --bin gen_fuzz -- --exec $dir`;
+                    dir=PROBE), env), String)
     catch e
         @warn "upstream exec failed" exception = e
         return Dict{String, String}()
     finally
-        rm(dir; recursive = true, force = true)
+        rm(dir; recursive=true, force=true)
     end
     res = Dict{String, String}()
     for ln in split(out, '\n')
         isempty(strip(ln)) && continue
-        parts = split(ln, '\t'; limit = 2)
+        parts = split(ln, '\t'; limit=2)
         length(parts) == 2 && (res[String(parts[1])] = String(parts[2]))
     end
     res
@@ -70,13 +72,14 @@ end
 divergence, so it must be comparable, never skipped."
 function _ours(text::String)
     p, io = mktemp()
-    write(io, text); close(io)
+    write(io, text)
+    close(io)
     r = try
         Base.invokelatest(fuzz_run, p)
     catch e
         "ERROR: " * first(sprint(showerror, e), 80)
     finally
-        rm(p; force = true)
+        rm(p; force=true)
     end
     r
 end
@@ -96,13 +99,22 @@ function shrink(c0)
         a_keys, a_rv, s_keys, s_rv, origin, ops = cur
         cands = Tuple{String, Any}[]
         for i in eachindex(ops)                       # drop one op
-            push!(cands, ("op$i", (a_keys, a_rv, s_keys, s_rv, origin, deleteat!(copy(ops), i))))
+            push!(
+                cands,
+                ("op$i", (a_keys, a_rv, s_keys, s_rv, origin, deleteat!(copy(ops), i)))
+            )
         end
         for i in eachindex(a_keys)                    # drop one target key
-            push!(cands, ("ak$i", (deleteat!(copy(a_keys), i), a_rv, s_keys, s_rv, origin, ops)))
+            push!(
+                cands,
+                ("ak$i", (deleteat!(copy(a_keys), i), a_rv, s_keys, s_rv, origin, ops))
+            )
         end
         for i in eachindex(s_keys)                    # drop one source key
-            push!(cands, ("sk$i", (a_keys, a_rv, deleteat!(copy(s_keys), i), s_rv, origin, ops)))
+            push!(
+                cands,
+                ("sk$i", (a_keys, a_rv, deleteat!(copy(s_keys), i), s_rv, origin, ops))
+            )
         end
         a_rv && push!(cands, ("arv", (a_keys, false, s_keys, s_rv, origin, ops)))
         s_rv && push!(cands, ("srv", (a_keys, a_rv, s_keys, false, origin, ops)))
@@ -126,7 +138,7 @@ function shrink(c0)
     (text, _ours(text), get(w, "final", "?"))
 end
 
-_vc(s) = (m = match(r"vc=(\d+)\s*$", s); m === nothing ? -1 : parse(Int, m.captures[1]))
+_vc(s) = (m=match(r"vc=(\d+)\s*$", s); m === nothing ? -1 : parse(Int, m.captures[1]))
 
 "Classify a divergence by atom COUNT — cheap triage that needs no shrinking."
 function _shape(ours, up)
@@ -141,8 +153,12 @@ function main()
     all_cases = fuzz_cases()
     n, mism, errs = fuzz_compare()
     sel = want == "all" ? mism : filter(m -> _shape(m[2], m[3]) == want, mism)
-    failing = vcat([(nm, "mismatch") for (nm, _, _) in sel], [(nm, "error") for (nm, _) in errs])
-    println("=== $(length(mism)) mismatches of $n | shape=$want -> $(length(sel)) | shrinking $maxc ===\n")
+    failing = vcat(
+        [(nm, "mismatch") for (nm, _, _) in sel], [(nm, "error") for (nm, _) in errs]
+    )
+    println(
+        "=== $(length(mism)) mismatches of $n | shape=$want -> $(length(sel)) | shrinking $maxc ===\n"
+    )
     for (name, kind) in first(failing, maxc)
         c0 = _fparse_text(all_cases[name])
         text, ours, up = shrink(c0)

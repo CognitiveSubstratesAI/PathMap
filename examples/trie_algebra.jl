@@ -38,8 +38,8 @@ map_intersect(a, b) = map_subtract(a, map_subtract(a, b))
 function make_set(paths)
     m = PathMap.PathMap{Bool}()
     for p in paths
-        ;
-        set_val_at!(m, p, true);
+
+        set_val_at!(m, p, true)
     end
     m
 end

@@ -21,10 +21,10 @@ using Test, PathMap
 const P = PathMap
 
 @testset "tr_make_map — shares structurally, isolates writes (COW)" begin
-    mk() = (m = P.PathMap{UInt64}();
-            for (k, v) in [("ab", 1), ("ac", 2), ("ad", 3)]
-                set_val_at!(m, Vector{UInt8}(k), UInt64(v))
-            end; m)
+    mk() = (m=P.PathMap{UInt64}();
+        for (k, v) in [("ab", 1), ("ac", 2), ("ad", 3)]
+            set_val_at!(m, Vector{UInt8}(k), UInt64(v))
+        end; m)
 
     @testset "the derived map sees the source's contents" begin
         src = mk()
@@ -109,14 +109,19 @@ const P = PathMap
         for (k, v) in [("pre:aa", 1), ("pre:ab", 2), ("pre:ac", 3), ("other:zz", 9)]
             set_val_at!(m, Vector{UInt8}(k), UInt64(v))
         end
-        keys_of(x) = (z = read_zipper(x); o = String[];
-                      while zipper_to_next_val!(z); push!(o, String(copy(zipper_path(z)))); end; sort(o))
+        keys_of(x) = (z=read_zipper(x); o=String[];
+            while zipper_to_next_val!(z)
+                push!(o, String(copy(zipper_path(z))))
+            end; sort(o))
 
-        @test keys_of(P.tr_make_map(P.trie_ref_at_path(m, Vector{UInt8}("pre:")))) == ["aa","ab","ac"]
-        @test keys_of(P.tr_make_map(P.trie_ref_at_path(m, Vector{UInt8}("pre:a")))) == ["a","b","c"]
-        @test keys_of(P.tr_make_map(P.trie_ref_at_path(m, Vector{UInt8}("other:")))) == ["zz"]
+        @test keys_of(P.tr_make_map(P.trie_ref_at_path(m, Vector{UInt8}("pre:")))) ==
+            ["aa", "ab", "ac"]
+        @test keys_of(P.tr_make_map(P.trie_ref_at_path(m, Vector{UInt8}("pre:a")))) ==
+            ["a", "b", "c"]
+        @test keys_of(P.tr_make_map(P.trie_ref_at_path(m, Vector{UInt8}("other:")))) ==
+            ["zz"]
         @test keys_of(P.tr_make_map(P.trie_ref_at_path(m, UInt8[]))) ==
-              ["other:zz","pre:aa","pre:ab","pre:ac"]
+            ["other:zz", "pre:aa", "pre:ab", "pre:ac"]
         # a prefix matching NOTHING must give an empty map, not a wrong one
         @test isempty(keys_of(P.tr_make_map(P.trie_ref_at_path(m, Vector{UInt8}("nope:")))))
         # and the mid-line region stays isolated, same as the boundary case

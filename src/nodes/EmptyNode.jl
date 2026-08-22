@@ -123,7 +123,8 @@ node_remove_val!(::Nothing, ::AbstractVector{UInt8}, ::Bool) = nothing
 # No branches to remove ⇒ removed nothing.
 node_remove_all_branches!(::Nothing, ::AbstractVector{UInt8}, ::Bool) = false
 
-node_remove_unmasked_branches!(::Nothing, ::AbstractVector{UInt8}, ::ByteMask, ::Bool) = nothing
+node_remove_unmasked_branches!(::Nothing, ::AbstractVector{UInt8}, ::ByteMask, ::Bool) =
+    nothing
 
 # Returns the number of bytes pruned; an empty node has none.
 node_remove_dangling!(::Nothing, ::AbstractVector{UInt8}) = 0

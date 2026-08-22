@@ -66,8 +66,8 @@ SUITE["word_index"]["iterate_all"] = @benchmarkable begin
     rz = read_zipper($_WORD_MAP)
     n = 0
     while zipper_to_next_val!(rz)
-        ;
-        n += 1;
+
+        n += 1
     end
     n
 end

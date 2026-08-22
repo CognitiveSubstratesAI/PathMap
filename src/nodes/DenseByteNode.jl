@@ -402,7 +402,7 @@ function _cf_combine_results(
     end
 
     if is_rec_ident && is_val_ident
-        rm = rec_res.mask;
+        rm = rec_res.mask
         vm = val_res.mask
         new_mask = rm & vm
         if new_mask > 0
@@ -596,8 +596,8 @@ function _bn_pjoin(self::AbstractByteNode{V, A}, other::AbstractByteNode{V, A}) 
     n_bits = count_bits(jm)
     new_values = Vector{CoFreeEntry{V, A}}(undef, n_bits)
 
-    l = 1;
-    r = 1;
+    l = 1
+    r = 1
     c = 1
 
     for i in 1:4
@@ -613,15 +613,15 @@ function _bn_pjoin(self::AbstractByteNode{V, A}, other::AbstractByteNode{V, A}) 
                 (id_mask, new_cf) = _cf_pjoin(lv, rv)
                 # pjoin of (Some, Some) is never None
                 if (id_mask & SELF_IDENT) == 0
-                    ;
-                    is_identity = false;
+
+                    is_identity = false
                 end
                 if (id_mask & COUNTER_IDENT) == 0
-                    ;
-                    is_counter_identity = false;
+
+                    is_counter_identity = false
                 end
                 @inbounds new_values[c] = new_cf
-                l += 1;
+                l += 1
                 r += 1
             elseif (bit & self.mask.bits[i]) != 0
                 # only in self
@@ -668,8 +668,8 @@ function _bn_join_into!(
 
     new_values = Vector{CoFreeEntry{V, A}}(undef, count_bits(jm))
 
-    l = 1;
-    r = 1;
+    l = 1
+    r = 1
     c = 1
 
     for i in 1:4
@@ -684,11 +684,11 @@ function _bn_join_into!(
                 # join_into: mutate lv with rv
                 (id_mask, new_cf) = _cf_pjoin(lv, rv)
                 if (id_mask & SELF_IDENT) == 0
-                    ;
-                    is_identity = false;
+
+                    is_identity = false
                 end
                 @inbounds new_values[c] = new_cf
-                l += 1;
+                l += 1
                 r += 1
             elseif (bit & self.mask.bits[i]) != 0
                 @inbounds new_values[c] = self.values[l]   # take from self (no copy needed)
@@ -730,7 +730,7 @@ function _bn_pmeet(self::AbstractByteNode{V, A}, other::AbstractByteNode{V, A}) 
     sizehint!(new_values, count_bits(mm))
     new_mask = ByteMask()
 
-    l = 1;
+    l = 1
     r = 1
 
     for i in 1:4
@@ -745,7 +745,7 @@ function _bn_pmeet(self::AbstractByteNode{V, A}, other::AbstractByteNode{V, A}) 
                 @inbounds rv = other.values[r]
                 cf_res = _cf_pmeet(lv, rv)
                 if cf_res isa AlgResNone
-                    is_identity = false;
+                    is_identity = false
                     is_counter_identity = false
                 elseif cf_res isa AlgResIdentity
                     m = cf_res.mask
@@ -754,12 +754,12 @@ function _bn_pmeet(self::AbstractByteNode{V, A}, other::AbstractByteNode{V, A}) 
                     new_mask = set(new_mask, UInt8(64*(i-1) + index))
                     push!(new_values, (m & SELF_IDENT) != 0 ? _cf_copy(lv) : _cf_copy(rv))
                 else
-                    is_identity = false;
+                    is_identity = false
                     is_counter_identity = false
                     new_mask = set(new_mask, UInt8(64*(i-1) + index))
                     push!(new_values, cf_res.value)
                 end
-                l += 1;
+                l += 1
                 r += 1
             elseif (bit & self.mask.bits[i]) != 0
                 l += 1
@@ -850,7 +850,7 @@ function _bn_prestrict(
     sizehint!(new_values, count_bits(mm))
     new_mask = ByteMask()
 
-    l = 1;
+    l = 1
     r = 1
 
     for i in 1:4
@@ -875,15 +875,15 @@ function _bn_prestrict(
                     new_mask = set(new_mask, k)
                     push!(new_values, cf_res.value)
                 end
-                l += 1;
+                l += 1
                 r += 1
             else
                 is_identity = false
                 if (bit & self.mask.bits[i]) != 0
-                    ;
+
                     l += 1
                 else
-                    ;
+
                     r += 1
                 end
             end

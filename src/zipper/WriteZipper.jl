@@ -283,7 +283,8 @@ function _wz_descend_to_internal!(z::WriteZipperCore{V, A}) where {V, A}
         # dispatch is dynamic and infers `Any` — the assertion pins the concrete return (all 4
         # node_get_child methods return exactly this), stabilizing `consumed`/`child_rc` and killing
         # the downstream `length`/`>=`/`+`/`view` dynamic-dispatch cascade. Semantic no-op.
-        result = node_get_child(focus_node, key)::Union{Nothing, Tuple{Int, TrieNodeODRc{V, A}}}
+        result =
+            node_get_child(focus_node, key)::Union{Nothing, Tuple{Int, TrieNodeODRc{V, A}}}
         result === nothing && break
         consumed, child_rc = result
         # Only descend if there are bytes remaining AFTER consuming this child's key
@@ -353,7 +354,11 @@ function wz_set_val!(z::WriteZipperCore{V, A}, val::V) where {V, A}
     end
 
     (old_val, created_subnode) = _wz_in_mut_static_result!(
-        z, (node, key) -> node_set_val!(node, key, val)::Union{Tuple{Union{Nothing, V}, Bool}, TrieNodeODRc{V, A}}, (_node, _key) -> (nothing, true)
+        z,
+        (node, key) -> node_set_val!(
+            node, key, val
+        )::Union{Tuple{Union{Nothing, V}, Bool}, TrieNodeODRc{V, A}},
+        (_node, _key) -> (nothing, true)
     )  # retry after upgrade always creates subnode
 
     if created_subnode
@@ -786,7 +791,9 @@ function wz_graft_child_maps!(
     map_count = count_bits(child_mask)
     it = iterate(maps)
     next_map!() = begin
-        it === nothing && error("maps iterator returned fewer items than the number of set bits in child_mask")
+        it === nothing && error(
+            "maps iterator returned fewer items than the number of set bits in child_mask"
+        )
         (m, st) = it
         it = iterate(maps, st)
         m
@@ -806,7 +813,8 @@ function wz_graft_child_maps!(
         for child_byte in iter(child_mask)
             m = next_map!()
             (src_node, src_val) = _pm_into_root(m)
-            src_node === nothing || _wz_set_node_at_child_path!(z, UInt8[child_byte], src_node)
+            src_node === nothing ||
+                _wz_set_node_at_child_path!(z, UInt8[child_byte], src_node)
             src_val === nothing || _wz_set_val_at_child_path!(z, UInt8[child_byte], src_val)
         end
     end
@@ -833,7 +841,8 @@ function _wz_split_at_focus!(z::WriteZipperCore{V, A}) where {V, A}
         z,
         function (node, key)
             taken = take_node_at_key!(node, key, false)
-            new_node = taken === nothing ?
+            new_node =
+                taken === nothing ?
                 TrieNodeODRc(LineListNode{V, A}(alloc), alloc) : taken
             node_set_branch!(node, key, new_node)
         end,
@@ -1190,7 +1199,9 @@ function wz_meet_k_path_into!(
                 wz_ascend!(z, byte_cnt)
                 break
             end
-            other = something(wz_take_map!(z, false), PathMap{V, A}(nothing, nothing, z.alloc))
+            other = something(
+                wz_take_map!(z, false), PathMap{V, A}(nothing, nothing, z.alloc)
+            )
             wz_meet_into!(write_zipper(acc), _anr_of(other), false, other.root_val)
         end
         acc
@@ -1841,7 +1852,7 @@ just fixed one defect caused by pruning at the wrong moment. NOT yet settled by 
 so it is not silently assumed equivalent.
 """
 function _wz_prune_path_internal!(z::WriteZipperCore{V, A},
-                                  should_ascend::Bool = false) where {V, A}
+    should_ascend::Bool=false) where {V, A}
     # The loop only ever SHORTENS prefix_buf, so snapshotting it is enough to undo the movement.
     # Snapshot LAZILY — taken only just before the first cursor move. Most calls prune nothing and
     # break out of the loop immediately, and upstream allocates nothing at all here (it re-slices),
