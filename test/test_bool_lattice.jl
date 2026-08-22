@@ -21,34 +21,34 @@
 #
 # ⚠️ ASSERT THE MASK, NOT JUST THE VARIANT. A test that only checked "Identity vs None" passes on
 # both versions and would have caught neither problem.
-using PathMap, Test
+using PathMaps, Test
 
 @testset "Bool lattice is 1:1 with upstream (mask included)" begin
-    I(m) = (r) -> r isa PathMap.AlgResIdentity && Int(r.mask) == m
-    N = (r) -> r isa PathMap.AlgResNone
+    I(m) = (r) -> r isa PathMaps.AlgResIdentity && Int(r.mask) == m
+    N = (r) -> r isa PathMaps.AlgResNone
 
     # ring.rs:892  pjoin: `if !*self && *other { Identity(COUNTER_IDENT) } else { Identity(SELF_IDENT) }`
-    @test I(1)(PathMap.pjoin(false, false))
-    @test I(2)(PathMap.pjoin(false, true))     # result is `other`
-    @test I(1)(PathMap.pjoin(true, false))
-    @test I(1)(PathMap.pjoin(true, true))     # NOT 3 — upstream claims SELF only
+    @test I(1)(PathMaps.pjoin(false, false))
+    @test I(2)(PathMaps.pjoin(false, true))     # result is `other`
+    @test I(1)(PathMaps.pjoin(true, false))
+    @test I(1)(PathMaps.pjoin(true, true))     # NOT 3 — upstream claims SELF only
 
     # ring.rs:899  pmeet: `if *self && !*other { Identity(COUNTER_IDENT) } else { Identity(SELF_IDENT) }`
-    @test I(1)(PathMap.pmeet(false, false))
-    @test I(1)(PathMap.pmeet(false, true))
-    @test I(2)(PathMap.pmeet(true, false))    # result is `other`
-    @test I(1)(PathMap.pmeet(true, true))     # NOT 3
+    @test I(1)(PathMaps.pmeet(false, false))
+    @test I(1)(PathMaps.pmeet(false, true))
+    @test I(2)(PathMaps.pmeet(true, false))    # result is `other`
+    @test I(1)(PathMaps.pmeet(true, true))     # NOT 3
 
     # ring.rs:882  psubtract: `if *self == *other { None } else { Identity(SELF_IDENT) }`
-    @test N(PathMap.psubtract(false, false))
-    @test I(1)(PathMap.psubtract(false, true))  # ← was None: the entry used to be DELETED
-    @test I(1)(PathMap.psubtract(true, false))
-    @test N(PathMap.psubtract(true, true))
+    @test N(PathMaps.psubtract(false, false))
+    @test I(1)(PathMaps.psubtract(false, true))  # ← was None: the entry used to be DELETED
+    @test I(1)(PathMaps.psubtract(true, false))
+    @test N(PathMaps.psubtract(true, true))
 
     # The INTEGER divergence is genuinely deliberate and STAYS — upstream's u64 impl really is tagged
     # `//GOAT trash` (ring.rs:836) and returns Identity(SELF) unconditionally, ignoring its operands.
     # Pinned here so the two cases are not confused with each other again.
-    @test PathMap.pjoin(UInt64(3), UInt64(9)) isa PathMap.AlgResIdentity
-    @test Int(PathMap.pjoin(UInt64(3), UInt64(9)).mask) == 2      # ours: real max -> COUNTER
-    @test Int(PathMap.pmeet(UInt64(3), UInt64(9)).mask) == 1      # ours: real min -> SELF
+    @test PathMaps.pjoin(UInt64(3), UInt64(9)) isa PathMaps.AlgResIdentity
+    @test Int(PathMaps.pjoin(UInt64(3), UInt64(9)).mask) == 2      # ours: real max -> COUNTER
+    @test Int(PathMaps.pmeet(UInt64(3), UInt64(9)).mask) == 1      # ours: real min -> SELF
 end

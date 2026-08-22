@@ -17,8 +17,8 @@
 # So the assertions below are on REFCOUNTS as well as values: equal values could pass while sharing
 # is silently broken, and a refcount of 1 on a shared node is the defect regardless of what a read
 # returns today.
-using Test, PathMap
-const P = PathMap
+using Test, PathMaps
+const P = PathMaps   # the MODULE; the TYPE is PathMaps.PathMap
 
 @testset "tr_make_map — shares structurally, isolates writes (COW)" begin
     mk() = (m=P.PathMap{UInt64}();

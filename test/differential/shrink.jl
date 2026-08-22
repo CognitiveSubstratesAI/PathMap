@@ -19,7 +19,7 @@
 #   all    (default)
 # Triaging by shape FIRST is what keeps a large corpus tractable: at 3000 cases the 81 divergences
 # split 33 "more" / 24 "fewer" / 24 "same", and only the "fewer" group is unambiguously ours.
-using PathMap
+using PathMaps
 include(joinpath(@__DIR__, "run_fuzz.jl"))
 
 const PROBE = joinpath(@__DIR__, "rust_probe")

@@ -6,9 +6,9 @@
 # map_count >2 / <=2 crossed with remove_unset true / false. Values are Int here as they are i32
 # there — the documented UnitVal restriction applies to lattice ALGEBRA (Ring.jl), and
 # graft_child_maps performs none.
-using PathMap, Test
+using PathMaps, Test
 
-const P = PathMap
+const P = PathMaps   # the MODULE; the TYPE is PathMaps.PathMap
 
 _m(pairs...) = (
     m=P.PathMap{Int}();

@@ -5,11 +5,21 @@
 #
 #     cd PathMap && julia --project=. tools/jet_report.jl
 #
-# ⚠️ `JET.report_package(PathMap)` DOES NOT WORK HERE and will not be made to. It re-evaluates the
-# package's top level through JuliaInterpreter and dies with `invalid redefinition of constant
-# PathMap`, because the module and its principal struct share the name `PathMap` (the same collision
-# `test/runtests.jl` aliases around with `const PM = PathMap.PathMap`). `report_call` on concrete
-# entry points is used instead — narrower, but it analyses the code paths that actually run.
+# ── HISTORY: `report_package` NOW WORKS. This file's premise was true and is no longer ───────────
+# This header used to read: "`JET.report_package(PathMap)` DOES NOT WORK HERE and will not be made
+# to ... dies with `invalid redefinition of constant PathMap`, because the module and its principal
+# struct share the name `PathMap`." THE DIAGNOSIS WAS EXACTLY RIGHT (2026-08-01) and it is why the
+# module was renamed `PathMap` -> `PathMaps` on 2026-08-22, the struct keeping the name `PathMap`.
+# Confirmed with a two-package minimal reproduction before the rename was attempted:
+#     module Collide + struct Collide  -> report_package THREW  "invalid redefinition of constant"
+#     module Clean   + struct Cleaned  -> report_package OK
+# and after the rename, on this package:
+#     JET.report_package(PathMaps) -> 47 reports, 1 589 top-level definitions, 125.7 s
+#
+# ⚠️ THIS FILE IS STILL THE RIGHT TOOL, for the reason in the plan rather than the old blocker:
+# `report_package` is a FIREHOSE you learn to ignore, and minutes-slow. `report_call` on concrete
+# entry points is NARROWER BUT ACTIONABLE — it analyses the code paths that actually run. Keep both:
+# report_package for a periodic sweep, this for the hot paths.
 #
 # ── WHAT THIS FOUND, 2026-08-01 (74 reports across 10 entry points) ──────────────────────────────
 #
@@ -42,17 +52,17 @@
 # So: treat a NEW report here as worth investigating, and the existing ones as a known structural
 # consequence of Nothing-unions guarded by tag bits — the honest fix for which is a typed slot
 # representation, not scattering `f(::Nothing)` methods that would mask invariant violations.
-using JET, PathMap
+using JET, PathMaps
 
-const P = PathMap.PathMap
-const UV = PathMap.UnitVal
-const GA = PathMap.GlobalAlloc
+const P = PathMaps.PathMap
+const UV = PathMaps.UnitVal
+const GA = PathMaps.GlobalAlloc
 
 _b(s) = Vector{UInt8}(codeunits(s))
 _mk(ks::Vector{String}) = begin
     m = P{UV}()
     for k in ks
-        PathMap.set_val_at!(m, _b(k), UV())
+        PathMaps.set_val_at!(m, _b(k), UV())
     end
     m
 end
@@ -72,62 +82,62 @@ end
 _probe(
     "wz_restrict!",
     () -> (m=_mk(["aa", "ab", "b"]); s=_mk(["aa", "b"]);
-        @report_call PathMap.wz_restrict!(PathMap.write_zipper(m),
-            PathMap.ANRBorrowedRc{UV, GA}(s.root)))
+        @report_call PathMaps.wz_restrict!(PathMaps.write_zipper(m),
+            PathMaps.ANRBorrowedRc{UV, GA}(s.root)))
 )
 _probe(
     "wz_meet_into!",
     () -> (m=_mk(["aa", "b"]); s=_mk(["a", "b"]);
-        @report_call PathMap.wz_meet_into!(PathMap.write_zipper(m),
-            PathMap.ANRBorrowedRc{UV, GA}(s.root), true, s.root_val))
+        @report_call PathMaps.wz_meet_into!(PathMaps.write_zipper(m),
+            PathMaps.ANRBorrowedRc{UV, GA}(s.root), true, s.root_val))
 )
 _probe(
     "wz_subtract_into!",
     () -> (m=_mk(["aa", "b"]); s=_mk(["a", "b"]);
-        @report_call PathMap.wz_subtract_into!(PathMap.write_zipper(m),
-            PathMap.ANRBorrowedRc{UV, GA}(s.root), true, s.root_val))
+        @report_call PathMaps.wz_subtract_into!(PathMaps.write_zipper(m),
+            PathMaps.ANRBorrowedRc{UV, GA}(s.root), true, s.root_val))
 )
 _probe(
     "wz_join_map_into!",
     () -> (m=_mk(["aa", "b"]); s=_mk(["a", "b"]);
-        @report_call PathMap.wz_join_map_into!(PathMap.write_zipper(m), s))
+        @report_call PathMaps.wz_join_map_into!(PathMaps.write_zipper(m), s))
 )
 _probe(
     "wz_graft_map!",
     () -> (m=_mk(["aa", "b"]); s=_mk(["a", "b"]);
-        @report_call PathMap.wz_graft_map!(PathMap.write_zipper(m), s))
+        @report_call PathMaps.wz_graft_map!(PathMaps.write_zipper(m), s))
 )
 _probe(
     "wz_join_k_path_into!",
     () -> (m=_mk(["abc"]);
-        @report_call PathMap.wz_join_k_path_into!(
-            PathMap.write_zipper_at_path(m, _b("ab")), 5, true
+        @report_call PathMaps.wz_join_k_path_into!(
+            PathMaps.write_zipper_at_path(m, _b("ab")), 5, true
         ))
 )
 _probe(
     "wz_remove_val!",
     () -> (m=_mk(["aa", "ab"]);
-        @report_call PathMap.wz_remove_val!(
-            PathMap.write_zipper_at_path(m, _b("aa")), true
+        @report_call PathMaps.wz_remove_val!(
+            PathMaps.write_zipper_at_path(m, _b("aa")), true
         ))
 )
 _probe(
     "wz_take_map!",
     () -> (m=_mk(["aa", "ab"]);
-        @report_call PathMap.wz_take_map!(PathMap.write_zipper_at_path(m, _b("a")), true))
+        @report_call PathMaps.wz_take_map!(PathMaps.write_zipper_at_path(m, _b("a")), true))
 )
 _probe(
     "prestrict_dyn",
     () -> (m=_mk(["aa", "ab", "b"]); s=_mk(["aa", "b"]);
-        @report_call PathMap.prestrict_dyn(
-            PathMap.as_tagged(m.root), PathMap.as_tagged(s.root)
+        @report_call PathMaps.prestrict_dyn(
+            PathMaps.as_tagged(m.root), PathMaps.as_tagged(s.root)
         ))
 )
 _probe(
     "_wz_prune_path_internal!",
     () -> (m=_mk(["abc"]);
-        @report_call PathMap._wz_prune_path_internal!(
-            PathMap.write_zipper_at_path(m, _b("ab"))
+        @report_call PathMaps._wz_prune_path_internal!(
+            PathMaps.write_zipper_at_path(m, _b("ab"))
         ))
 )
 

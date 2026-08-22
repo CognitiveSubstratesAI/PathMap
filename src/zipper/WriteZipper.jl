@@ -1736,7 +1736,7 @@ function wz_take_focus!(z::WriteZipperCore{V, A}, prune::Bool=false) where {V, A
     # only a node that EXISTS, whereas upstream's `take_node_at_key` also yields the empty node
     # sitting on a DANGLING path (take_focus's own doc says it "may leave behind a dangling path",
     # so the next call meets one). We answered `nothing` where upstream answers `Some(empty)`,
-    # which `take_map` then turns into `nothing` instead of an empty PathMap. Fuzz cases
+    # which `take_map` then turns into `nothing` instead of an empty PathMaps. Fuzz cases
     # 00056 / 00277 / 00287: a SECOND `take_map` at the same focus gives us None, upstream `[] vc=0`.
     _wz_ensure_write_unique!(z)
     nk = collect(_wz_node_key(z))

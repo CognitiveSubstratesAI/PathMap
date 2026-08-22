@@ -27,28 +27,28 @@
 # Values are `Int` throughout: a `UnitVal` probe cannot tell "the clone kept its entries" from "the
 # clone was rebuilt with different ones", and that ambiguity has already produced two false
 # all-clear readings in this codebase.
-using PathMap, Test
+using PathMaps, Test
 
 _b(s) = Vector{UInt8}(codeunits(s))
 
 function _mk(pairs::Vector{Pair{String, Int}})
-    m = PathMap.PathMap{Int}()
+    m = PathMaps.PathMap{Int}()
     for (k, v) in pairs
-        PathMap.set_val_at!(m, _b(k), v)
+        PathMaps.set_val_at!(m, _b(k), v)
     end
     m
 end
 
 "A second PathMap sharing `m`'s nodes by refcount — what `copy(root)` gives, and what MORK's
 `read_btm` (Space.jl:1749) is."
-_share(m) = PathMap.PathMap{Int, PathMap.GlobalAlloc}(
+_share(m) = PathMaps.PathMap{Int, PathMaps.GlobalAlloc}(
     m.root === nothing ? nothing : copy(m.root), m.root_val, m.alloc)
 
 function _entries(m)
-    z = PathMap.read_zipper(m)
+    z = PathMaps.read_zipper(m)
     out = Tuple{String, Int}[]
-    while PathMap.zipper_to_next_val!(z)
-        push!(out, (String(copy(PathMap.zipper_path(z))), PathMap.zipper_val(z)))
+    while PathMaps.zipper_to_next_val!(z)
+        push!(out, (String(copy(PathMaps.zipper_path(z))), PathMaps.zipper_val(z)))
     end
     sort(out)
 end
@@ -60,9 +60,9 @@ end
             a = _mk([":b" => 101, ":a" => 102])
             ac = _share(a)
             before = _entries(ac)
-            z = PathMap.write_zipper(a)
-            PathMap.wz_descend_to!(z, _b(":"))
-            PathMap.wz_join_k_path_into!(z, k, prune)
+            z = PathMaps.write_zipper(a)
+            PathMaps.wz_descend_to!(z, _b(":"))
+            PathMaps.wz_join_k_path_into!(z, k, prune)
             @test (k, prune, _entries(ac)) == (k, prune, before)   # the clone is untouched
         end
     end
@@ -70,9 +70,9 @@ end
     @testset "the op still does its job — the target really changes" begin
         # Guards against a "fix" that makes the op a no-op, which would also leave the clone intact.
         a = _mk([":b" => 101, ":a" => 102])
-        z = PathMap.write_zipper(a)
-        PathMap.wz_descend_to!(z, _b(":"))
-        PathMap.wz_join_k_path_into!(z, 1, true)
+        z = PathMaps.write_zipper(a)
+        PathMaps.wz_descend_to!(z, _b(":"))
+        PathMaps.wz_join_k_path_into!(z, 1, true)
         @test _entries(a) == Tuple{String, Int}[]        # dropping 1 byte leaves nothing under ":"
     end
 
@@ -82,7 +82,7 @@ end
         a = _mk([":b" => 101, ":a" => 102])
         ac = _share(a)
         before = _entries(ac)
-        PathMap.wz_join_k_path_into!(PathMap.write_zipper(a), 1, true)
+        PathMaps.wz_join_k_path_into!(PathMaps.write_zipper(a), 1, true)
         @test _entries(ac) == before
     end
 
@@ -90,20 +90,20 @@ end
         a = _mk(["x:b" => 1, "x:a" => 2, "y:q" => 3])
         ac = _share(a)
         before = _entries(ac)
-        z = PathMap.write_zipper(a)
-        PathMap.wz_descend_to!(z, _b("x:"))
-        PathMap.wz_join_k_path_into!(z, 1, true)
+        z = PathMaps.write_zipper(a)
+        PathMaps.wz_descend_to!(z, _b("x:"))
+        PathMaps.wz_join_k_path_into!(z, 1, true)
         @test _entries(ac) == before
-        @test PathMap.get_val_at(a, _b("y:q")) == 3      # the untouched branch survives in the target
+        @test PathMaps.get_val_at(a, _b("y:q")) == 3      # the untouched branch survives in the target
     end
 
     @testset "meet_k_path — clean before and after, kept as the negative control" begin
         a = _mk([":b" => 101, ":a" => 102])
         ac = _share(a)
         before = _entries(ac)
-        z = PathMap.write_zipper(a)
-        PathMap.wz_descend_to!(z, _b(":"))
-        PathMap.wz_meet_k_path_into!(z, 1, true)
+        z = PathMaps.write_zipper(a)
+        PathMaps.wz_descend_to!(z, _b(":"))
+        PathMaps.wz_meet_k_path_into!(z, 1, true)
         @test _entries(ac) == before
     end
 end

@@ -23,10 +23,10 @@
 # Regenerate ground truth (needs the rustup toolchain; /usr/bin/cargo CANNOT build it):
 #   export PATH="$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:$PATH"
 #   cd test/differential/rust_probe && cargo run --release --bin gen_fuzz -- 3000 > ../fuzz/expected.tsv
-using PathMap
+using PathMaps
 
 const _FUZZ_DIR = joinpath(@__DIR__, "fuzz")
-const FPMT = PathMap.PathMap
+const FPMT = PathMaps.PathMap
 
 _fb(s) = Vector{UInt8}(codeunits(s))
 
@@ -43,41 +43,41 @@ end
 
 # Methods on PathMap's OWN generic functions, not local ones — in-package dispatch would not see
 # local definitions.
-PathMap.pjoin(a::FBits, b::FBits) = _fbits_ident(FBits(a.b | b.b), a, b)
-PathMap.pmeet(a::FBits, b::FBits) = _fbits_ident(FBits(a.b & b.b), a, b)
+PathMaps.pjoin(a::FBits, b::FBits) = _fbits_ident(FBits(a.b | b.b), a, b)
+PathMaps.pmeet(a::FBits, b::FBits) = _fbits_ident(FBits(a.b & b.b), a, b)
 
 function _fbits_ident(r::FBits, a::FBits, b::FBits)
     # NO annihilation when r.b == 0: an all-zero bitset is a live value, not an absent one.
     if r.b == a.b && r.b == b.b
-        PathMap.AlgResIdentity(PathMap.SELF_IDENT | PathMap.COUNTER_IDENT)
+        PathMaps.AlgResIdentity(PathMaps.SELF_IDENT | PathMaps.COUNTER_IDENT)
     elseif r.b == a.b
-        PathMap.AlgResIdentity(PathMap.SELF_IDENT)
+        PathMaps.AlgResIdentity(PathMaps.SELF_IDENT)
     elseif r.b == b.b
-        PathMap.AlgResIdentity(PathMap.COUNTER_IDENT)
+        PathMaps.AlgResIdentity(PathMaps.COUNTER_IDENT)
     else
-        PathMap.AlgResElement(r)
+        PathMaps.AlgResElement(r)
     end
 end
 
-function PathMap.psubtract(a::FBits, b::FBits)
+function PathMaps.psubtract(a::FBits, b::FBits)
     r = FBits(a.b & ~b.b)
     # NEVER sets COUNTER_IDENT — ring.rs:21 forbids a non-commutative op from setting bit 1.
     if r.b == 0
-        PathMap.AlgResNone()
+        PathMaps.AlgResNone()
     elseif r.b == a.b
-        PathMap.AlgResIdentity(PathMap.SELF_IDENT)
+        PathMaps.AlgResIdentity(PathMaps.SELF_IDENT)
     else
-        PathMap.AlgResElement(r)
+        PathMaps.AlgResElement(r)
     end
 end
 
-_fparse_val(::Type{PathMap.UnitVal}, tok::AbstractString) =
+_fparse_val(::Type{PathMaps.UnitVal}, tok::AbstractString) =
     (isempty(tok) || error("unit script carries a value token `=$tok` — use `VT bits`");
-        PathMap.UnitVal())
+        PathMaps.UnitVal())
 _fparse_val(::Type{FBits}, tok::AbstractString) =
     isempty(tok) ? FBits(0x1) : FBits(parse(UInt64, tok; base=16))
 
-_frender(::PathMap.UnitVal) = ""
+_frender(::PathMaps.UnitVal) = ""
 _frender(v::FBits) = "=" * string(v.b; base=16)
 
 "Split `ab=5` into (\"ab\", \"5\"). Keys never contain `=` — the alphabet is `ab:`."
@@ -88,12 +88,12 @@ end
 
 "Canonical rendering — MUST match `dump()` in gen_fuzz.rs exactly."
 function _fdump(m)
-    z = PathMap.read_zipper(m)
+    z = PathMaps.read_zipper(m)
     paths = String[]
     vals = String[]
-    while PathMap.zipper_to_next_val!(z)
-        push!(paths, String(copy(PathMap.zipper_path(z))))
-        v = PathMap.zipper_val(z)
+    while PathMaps.zipper_to_next_val!(z)
+        push!(paths, String(copy(PathMaps.zipper_path(z))))
+        v = PathMaps.zipper_val(z)
         push!(vals, v === nothing ? "" : _frender(v))
     end
     # ⚠️ SORT BY PATH, THEN RENDER. A rendered entry is `path=hex` under VT bits, and `=` (0x3d)
@@ -101,14 +101,14 @@ function _fdump(m)
     # relative to path order. Both engines would still agree, but on a renderer artefact.
     ord = sortperm(paths)
     "[" * join((paths[i] * vals[i] for i in ord), ",") * "] vc=" *
-    string(PathMap.val_count(m))
+    string(PathMaps.val_count(m))
 end
 
 "Rust prints `AlgebraicStatus` with `{:?}`; match those spellings exactly."
 function _fstatus(s)
-    s == PathMap.ALG_STATUS_ELEMENT && return "Element"
-    s == PathMap.ALG_STATUS_IDENTITY && return "Identity"
-    s == PathMap.ALG_STATUS_NONE && return "None"
+    s == PathMaps.ALG_STATUS_ELEMENT && return "Element"
+    s == PathMaps.ALG_STATUS_IDENTITY && return "Identity"
+    s == PathMaps.ALG_STATUS_NONE && return "None"
     string(s)
 end
 
@@ -117,9 +117,9 @@ function _fmk(::Type{V}, keys::Vector{String}, rootval::Bool,
     m = FPMT{V}()
     for k in keys
         (path, tok) = _fsplit_key(k)
-        PathMap.set_val_at!(m, _fb(path), _fparse_val(V, tok))
+        PathMaps.set_val_at!(m, _fb(path), _fparse_val(V, tok))
     end
-    rootval && PathMap.set_val_at!(m, UInt8[], _fparse_val(V, rootval_tok))
+    rootval && PathMaps.set_val_at!(m, UInt8[], _fparse_val(V, rootval_tok))
     m
 end
 
@@ -128,9 +128,9 @@ end
 # run_differential.jl.
 _fanr(m::FPMT{V}) where {V} =
     if m.root === nothing
-        PathMap.ANRNone{V, PathMap.GlobalAlloc}()
+        PathMaps.ANRNone{V, PathMaps.GlobalAlloc}()
     else
-        PathMap.ANRBorrowedRc{V, PathMap.GlobalAlloc}(m.root)
+        PathMaps.ANRBorrowedRc{V, PathMaps.GlobalAlloc}(m.root)
     end
 
 """
@@ -216,7 +216,7 @@ every generated case, so the 3000-case corpus runs exactly the `UnitVal` path it
 """
 function fuzz_run_text(text::AbstractString)
     c = _fparse_text(text)
-    c.vt == "bits" ? _fuzz_run(FBits, c) : _fuzz_run(PathMap.UnitVal, c)
+    c.vt == "bits" ? _fuzz_run(FBits, c) : _fuzz_run(PathMaps.UnitVal, c)
 end
 
 function _fuzz_run(::Type{V}, c) where {V}
@@ -224,56 +224,56 @@ function _fuzz_run(::Type{V}, c) where {V}
     # Source built ONCE; consuming ops get a refcount-sharing clone, mirroring `s.clone()` in
     # gen_fuzz.rs. See the tail of this function for why the baseline is never taken up front.
     _shared = _fmk(V, s_keys, s_rootval, s_rootval_tok)
-    _smk() = FPMT{V, PathMap.GlobalAlloc}(
+    _smk() = FPMT{V, PathMaps.GlobalAlloc}(
         _shared.root === nothing ? nothing : copy(_shared.root), _shared.root_val,
         _shared.alloc)
     a = _fmk(V, a_keys, a_rootval, a_rootval_tok)
     trace = IOBuffer()
     wz = if origin == "-"
-        PathMap.write_zipper(a)
+        PathMaps.write_zipper(a)
     else
-        PathMap.write_zipper_at_path(a, _fb(origin))
+        PathMaps.write_zipper_at_path(a, _fb(origin))
     end
     for op in ops
         bits = split(op, ' ')
         name = bits[1]
         arg = length(bits) > 1 ? bits[2] : ""
         out = if name == "DESCEND"
-            PathMap.wz_descend_to!(wz, _fb(arg))
+            PathMaps.wz_descend_to!(wz, _fb(arg))
             "-"
         elseif name == "ASCEND"
-            string(PathMap.wz_ascend!(wz, parse(Int, arg)))
+            string(PathMaps.wz_ascend!(wz, parse(Int, arg)))
         elseif name == "SETVAL"
-            string(PathMap.wz_set_val!(wz, _fparse_val(V, arg)) !== nothing)
+            string(PathMaps.wz_set_val!(wz, _fparse_val(V, arg)) !== nothing)
         elseif name == "REMOVEVAL"
-            string(PathMap.wz_remove_val!(wz, arg == "1") !== nothing)
+            string(PathMaps.wz_remove_val!(wz, arg == "1") !== nothing)
         elseif name == "GRAFTMAP"
-            PathMap.wz_graft_map!(wz, _smk())
+            PathMaps.wz_graft_map!(wz, _smk())
             "-"
         elseif name == "JOINMAP"
-            _fstatus(PathMap.wz_join_map_into!(wz, _smk()))
+            _fstatus(PathMaps.wz_join_map_into!(wz, _smk()))
         elseif name == "MEET"
             s = _smk()
-            _fstatus(PathMap.wz_meet_into!(wz, _fanr(s), arg == "1", s.root_val))
+            _fstatus(PathMaps.wz_meet_into!(wz, _fanr(s), arg == "1", s.root_val))
         elseif name == "SUB"
             s = _smk()
-            _fstatus(PathMap.wz_subtract_into!(wz, _fanr(s), arg == "1", s.root_val))
+            _fstatus(PathMaps.wz_subtract_into!(wz, _fanr(s), arg == "1", s.root_val))
         elseif name == "RESTRICT"
             # NOT emitted by the generator — `--exec` only, for hand-written scripts. `restrict` was
             # the one full algebra op with no differential coverage at all. Note it takes no `prune`
             # and no root value: upstream's `restrict(&read_zipper)` (write_zipper.rs:253) has
             # neither, so this deliberately does not thread `s.root_val` the way MEET/SUB do.
             s = _smk()
-            _fstatus(PathMap.wz_restrict!(wz, _fanr(s)))
+            _fstatus(PathMaps.wz_restrict!(wz, _fanr(s)))
         elseif name == "TAKEMAP"
-            t = PathMap.wz_take_map!(wz, arg == "1")
+            t = PathMaps.wz_take_map!(wz, arg == "1")
             t === nothing ? "None" : _fdump(t)
         elseif name == "INSPREFIX"
-            string(PathMap.wz_insert_prefix!(wz, _fb(arg)))
+            string(PathMaps.wz_insert_prefix!(wz, _fb(arg)))
         elseif name == "REMPREFIX"
-            string(PathMap.wz_remove_prefix!(wz, parse(Int, arg)))
+            string(PathMaps.wz_remove_prefix!(wz, parse(Int, arg)))
         elseif name == "RESET"
-            PathMap.wz_reset!(wz)
+            PathMaps.wz_reset!(wz)
             "-"
         else
             "?"

@@ -11,7 +11,7 @@
 # under miri/riscv64. We port the mixer deliberately — matching AES-NI would mean AES intrinsics via
 # llvmcall plus upstream's exact node traversal order, for a digest nobody compares across engines,
 # and upstream's own cfg proves the value is a PER-TARGET artifact. Same call as ADAPTATIONS entry 7.
-using Test, PathMap
+using Test, PathMaps
 
 @testset "GxHasher — 1:1 with upstream lib.rs:22-56" begin
     # (seed, bytes, optional u128 via the SEPARATE write_u128 path, expected u128)
@@ -25,11 +25,11 @@ using Test, PathMap
             UInt128(220182708007667311290018932242793705525)),
         (Int64(0), Vector{UInt8}("hello world"), nothing,
             UInt128(220182708007664855661618046230779051371)),
-        (PathMap._MAP_HASH_SEED, UInt8[], nothing,
+        (PathMaps._MAP_HASH_SEED, UInt8[], nothing,
             UInt128(307095087557724141754317945346449730642)),
-        (PathMap._MAP_HASH_SEED, UInt8[i for i in 0x00:0x1f], nothing,
+        (PathMaps._MAP_HASH_SEED, UInt8[i for i in 0x00:0x1f], nothing,
             UInt128(307095087557724141747313161787170070674)),
-        (PathMap._MAP_HASH_SEED, UInt8[i for i in 0x00:0x1f],
+        (PathMaps._MAP_HASH_SEED, UInt8[i for i in 0x00:0x1f],
             UInt128(12345678901234567890123456789),
             UInt128(307093591089338380782026710111025841575)),
         (Int64(7), UInt8[0x00, 0xff, 0x7f, 0x80], UInt128(1),
@@ -66,7 +66,7 @@ using Test, PathMap
 end
 
 @testset "map_hash — 128-bit Merkle fold over the logical trie" begin
-    mk(ps) = (m=PathMap.PathMap{UInt64}();
+    mk(ps) = (m=PathMaps.PathMap{UInt64}();
         for (k, v) in ps
             set_val_at!(m, Vector{UInt8}(k), UInt64(v))
         end; m)

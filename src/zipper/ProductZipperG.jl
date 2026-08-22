@@ -476,7 +476,7 @@ const PZG_PEAK_ITERS = Ref(0)             # diagnostic: high-water mark of per-q
                budget — a naive product/source join is EXPLODING (no coreferential pruning on this path). \
                This was previously a SILENT `return false` that truncated the join and returned a \
                wrong/partial answer — a hang/wrong-result that reads as 'working'. Port the coreferential \
-               join to the source path, fix the pattern, or raise `PathMap.PZG_QUERY_TIME_BUDGET[]`. See \
+               join to the source path, fix the pattern, or raise `PathMaps.PZG_QUERY_TIME_BUDGET[]`. See \
                reference_mork_port_state_and_rule64."
         )
     end

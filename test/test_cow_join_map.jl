@@ -23,14 +23,14 @@
 #
 # So "match upstream" was the wrong instinct: the Rust is sound BECAUSE of a guarantee our port
 # cannot express. Recorded rather than retried.
-using PathMap, Test
+using PathMaps, Test
 
 _b(s) = Vector{UInt8}(codeunits(s))
 
 function _build(n::Int, salt::String)
-    m = PathMap.PathMap{PathMap.UnitVal}()
+    m = PathMaps.PathMap{PathMaps.UnitVal}()
     for i in 1:n
-        PathMap.set_val_at!(m, _b("rel:$(salt):$(i % 97):$(i)"), PathMap.UnitVal())
+        PathMaps.set_val_at!(m, _b("rel:$(salt):$(i % 97):$(i)"), PathMaps.UnitVal())
     end
     m
 end
@@ -43,27 +43,27 @@ end
         # case the shallow clone got fast and wrong.
         a = _build(2_000, "a")
         b = _build(2_000, "b")
-        z = PathMap.write_zipper(deepcopy(a))
-        PathMap.wz_join_map_into!(z, b)
+        z = PathMaps.write_zipper(deepcopy(a))
+        PathMaps.wz_join_map_into!(z, b)
         result = z.pathmap
-        @test PathMap.val_count(result) == 4_000
+        @test PathMaps.val_count(result) == 4_000
 
-        PathMap.remove_val_at!(result, _b("rel:b:1:1"), false)
-        @test PathMap.get_val_at(result, _b("rel:b:1:1")) === nothing   # removed from the result
-        @test PathMap.get_val_at(b, _b("rel:b:1:1")) !== nothing        # ← and NOT from the source
-        @test PathMap.val_count(b) == 2_000
+        PathMaps.remove_val_at!(result, _b("rel:b:1:1"), false)
+        @test PathMaps.get_val_at(result, _b("rel:b:1:1")) === nothing   # removed from the result
+        @test PathMaps.get_val_at(b, _b("rel:b:1:1")) !== nothing        # ← and NOT from the source
+        @test PathMaps.val_count(b) == 2_000
     end
 
     @testset "writing INTO the result leaves the source intact" begin
         # The mirror direction: a set_val landing inside the shared subtrie must copy first.
         a = _build(500, "a")
         b = _build(500, "b")
-        z = PathMap.write_zipper(deepcopy(a))
-        PathMap.wz_join_map_into!(z, b)
-        PathMap.set_val_at!(z.pathmap, _b("rel:b:1:1:extra"), PathMap.UnitVal())
-        @test PathMap.get_val_at(z.pathmap, _b("rel:b:1:1:extra")) !== nothing
-        @test PathMap.get_val_at(b, _b("rel:b:1:1:extra")) === nothing
-        @test PathMap.val_count(b) == 500
+        z = PathMaps.write_zipper(deepcopy(a))
+        PathMaps.wz_join_map_into!(z, b)
+        PathMaps.set_val_at!(z.pathmap, _b("rel:b:1:1:extra"), PathMaps.UnitVal())
+        @test PathMaps.get_val_at(z.pathmap, _b("rel:b:1:1:extra")) !== nothing
+        @test PathMaps.get_val_at(b, _b("rel:b:1:1:extra")) === nothing
+        @test PathMaps.val_count(b) == 500
     end
 
     @testset "structural sharing is ON — the join must not copy the subtrie" begin
@@ -79,9 +79,9 @@ end
         # broken; if it goes red ALONE, someone reintroduced the deepcopy.
         a = _build(2_000, "a")
         b = _build(2_000, "b")
-        z = PathMap.write_zipper(deepcopy(a))
-        allocs = @allocated PathMap.wz_join_map_into!(z, b)
-        @test PathMap.val_count(z.pathmap) == 4_000
+        z = PathMaps.write_zipper(deepcopy(a))
+        allocs = @allocated PathMaps.wz_join_map_into!(z, b)
+        @test PathMaps.val_count(z.pathmap) == 4_000
         # A deep copy of a 2000-key source runs to hundreds of thousands of allocations; sharing is
         # a handful. Two orders of magnitude of headroom, so this is a shape check, not a ratchet.
         @test allocs < 100_000
@@ -92,12 +92,12 @@ end
         # count even without any explicit mutation — an independent way to catch the same defect.
         a = _build(500, "a")
         b = _build(500, "b")
-        z1 = PathMap.write_zipper(deepcopy(a))
-        PathMap.wz_join_map_into!(z1, b)
-        PathMap.remove_val_at!(z1.pathmap, _b("rel:b:1:1"), false)
+        z1 = PathMaps.write_zipper(deepcopy(a))
+        PathMaps.wz_join_map_into!(z1, b)
+        PathMaps.remove_val_at!(z1.pathmap, _b("rel:b:1:1"), false)
 
-        z2 = PathMap.write_zipper(deepcopy(a))
-        PathMap.wz_join_map_into!(z2, b)
-        @test PathMap.val_count(z2.pathmap) == 1_000
+        z2 = PathMaps.write_zipper(deepcopy(a))
+        PathMaps.wz_join_map_into!(z2, b)
+        @test PathMaps.val_count(z2.pathmap) == 1_000
     end
 end

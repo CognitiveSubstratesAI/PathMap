@@ -23,7 +23,7 @@
 #
 # The two scripts below were MEASURED against the upstream release binary
 # (`gen_fuzz --exec`, 52fd9df, default features); the expected strings are its exact output.
-using PathMap, Test
+using PathMaps, Test
 
 include(joinpath(@__DIR__, "differential", "run_fuzz.jl"))
 

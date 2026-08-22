@@ -9,12 +9,12 @@
 #
 # The file format is UNCHANGED and stays byte-compatible with upstream's ACTree03 — integrity is a
 # sidecar. Each test below names the failure it would have caught.
-using Test, PathMap
+using Test, PathMaps
 
 
 @testset "ACT validation (magic, length guard, atomic write)" begin
     mktempdir() do dir
-        m = PathMap.PathMap{UInt64}()
+        m = PathMaps.PathMap{UInt64}()
         for (i, k) in enumerate(("apple", "apricot", "banana", "band", "bandana"))
             set_val_at!(m, Vector{UInt8}(k), UInt64(i))
         end
@@ -88,7 +88,7 @@ end
         ("a", "ab", "abc", "abcd"),
         ("apple", "apricot", "banana", "band", "bandana"),
         ("alpha", "beta", "gamma"))                       # control: no shared prefixes
-        m = PathMap.PathMap{UInt64}()
+        m = PathMaps.PathMap{UInt64}()
         for (i, k) in enumerate(ks)
             set_val_at!(m, Vector{UInt8}(k), UInt64(i))
         end
@@ -136,7 +136,7 @@ end
         ("a",),                                    # single key, no branching
         ("aa", "ab", "ba", "bb"),                  # forks, no nesting
         ("alpha", "beta", "gamma"))                # control: no shared prefixes at all
-        m = PathMap.PathMap{UInt64}()
+        m = PathMaps.PathMap{UInt64}()
         for (i, k) in enumerate(ks)
             set_val_at!(m, Vector{UInt8}(k), UInt64(i))
         end

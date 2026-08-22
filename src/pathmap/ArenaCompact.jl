@@ -386,7 +386,7 @@ end
 """
     act_from_zipper(m::PathMap, map_val::Function) → ArenaCompactTree
 
-Build a compact arena tree from a PathMap.  `map_val(v::V) → UInt64`.
+Build a compact arena tree from a PathMaps.  `map_val(v::V) → UInt64`.
 Mirrors `ArenaCompactTree::from_zipper` / `build_arena_tree`.
 """
 function act_from_zipper(m::PathMap{V, A}, map_val::Function) where {V, A}

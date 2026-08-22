@@ -20,9 +20,9 @@ try
 catch
 end
 
-using PathMap
+using PathMaps
 
-const PM = PathMap.PathMap
+const PM = PathMaps.PathMap
 
 # ── Shortcuts ─────────────────────────────────────────────────────────────────
 

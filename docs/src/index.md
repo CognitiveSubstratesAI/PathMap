@@ -24,7 +24,7 @@ Pkg.add(url="https://github.com/CognitiveSubstratesAI/PathMap")
 ## Quickstart
 
 ```julia
-using PathMap
+using PathMaps
 
 m = PathMap.PathMap{Int}()
 set_val_at!(m, b"alpha", 1)

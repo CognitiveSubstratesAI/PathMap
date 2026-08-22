@@ -89,7 +89,7 @@ struct SubtractP <: ZipperMergePolicy end
 Return the stable GC identity of the trie node at `z`'s current focus,
 or `nothing` if no stable identity is available.
 
-Mirrors `ZipperConcrete::shared_node_id()` from upstream PathMap.
+Mirrors `ZipperConcrete::shared_node_id()` from upstream PathMaps.
 Used by the shared-node short-circuit in `_zm_merge_n!`.
 """
 function _wm_shared_node_id(z::WriteZipperCore{V, A}) where {V, A}
@@ -147,7 +147,7 @@ Note: `_wz_get_focus_anr` returns `ANRNone` for pure-value leaf positions
 because there is no child `TrieNodeODRc` at that key — only a `ValOrChild`
 with `kind=0x00`.  The value must be copied separately.
 
-Mirrors `ZipperWriting::graft_children(z, range)` from upstream PathMap.
+Mirrors `ZipperWriting::graft_children(z, range)` from upstream PathMaps.
 Called by `_zm_on_single!` and `_zm_on_id!`.
 """
 function _zm_graft_children_masked!(

@@ -1,10 +1,10 @@
 using Documenter
-using PathMap
+using PathMaps
 
-DocMeta.setdocmeta!(PathMap, :DocTestSetup, :(using PathMap); recursive=true)
+DocMeta.setdocmeta!(PathMaps, :DocTestSetup, :(using PathMaps); recursive=true)
 
 makedocs(;
-    modules=[PathMap],
+    modules=[PathMaps],
     authors="CognitiveSubstrates AI",
     repo=Remotes.GitHub("CognitiveSubstratesAI", "PathMap"),
     sitename="PathMap.jl",

@@ -1,6 +1,6 @@
 # WILLIAM × PathMap N-ary operations
 # Tests N-way join/meet for multi-space pattern aggregation
-using PathMap, Test
+using PathMaps, Test
 
 println("=== WILLIAM × PathMap N-ary ===\n")
 
@@ -8,7 +8,7 @@ println("=== WILLIAM × PathMap N-ary ===\n")
 # tools/repl.jl:25 (used by tools/run_tests.sh) and test/runtests.jl:13 — so a bare
 # `PM = …` throws "invalid assignment to constant Main.PM" and this file could not be
 # included from anywhere. Re-binding a const to the IDENTICAL value is permitted.
-const PM = PathMap.PathMap
+const PM = PathMaps.PathMap
 
 @testset "WILLIAM pattern union/intersection via N-ary PathMap" begin
     @testset "3-way join = pattern union across 3 spaces" begin

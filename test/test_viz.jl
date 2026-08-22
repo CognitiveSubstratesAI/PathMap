@@ -1,15 +1,15 @@
 # test/test_viz.jl — Viz (port of pathmap/src/viz.rs). Renders tries to Mermaid; the point is to make
 # STRUCTURAL SHARING observable. Sharing constructions verified against upstream by the port review.
-using PathMap, Test
-const _PMv = PathMap.PathMap
+using PathMaps, Test
+const _PMv = PathMaps.PathMap
 
 @testset "Viz — Mermaid render + structural sharing" begin
     # ── basic render ────────────────────────────────────────────────────────
     m = _PMv{Int}()
     for (i, s) in enumerate(["roman", "romane", "romanus", "bow"])
-        PathMap.set_val_at!(m, Vector{UInt8}(s), i)
+        PathMaps.set_val_at!(m, Vector{UInt8}(s), i)
     end
-    out = PathMap.viz_maps([m]; ascii_path=true)   # → Mermaid String
+    out = PathMaps.viz_maps([m]; ascii_path=true)   # → Mermaid String
     @test occursin("flowchart LR", out)
     @test occursin("shape: rect", out)               # node boxes
     @test occursin("shape: rounded", out)            # value boxes
@@ -18,52 +18,52 @@ const _PMv = PathMap.PathMap
     # ── CROSS-MAP sharing: graft m1's root into m2 under "prefix:" ⇒ ONE physical
     #    node in both maps ⇒ rendered ONCE, colored by the two-map bitmask 0b011 = "#0aa".
     m1 = _PMv{Int}()
-    PathMap.set_val_at!(m1, b"hello", 42)
+    PathMaps.set_val_at!(m1, b"hello", 42)
     m2 = _PMv{Int}()
-    wz = PathMap.write_zipper(m2)
-    PathMap.wz_descend_to!(wz, b"prefix:")
-    PathMap.wz_graft_map!(wz, m1)
-    @test PathMap.refcount(m1.root) == 2                                    # sharing is real
-    shared_id = PathMap.shared_node_id(m1.root)
-    node_in_m2 = PathMap.tr_get_focus_rc(PathMap.trie_ref_at_path(m2, b"prefix:"))
-    @test PathMap.shared_node_id(node_in_m2) == shared_id                   # same object
-    mmd = PathMap.viz_maps([m1, m2])
+    wz = PathMaps.write_zipper(m2)
+    PathMaps.wz_descend_to!(wz, b"prefix:")
+    PathMaps.wz_graft_map!(wz, m1)
+    @test PathMaps.refcount(m1.root) == 2                                    # sharing is real
+    shared_id = PathMaps.shared_node_id(m1.root)
+    node_in_m2 = PathMaps.tr_get_focus_rc(PathMaps.trie_ref_at_path(m2, b"prefix:"))
+    @test PathMaps.shared_node_id(node_in_m2) == shared_id                   # same object
+    mmd = PathMaps.viz_maps([m1, m2])
     @test count("g$(shared_id)@{ shape: rect", mmd) == 1                    # emitted once
     @test occursin("style g$(shared_id) fill:#0aa", mmd)                    # two-map sharing color
 
     # ── WITHIN-MAP sharing (ref_cnt>1 inside one map) ⇒ rendered once, map color (blue).
     mw = _PMv{Int}()
-    PathMap.set_val_at!(mw, b"Sab", 1)
-    PathMap.set_val_at!(mw, b"Scd", 2)
-    src_anr = PathMap.tr_get_focus_anr(PathMap.trie_ref_at_path(mw, b"S"))
-    wzg = PathMap.write_zipper(mw)
-    PathMap.wz_descend_to!(wzg, b"D")
-    PathMap.wz_graft!(wzg, src_anr)
-    shared_rc = PathMap.tr_get_focus_rc(PathMap.trie_ref_at_path(mw, b"S"))
-    @test PathMap.refcount(shared_rc) >= 2
-    id_S = PathMap.shared_node_id(shared_rc)
-    mmd2 = PathMap.viz_maps([mw])
+    PathMaps.set_val_at!(mw, b"Sab", 1)
+    PathMaps.set_val_at!(mw, b"Scd", 2)
+    src_anr = PathMaps.tr_get_focus_anr(PathMaps.trie_ref_at_path(mw, b"S"))
+    wzg = PathMaps.write_zipper(mw)
+    PathMaps.wz_descend_to!(wzg, b"D")
+    PathMaps.wz_graft!(wzg, src_anr)
+    shared_rc = PathMaps.tr_get_focus_rc(PathMaps.trie_ref_at_path(mw, b"S"))
+    @test PathMaps.refcount(shared_rc) >= 2
+    id_S = PathMaps.shared_node_id(shared_rc)
+    mmd2 = PathMaps.viz_maps([mw])
     @test count("g$(id_S)@{ shape: rect", mmd2) == 1
     @test occursin("style g$(id_S) fill:blue", mmd2)
 
     # ── edge cases the port review flagged ──────────────────────────────────
     # root value (empty key) lives in PathMap.root_val — must still render
     mr = _PMv{Int}()
-    PathMap.set_val_at!(mr, b"", 7)
-    @test occursin("label: \"7\"", PathMap.viz_maps([mr]))
+    PathMaps.set_val_at!(mr, b"", 7)
+    @test occursin("label: \"7\"", PathMaps.viz_maps([mr]))
 
     # value with a Mermaid-breaking char must be escaped, not emitted raw
     ms = _PMv{String}()
-    PathMap.set_val_at!(ms, b"k", "a\"b")
-    esc = PathMap.viz_maps([ms])
+    PathMaps.set_val_at!(ms, b"k", "a\"b")
+    esc = PathMaps.viz_maps([ms])
     @test occursin("#quot;", esc)              # quote escaped
     @test !occursin("\"a\"b\"", esc)           # no raw quote breaking the label
 
     # ── ASCII tree mode ─────────────────────────────────────────────────────
     ascii(mp) = String(
         take!(
-            PathMap.viz_maps(mp,
-                PathMap.DrawConfig(; mode=PathMap.ASCII, ascii_path=true, color=false),
+            PathMaps.viz_maps(mp,
+                PathMaps.DrawConfig(; mode=PathMaps.ASCII, ascii_path=true, color=false),
                 IOBuffer())
         )
     )
@@ -82,18 +82,18 @@ const _PMv = PathMap.PathMap
     rectcount(logical) = count("shape: rect",
         String(
             take!(
-                PathMap.viz_maps(
+                PathMaps.viz_maps(
                     [m],
-                    PathMap.DrawConfig(; logical, ascii_path=true, color=false),
+                    PathMaps.DrawConfig(; logical, ascii_path=true, color=false),
                     IOBuffer()
                 )
             )
         ))
     lg_m = String(
         take!(
-            PathMap.viz_maps(
+            PathMaps.viz_maps(
                 [m],
-                PathMap.DrawConfig(; logical=true, ascii_path=true, color=false),
+                PathMaps.DrawConfig(; logical=true, ascii_path=true, color=false),
                 IOBuffer()
             )
         )
@@ -102,9 +102,9 @@ const _PMv = PathMap.PathMap
     @test rectcount(true) <= rectcount(false)
     lg_a = String(
         take!(
-            PathMap.viz_maps([m],
-                PathMap.DrawConfig(;
-                    mode=PathMap.ASCII, logical=true, ascii_path=true, color=false
+            PathMaps.viz_maps([m],
+                PathMaps.DrawConfig(;
+                    mode=PathMaps.ASCII, logical=true, ascii_path=true, color=false
                 ), IOBuffer())
         )
     )

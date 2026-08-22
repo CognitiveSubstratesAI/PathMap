@@ -22,7 +22,7 @@
 #
 # ⚠️ MUTATES A SOURCE FILE. It restores it in a `finally` and verifies byte-equality at the end;
 # still, do not run it against a dirty working tree.
-using Revise, PathMap
+using Revise, PathMaps
 
 const REPO = normpath(joinpath(@__DIR__, ".."))
 const TARGET = joinpath(REPO, "src/nodes/DenseByteNode.jl")

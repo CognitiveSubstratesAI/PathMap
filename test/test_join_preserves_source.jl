@@ -25,37 +25,37 @@
 #   DIRECT : the op is handed the source map itself
 #   CLONE  : the op is handed a refcount-sharing clone, the only mode in which a missing
 #            copy-on-write becomes visible to a third party (this is what the fuzz harness does)
-using PathMap, Test
+using PathMaps, Test
 
 _b(s) = Vector{UInt8}(codeunits(s))
 
 function _mk(keys::Vector{String})
-    m = PathMap.PathMap{PathMap.UnitVal}()
+    m = PathMaps.PathMap{PathMaps.UnitVal}()
     for k in keys
-        PathMap.set_val_at!(m, _b(k), PathMap.UnitVal())
+        PathMaps.set_val_at!(m, _b(k), PathMaps.UnitVal())
     end
     m
 end
 
 _paths(m) = begin
-    z = PathMap.read_zipper(m)
+    z = PathMaps.read_zipper(m)
     v = String[]
-    while PathMap.zipper_to_next_val!(z)
-        push!(v, String(copy(PathMap.zipper_path(z))))
+    while PathMaps.zipper_to_next_val!(z)
+        push!(v, String(copy(PathMaps.zipper_path(z))))
     end
     sort(v)
 end
 
 # The refcount-sharing handover: `copy(root)` bumps the node refcount exactly as `s.clone()` does
 # upstream. NOT `deepcopy` — a deep copy shares nothing and so could not witness the defect.
-_share(m) = PathMap.PathMap{PathMap.UnitVal, PathMap.GlobalAlloc}(
+_share(m) = PathMaps.PathMap{PathMaps.UnitVal, PathMaps.GlobalAlloc}(
     m.root === nothing ? nothing : copy(m.root), m.root_val, m.alloc)
 
 _anr(s) =
     if s.root === nothing
-        PathMap.ANRNone{PathMap.UnitVal, PathMap.GlobalAlloc}()
+        PathMaps.ANRNone{PathMaps.UnitVal, PathMaps.GlobalAlloc}()
     else
-        PathMap.ANRBorrowedRc{PathMap.UnitVal, PathMap.GlobalAlloc}(s.root)
+        PathMaps.ANRBorrowedRc{PathMaps.UnitVal, PathMaps.GlobalAlloc}(s.root)
     end
 
 @testset "a join never writes into its source operand" begin
@@ -67,39 +67,39 @@ _anr(s) =
 
     @testset "the target is still correct — the fix changes only whose node gets written" begin
         a = _mk(A_MIN)
-        PathMap.wz_join_map_into!(PathMap.write_zipper(a), _mk(S_MIN))
+        PathMaps.wz_join_map_into!(PathMaps.write_zipper(a), _mk(S_MIN))
         @test _paths(a) == ["a:a", "aa", "ab", "ab:", "b", "b:a"]
-        @test PathMap.val_count(a) == 6
+        @test PathMaps.val_count(a) == 6
     end
 
     @testset "wz_join_map_into! — source survives, handed DIRECTLY" begin
         a = _mk(A_MIN)
         s = _mk(S_MIN)
-        PathMap.wz_join_map_into!(PathMap.write_zipper(a), s)
+        PathMaps.wz_join_map_into!(PathMaps.write_zipper(a), s)
         @test _paths(s) == S_MIN            # `s` used to gain "ab:" here
-        @test PathMap.val_count(s) == 3
+        @test PathMaps.val_count(s) == 3
     end
 
     @testset "wz_join_map_into! — source survives THROUGH A SHARING CLONE" begin
         # The third-party case: `shared` is never passed to the op at all. Only a clone sharing its
         # nodes is. A write that skipped copy-on-write reaches `shared` through those nodes.
         shared = _mk(S_MIN)
-        PathMap.wz_join_map_into!(PathMap.write_zipper(_mk(A_MIN)), _share(shared))
+        PathMaps.wz_join_map_into!(PathMaps.write_zipper(_mk(A_MIN)), _share(shared))
         @test _paths(shared) == S_MIN
-        @test PathMap.val_count(shared) == 3
+        @test PathMaps.val_count(shared) == 3
     end
 
     @testset "fuzz 00324 verbatim: RESET · ASCEND 4 · RESET · JOINMAP" begin
         shared = _mk(S_MIN)
         a = _mk(A_324)
-        wz = PathMap.write_zipper(a)
-        PathMap.wz_reset!(wz)
-        PathMap.wz_ascend!(wz, 4)
-        PathMap.wz_reset!(wz)
-        PathMap.wz_join_map_into!(wz, _share(shared))
+        wz = PathMaps.write_zipper(a)
+        PathMaps.wz_reset!(wz)
+        PathMaps.wz_ascend!(wz, 4)
+        PathMaps.wz_reset!(wz)
+        PathMaps.wz_join_map_into!(wz, _share(shared))
         @test _paths(shared) == S_MIN       # used to become [a:a, aa, aab, ab, ab:]
-        @test PathMap.val_count(shared) == 3
-        @test PathMap.val_count(a) == 8     # and the join itself is unaffected
+        @test PathMaps.val_count(shared) == 3
+        @test PathMaps.val_count(a) == 8     # and the join itself is unaffected
     end
 
     @testset "wz_join_into! — the read-zipper form had the SAME hole, via the same node path" begin
@@ -108,7 +108,7 @@ _anr(s) =
         # no by-value signature upstream to hide behind, which on its own refutes the reading that a
         # consumed source was faithful to a by-value parameter.
         shared = _mk(S_MIN)
-        PathMap.wz_join_into!(PathMap.write_zipper(_mk(A_MIN)), _anr(_share(shared)))
+        PathMaps.wz_join_into!(PathMaps.write_zipper(_mk(A_MIN)), _anr(_share(shared)))
         @test _paths(shared) == S_MIN
     end
 
@@ -116,27 +116,27 @@ _anr(s) =
         # MEASURED clean before AND after the fix (0/1200 each on the random sweep) — kept so that a
         # future operand write in meet/subtract/restrict/graft fails HERE rather than in the corpus.
         for (name, op) in (
-            ("graft_map", (wz, s) -> PathMap.wz_graft_map!(wz, s)),
-            ("meet_into", (wz, s) -> PathMap.wz_meet_into!(wz, _anr(s), false, s.root_val)),
+            ("graft_map", (wz, s) -> PathMaps.wz_graft_map!(wz, s)),
+            ("meet_into", (wz, s) -> PathMaps.wz_meet_into!(wz, _anr(s), false, s.root_val)),
             (
                 "meet_into prune",
-                (wz, s) -> PathMap.wz_meet_into!(wz, _anr(s), true, s.root_val)
+                (wz, s) -> PathMaps.wz_meet_into!(wz, _anr(s), true, s.root_val)
             ),
             (
                 "subtract_into",
-                (wz, s) -> PathMap.wz_subtract_into!(wz, _anr(s), false, s.root_val)
+                (wz, s) -> PathMaps.wz_subtract_into!(wz, _anr(s), false, s.root_val)
             ),
             ("subtract_into prune",
-                (wz, s) -> PathMap.wz_subtract_into!(wz, _anr(s), true, s.root_val)),
-            ("restrict", (wz, s) -> PathMap.wz_restrict!(wz, _anr(s)))
+                (wz, s) -> PathMaps.wz_subtract_into!(wz, _anr(s), true, s.root_val)),
+            ("restrict", (wz, s) -> PathMaps.wz_restrict!(wz, _anr(s)))
         )
             @testset "$name" begin
                 direct = _mk(S_MIN)
-                op(PathMap.write_zipper(_mk(A_324)), direct)
+                op(PathMaps.write_zipper(_mk(A_324)), direct)
                 @test _paths(direct) == S_MIN
 
                 shared = _mk(S_MIN)
-                op(PathMap.write_zipper(_mk(A_324)), _share(shared))
+                op(PathMaps.write_zipper(_mk(A_324)), _share(shared))
                 @test _paths(shared) == S_MIN
             end
         end
@@ -148,8 +148,8 @@ _anr(s) =
         s = _mk(S_MIN)
         a = _mk(A_MIN)
         b = _mk(A_MIN)
-        PathMap.wz_join_map_into!(PathMap.write_zipper(a), s)
-        PathMap.wz_join_map_into!(PathMap.write_zipper(b), s)
+        PathMaps.wz_join_map_into!(PathMaps.write_zipper(a), s)
+        PathMaps.wz_join_map_into!(PathMaps.write_zipper(b), s)
         @test _paths(a) == _paths(b)
         @test _paths(s) == S_MIN
     end

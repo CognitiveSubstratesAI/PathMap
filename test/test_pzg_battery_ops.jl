@@ -21,9 +21,9 @@
 # ⚠️ These assertions cover the ops in ISOLATION. Running the FULL battery against ProductZipperG
 # (as upstream does) is the next step and is what would answer the open pzg_factor_count /
 # last-factor-guard question in test/differential/ADAPTATIONS.md entry 2.
-using Test, PathMap
-const PM = PathMap.PathMap
-const P = PathMap
+using Test, PathMaps
+const PM = PathMaps.PathMap
+const P = PathMaps   # the MODULE; the TYPE is PathMaps.PathMap
 
 @testset "ProductZipperG now implements the battery ops" begin
     m = PM{UnitVal}()

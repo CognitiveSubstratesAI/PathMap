@@ -14,7 +14,7 @@ Pkg.develop(path = "packages/PathMap")
 ## Your First Map
 
 ```julia
-using PathMap
+using PathMaps
 
 # Create a typed map — V can be any Julia type
 m = PathMap{Int}()

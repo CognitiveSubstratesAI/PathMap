@@ -7,7 +7,7 @@ Coordinates multiple simultaneous zippers into the same PathMap using
 Julia translation notes:
   - No `CellByteNode` / split-borrow / `prepare_exclusive_write_path` needed.
     Julia GC handles object lifetimes; TrieNodeODRc is already a shared ref.
-    WriteZipperCore at a sub-path naturally propagates changes to the PathMap.
+    WriteZipperCore at a sub-path naturally propagates changes to the PathMaps.
   - `ZipperHead` wraps a PathMap directly (vs Rust wrapping a WriteZipperCore).
   - `ZipperHeadOwned` is the same thing with a ReentrantLock for thread safety.
   - `ReadZipperTracked`/`WriteZipperTracked` = inner zipper + optional tracker.
@@ -147,7 +147,7 @@ end
 """
     ZipperHead{V, A}
 
-Coordinates multiple simultaneous read and write zippers over a PathMap.
+Coordinates multiple simultaneous read and write zippers over a PathMaps.
 Use `zh_write_zipper_at_exclusive_path` and `zh_read_zipper_at_path` to
 obtain tracked zippers that are safe to use concurrently (within the
 exclusivity constraints of the tracker).

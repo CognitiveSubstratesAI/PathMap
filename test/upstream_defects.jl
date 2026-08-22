@@ -17,7 +17,7 @@
 # minimal reproducer showed 31 of 34 really are upstream's — and 3 are ours, one of them a plainly
 # wrong ANSWER (`meet` returning its input unchanged). Attribution has to be established per case;
 # it cannot be inferred from which side has more atoms. See `fuzz/TRIAGE.md`.
-using PathMap, Test
+using PathMaps, Test
 
 include(joinpath(@__DIR__, "differential", "run_fuzz.jl"))
 

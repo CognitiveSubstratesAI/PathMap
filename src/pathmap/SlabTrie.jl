@@ -1,6 +1,6 @@
 # ADR-001 increment 1 (3b/3c) + increment 2 — a minimal WRITABLE slab-backed trie.
 #
-# Self-contained and NOT a replacement for PathMap. Proves the redesign's core: inserts BUILD nodes
+# Self-contained and NOT a replacement for PathMaps. Proves the redesign's core: inserts BUILD nodes
 # in the slab via immutable isbits SlabHandles; gets read them back; validated `≡ Dict`. Nodes are
 # HYBRID: sparse nodes are compact LIST nodes (no 32-byte mask — fast scan, half the memory); a node
 # that exceeds SLAB_MAXLIST children converts to a DENSE node (mask, O(1) lookup) so high-fan-out

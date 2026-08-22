@@ -1,5 +1,5 @@
 using Test
-using PathMap
+using PathMaps
 # Aqua is test-only [extras]. The optional load stays, but the reason recorded here was WRONG:
 # it claimed Aqua is "present under Pkg.test/CI but NOT in a plain `julia --project=.` run".
 # Measured 2026-08-01 — `using Aqua` succeeds under `--project=.` because the default LOAD_PATH is
@@ -16,7 +16,7 @@ catch
 
     false
 end
-const PM = PathMap.PathMap   # PathMap module and PathMap type share the same name
+const PM = PathMaps.PathMap   # module PathMaps, type PathMap — no longer the same name (2026-08-22)
 
 # Fails the build on any testset that runs but asserts nothing — see the file header for the two
 # inert-oracle instances that motivated it. Captured into `_PM_TS` and checked AFTER the suite.
@@ -30,7 +30,7 @@ const _PM_TS = @testset "PathMap" begin
             # so the `where V` methods are never instantiated unbound — intentional, skip.
             # deps_compat check_extras=false: [extras] are dev-only tools (Cthulhu, Debugger,
             # ProfileView, …); runtime deps carry [compat].
-            Aqua.test_all(PathMap; unbound_args=false, deps_compat=(check_extras=false,))
+            Aqua.test_all(PathMaps; unbound_args=false, deps_compat=(check_extras=false,))
         end
     else
         @info "Aqua not loadable (plain julia --project=.) — runs under Pkg.test/CI"
@@ -412,9 +412,9 @@ const _PM_TS = @testset "PathMap" begin
         m = PM{Int}()
         set_val_at!(m, b"abc", 1)
 
-        pz = PathMap.PrefixZipper(b"X/", read_zipper(m))
+        pz = PathMaps.PrefixZipper(b"X/", read_zipper(m))
         # Descend with a String of pure ASCII first (the common case)
-        n1 = PathMap.pz_descend_to_existing!(pz, "X/abc")
+        n1 = PathMaps.pz_descend_to_existing!(pz, "X/abc")
         @test n1 == 5
         @test pz.path == b"X/abc"
     end
@@ -456,7 +456,7 @@ const _PM_TS = @testset "PathMap" begin
         zh = zipper_head(m)
         wzt1 = zh_write_zipper_at_exclusive_path(zh, b"region:")
         # Opening a second writer under the same prefix must raise Conflict.
-        @test_throws PathMap.Conflict zh_write_zipper_at_exclusive_path(zh, b"region:")
+        @test_throws PathMaps.Conflict zh_write_zipper_at_exclusive_path(zh, b"region:")
         # Releasing the first must let a second writer open cleanly.
         wzt_release!(wzt1)
         wzt2 = zh_write_zipper_at_exclusive_path(zh, b"region:")
@@ -508,7 +508,7 @@ const _PM_TS = @testset "PathMap" begin
 
         rz1 = read_zipper(m1)
         rz2 = read_zipper(m2)
-        pzg = PathMap.ProductZipperG(rz1, [rz2])
+        pzg = PathMaps.ProductZipperG(rz1, [rz2])
         @test pzg_factor_count(pzg) == 2
 
         n = 0
@@ -536,9 +536,9 @@ const _PM_TS = @testset "PathMap" begin
             (payload, path == b"X" ? read_zipper(m_ext) : nothing)
         end
 
-        dpz = PathMap.DependentZipper(rz, nothing, enroll_cb)
+        dpz = PathMaps.DependentZipper(rz, nothing, enroll_cb)
         n = 0
-        while PathMap.dpz_to_next_val!(dpz)
+        while PathMaps.dpz_to_next_val!(dpz)
             n += 1
             n > 100 && break
         end
@@ -581,10 +581,10 @@ const _PM_TS = @testset "PathMap" begin
         enroll_cb(payload, path::AbstractVector{UInt8}, factor_idx::Int) =
             (payload, path == b"X" ? read_zipper(m_ext) : nothing)
 
-        dpz = PathMap.DependentZipper(rz, nothing, enroll_cb)
+        dpz = PathMaps.DependentZipper(rz, nothing, enroll_cb)
         in_step = true
         steps = 0
-        while PathMap.dpz_to_next_val!(dpz)
+        while PathMaps.dpz_to_next_val!(dpz)
             in_step &= (length(dpz.factor_paths) == length(dpz.secondary))
             steps += 1
             steps > 100 && break
@@ -593,7 +593,7 @@ const _PM_TS = @testset "PathMap" begin
         @test in_step
 
         # reset must clear BOTH, not just factor_paths (upstream's `secondary.clear()`).
-        PathMap.dpz_reset!(dpz)
+        PathMaps.dpz_reset!(dpz)
         @test isempty(dpz.factor_paths)
         @test isempty(dpz.secondary)
     end
@@ -663,19 +663,19 @@ const _PM_TS = @testset "PathMap" begin
     #    THREW pre-fix on the empty/disjoint branch the misparse let fall through.
     @testset "precedence-bug regressions" begin
         # should_swap_keys: empty key0 fell through to key0[1] → BoundsError pre-fix.
-        @test PathMap.should_swap_keys(UInt8[], UInt8[0x41]) == false
-        @test PathMap.should_swap_keys(UInt8[0x41], UInt8[]) == false
-        @test PathMap.should_swap_keys(UInt8[0x42], UInt8[0x41]) == true   # higher byte → swap
-        @test PathMap.should_swap_keys(UInt8[0x41], UInt8[0x42]) == false
-        @test PathMap.should_swap_keys(UInt8[0x41, 0x41], UInt8[0x41]) == true  # same byte, longer → swap
+        @test PathMaps.should_swap_keys(UInt8[], UInt8[0x41]) == false
+        @test PathMaps.should_swap_keys(UInt8[0x41], UInt8[]) == false
+        @test PathMaps.should_swap_keys(UInt8[0x42], UInt8[0x41]) == true   # higher byte → swap
+        @test PathMaps.should_swap_keys(UInt8[0x41], UInt8[0x42]) == false
+        @test PathMaps.should_swap_keys(UInt8[0x41, 0x41], UInt8[0x41]) == true  # same byte, longer → swap
 
         # Dict psubtract: a key only in the SMALLER operand made self_v===nothing
         # fall through to psubtract(nothing, …) → MethodError pre-fix. a−b with a
         # disjoint, larger `a` is just `a` (identity on self).
         let a = Dict("x" => 1, "y" => 1, "z" => 1), b = Dict("w" => 1)
-            r = PathMap.psubtract(a, b)
+            r = PathMaps.psubtract(a, b)
             @test r !== nothing                      # did not throw; returned a result
-            @test r isa PathMap.AlgResIdentity       # disjoint subtraction = self unchanged
+            @test r isa PathMaps.AlgResIdentity       # disjoint subtraction = self unchanged
         end
 
         # node_is_empty(::Nothing): `nothing` is the EmptyNode sentinel inside a
@@ -683,7 +683,7 @@ const _PM_TS = @testset "PathMap" begin
         # an empty child. psubtract's child guard `!node_is_empty(as_tagged(cf.rec))`
         # (DenseByteNode.jl:962) crashed with MethodError(node_is_empty(::Nothing)) without
         # this method — surfaced end-to-end by MORK's `!=` comparison source.
-        @test PathMap.node_is_empty(nothing) == true
+        @test PathMaps.node_is_empty(nothing) == true
     end
 
     # ── COW property: join_k_path (MorkL OP_DROP_HEAD) on a SHARED subtrie must NOT
@@ -737,16 +737,16 @@ const _PM_TS = @testset "PathMap" begin
             for key in keys
                 set_val_at!(m, key, 1)
             end
-            wz = PathMap.write_zipper_at_path(m, origin)
+            wz = PathMaps.write_zipper_at_path(m, origin)
             @test wz_join_k_path_into!(wz, k, true) == false      # the drop yields nothing
-            @test PathMap.path_exists_at(m, origin) == false      # ← the dangling path is GONE
+            @test PathMaps.path_exists_at(m, origin) == false      # ← the dangling path is GONE
             @test val_count(m) == 0
         end
 
         # CONTROL: when the drop SUCCEEDS there is nothing to prune and the result stands.
         m = PM{Int}()
         set_val_at!(m, b"abcd", 1)
-        wz = PathMap.write_zipper_at_path(m, b"ab")
+        wz = PathMaps.write_zipper_at_path(m, b"ab")
         @test wz_join_k_path_into!(wz, 1, true) == true
         @test get_val_at(m, b"abd") == 1
     end
@@ -762,11 +762,11 @@ const _PM_TS = @testset "PathMap" begin
             set_val_at!(m, k, 1)
         end
         root = m.root
-        _, child = PathMap.node_child_iter_start(PathMap.as_tagged(root))
-        cl = clone_self(PathMap.as_tagged(root))   # shallow clone of the node
-        _, child_clone = PathMap.node_child_iter_start(PathMap.as_tagged(cl))
+        _, child = PathMaps.node_child_iter_start(PathMaps.as_tagged(root))
+        cl = clone_self(PathMaps.as_tagged(root))   # shallow clone of the node
+        _, child_clone = PathMaps.node_child_iter_start(PathMaps.as_tagged(cl))
         @test child !== nothing && child_clone !== nothing
-        @test PathMap.shared_node_id(child) == PathMap.shared_node_id(child_clone)  # SHARED
+        @test PathMaps.shared_node_id(child) == PathMaps.shared_node_id(child_clone)  # SHARED
     end
 
     # ── Gate B (byte node): clone_self of a DenseByteNode must also work + share.
@@ -781,14 +781,14 @@ const _PM_TS = @testset "PathMap" begin
             set_val_at!(m, vcat(UInt8[c], b"X"), Int(c))
         end
         root = m.root
-        @test PathMap.node_tag(PathMap.as_tagged(root)) in
-            (PathMap.DENSE_BYTE_NODE_TAG, PathMap.CELL_BYTE_NODE_TAG)
-        cl = clone_self(PathMap.as_tagged(root))   # deepcopy_bn — threw MethodError pre-fix
+        @test PathMaps.node_tag(PathMaps.as_tagged(root)) in
+            (PathMaps.DENSE_BYTE_NODE_TAG, PathMaps.CELL_BYTE_NODE_TAG)
+        cl = clone_self(PathMaps.as_tagged(root))   # deepcopy_bn — threw MethodError pre-fix
         @test cl !== nothing
-        _, child = PathMap.node_child_iter_start(PathMap.as_tagged(root))
-        _, childc = PathMap.node_child_iter_start(PathMap.as_tagged(cl))
+        _, child = PathMaps.node_child_iter_start(PathMaps.as_tagged(root))
+        _, childc = PathMaps.node_child_iter_start(PathMaps.as_tagged(cl))
         @test child !== nothing && childc !== nothing
-        @test PathMap.shared_node_id(child) == PathMap.shared_node_id(childc)   # SHARED
+        @test PathMaps.shared_node_id(child) == PathMaps.shared_node_id(childc)   # SHARED
     end
 
     # ── Gate A (graft): by-reference graft of a subtrie into another location SHARES
@@ -799,10 +799,10 @@ const _PM_TS = @testset "PathMap" begin
         m = PM{Int}()
         set_val_at!(m, b"Sab", 1)
         set_val_at!(m, b"Scd", 2)
-        src_anr = PathMap.tr_get_focus_anr(PathMap.trie_ref_at_path(m, b"S"))
+        src_anr = PathMaps.tr_get_focus_anr(PathMaps.trie_ref_at_path(m, b"S"))
         wz = write_zipper(m)
         wz_descend_to!(wz, b"D")
-        PathMap.wz_graft!(wz, src_anr)
+        PathMaps.wz_graft!(wz, src_anr)
         @test get_val_at(m, b"Dab") == 1 && get_val_at(m, b"Dcd") == 2   # graft copied
         set_val_at!(m, b"Dab", 99)                                       # mutate shared graft
         set_val_at!(m, b"Def", 7)
@@ -853,7 +853,7 @@ const _PM_TS = @testset "PathMap" begin
         set_val_at!(m, b"Ea", 1)
         set_val_at!(m, b"Eb", 2)
         set_val_at!(m, b"Ec", 3)
-        snap = typeof(m)(copy(m.root::PathMap.TrieNodeODRc), m.root_val, m.alloc)  # share the root
+        snap = typeof(m)(copy(m.root::PathMaps.TrieNodeODRc), m.root_val, m.alloc)  # share the root
         set_val_at!(m, b"Ed", 4)                                                    # SAME (E*) subtrie
         @test get_val_at(snap, b"Ed") === nothing                                   # snapshot NOT leaked into
         @test get_val_at(snap, b"Ea") == 1 && get_val_at(snap, b"Eb") == 2 &&

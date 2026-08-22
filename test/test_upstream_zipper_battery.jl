@@ -17,8 +17,8 @@
 # FIDELITY. Test bodies are ported operation-for-operation from the upstream functions, keeping
 # upstream's own key sets and comments so a divergence is attributable to OUR zipper rather than to
 # a re-imagined test. Upstream line numbers are cited per test.
-using Test, PathMap
-const PM = PathMap.PathMap   # module and type share the name (same alias runtests.jl uses)
+using Test, PathMaps
+const PM = PathMaps.PathMap   # module and type share the name (same alias runtests.jl uses)
 
 # upstream src/zipper.rs:3228
 const ZIPPER_MOVING_BASIC_TEST_KEYS = [
@@ -1086,9 +1086,9 @@ end  # function run_battery
 run_battery("base read zipper")
 
 BATTERY_MAKE_Z[] =
-    (m, path) -> PathMap.ProductZipperG(
+    (m, path) -> PathMaps.ProductZipperG(
         isempty(path) ? read_zipper(m) : read_zipper_at_path(m, path),
-        PathMap.ReadZipperCore{UnitVal, PathMap.GlobalAlloc}[])
+        PathMaps.ReadZipperCore{UnitVal, PathMaps.GlobalAlloc}[])
 run_battery("ProductZipperG (0 secondaries)")
 
 # ── THIRD INVOCATION: a DEPENDENT ZIPPER in the composition. ─────────────────────────────────────
@@ -1105,9 +1105,9 @@ run_battery("ProductZipperG (0 secondaries)")
 BATTERY_MAKE_Z[] =
     (m, path) -> begin
         inner = isempty(path) ? read_zipper(m) : read_zipper_at_path(m, path)
-        dpz = PathMap.DependentZipper(
+        dpz = PathMaps.DependentZipper(
             inner, nothing, (payload, p, idx) -> (payload, nothing)
         )
-        PathMap.ProductZipperG(dpz, PathMap.ReadZipperCore{UnitVal, PathMap.GlobalAlloc}[])
+        PathMaps.ProductZipperG(dpz, PathMaps.ReadZipperCore{UnitVal, PathMaps.GlobalAlloc}[])
     end
 run_battery("ProductZipperG over DependentZipper (CmpSource shape)")

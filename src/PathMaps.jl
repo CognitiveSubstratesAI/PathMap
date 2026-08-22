@@ -1,6 +1,6 @@
 # PathMap — Julia port of adam-Vandervorst/PathMap
 # Upstream reference: ~/JuliaAGI/dev-zone/PathMap
-module PathMap
+module PathMaps
 
 using Mmap   # real OS memory-mapping for read-only .act backing (act_open_mmap)
 
@@ -122,4 +122,4 @@ version() = v"0.3.0"
 
 export version
 
-end # module PathMap
+end # module PathMaps

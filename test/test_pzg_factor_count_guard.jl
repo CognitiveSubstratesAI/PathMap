@@ -28,8 +28,8 @@
 # ⚠️ SCOPE. One shape: a single enrolled secondary, empty prefix. This REFUTES the specific
 # "focus index vs moving total" concern for the CmpSource shape. It does not prove the guard correct
 # for every composition — multiple simultaneous secondaries, or a non-empty prefix, are not covered.
-using Test, PathMap
-const PMG = PathMap.PathMap
+using Test, PathMaps
+const PMG = PathMaps.PathMap
 
 @testset "pzg_factor_count moves, and focus_factor moves WITH it (ADAPTATIONS entry 2)" begin
     m = PMG{UnitVal}()
@@ -51,17 +51,17 @@ const PMG = PathMap.PathMap
         (payload, nothing)
     end
 
-    dpz = PathMap.DependentZipper(read_zipper(m), nothing, cb)
-    pz = PathMap.PrefixZipper(UInt8[], dpz)           # CmpSource's shape — load-bearing, see header
-    prz = PathMap.ProductZipperG(pz, PathMap.ReadZipperCore{UnitVal, PathMap.GlobalAlloc}[])
+    dpz = PathMaps.DependentZipper(read_zipper(m), nothing, cb)
+    pz = PathMaps.PrefixZipper(UInt8[], dpz)           # CmpSource's shape — load-bearing, see header
+    prz = PathMaps.ProductZipperG(pz, PathMaps.ReadZipperCore{UnitVal, PathMaps.GlobalAlloc}[])
 
     counts = Set{Int}()
     steps = 0
-    while PathMap.pzg_to_next_val!(prz)
+    while PathMaps.pzg_to_next_val!(prz)
         steps += 1
         steps > 200 && break                            # cycle guard: the assertions below fail, not hang
-        fc = PathMap.pzg_factor_count(prz)
-        ff = PathMap.pzg_focus_factor(prz)
+        fc = PathMaps.pzg_factor_count(prz)
+        ff = PathMaps.pzg_focus_factor(prz)
         push!(counts, fc)
 
         # THE GUARD'S PRECONDITION. MORK compares `ff != fc - 1` to mean "focus is in the last
