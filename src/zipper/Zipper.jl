@@ -1129,10 +1129,23 @@ function zipper_fork!(z::ReadZipperCore{V, A}) where {V, A}
     abs_path = copy(z.prefix_buf)
     path_len = length(abs_path)
     fork_val = _is_val_internal(z) ? _get_val(z) : nothing
-    # Always traverse from root (key_start_0=0); root_prefix_len=path_len so that
-    # the forked zipper's path() returns [] (positioned at fork point).
-    # Mirrors ReadZipperCore::fork_read_zipper (zipper.rs:1457).
-    ReadZipperCore_at_path(z.root_node, abs_path, path_len, 0, fork_val, z.alloc)
+    # 🔴 RESUME FROM `z.root_key_start`, DO NOT RESTART AT 0. `z.root_node` is NOT the trie root for
+    # any zipper built by `ReadZipperCore_at_path` — that constructor stores the node it DESCENDED
+    # TO as `root_node`, while `prefix_buf` keeps the FULL path. Passing 0 therefore re-walked the
+    # whole path a second time from an already-descended node, which finds nothing.
+    # MEASURED before the fix — fork vs a directly-constructed zipper at the same path:
+    #     at ""    direct ["p","q"]    forked ["p","q"]   (root: root_key_start == 0, so 0 was right)
+    #     at "a"   direct ["b","c"]    forked []          <- EMPTY
+    #     at "aa"  direct ["aa","b"]   forked []          <- EMPTY
+    #     at "xa"  direct ["xa","xb"]  forked []          <- EMPTY
+    # i.e. fork was silently empty for EVERY non-root focus, and correct only at the root — which is
+    # why a smoke test that forks a fresh whole-map zipper passes over it.
+    # `root_key_start` is exactly "how much of prefix_buf root_node has already consumed", so the
+    # remaining walk is `prefix_buf[root_key_start+1:end]` — the parameter this call was zeroing.
+    # Upstream reaches the same focus differently, borrowing `focus_parent()` with
+    # `new_root_key_start = path.len() - node_key().len()` (zipper.rs:1478) — O(1) where ours re-walks
+    # the tail; the RESULT must match, and that is what the test asserts.
+    ReadZipperCore_at_path(z.root_node, abs_path, path_len, z.root_key_start, fork_val, z.alloc)
 end
 
 # =====================================================================
