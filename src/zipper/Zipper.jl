@@ -633,10 +633,21 @@ zipper_at_root(z::ReadZipperCore) = length(z.prefix_buf) <= z.origin_path_len
 
 function zipper_reset!(z::ReadZipperCore)
     while !isempty(z.ancestors)
-        focus_node, iter_tok, _ = pop!(z.ancestors)
+        focus_node, _iter_tok, _ = pop!(z.ancestors)
         z.focus_node = focus_node
-        z.focus_iter_token = iter_tok
     end
+    # 🔴 DISCARD THE STORED ITERATION TOKEN — upstream `zipper.rs:1565` writes
+    # `self.focus_iter_token = NODE_ITER_INVALID` and binds the ancestor's token as `_tok`, the
+    # underscore saying the saved value is deliberately thrown away. Ours RESTORED it, so a reset
+    # after a PARTIAL walk resumed mid-iteration instead of restarting.
+    # MEASURED before the fix — iterate n values, reset, then walk to exhaustion:
+    #     flat   ["a","b","c","d"]  stop@2 -> ["c","d"]            (2 values never seen again)
+    #     nested 5 keys             stop@2 -> ["ba","bb","c"]
+    #     deep   4 keys             stop@1 -> ["b"]                 (silently skips 2)
+    #     wide   30 keys            stop@3 -> []                    (returns NOTHING)
+    # ⚠️ A walk taken to EXHAUSTION first clears the token as a side effect, so the obvious test
+    # (iterate all, reset, iterate all) PASSES over the bug. It only shows up after a partial walk.
+    z.focus_iter_token = NODE_ITER_INVALID
     resize!(z.prefix_buf, z.origin_path_len)
 end
 
