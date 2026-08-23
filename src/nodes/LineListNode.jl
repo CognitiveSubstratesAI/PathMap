@@ -74,11 +74,27 @@ end
     n
 end
 
+# 🔴 `a[1:lp]` MATERIALISES A COPY JUST TO THROW IT AWAY. Upstream calls
+# `fast_slice_utils::starts_with` (line_list_node.rs:5) — a non-allocating comparison; ours indexed
+# with a RANGE, which in Julia allocates a fresh Vector for every call.
+# MEASURED 2026-08-23 (Profile.Allocs on counter_machine_5.mm2): this ONE line accounted for
+# 100.8 MiB across 4.7 MILLION allocations — 21% of the program's total — and every byte of it was
+# discarded by the `==` on the next instruction. Comparing in place is the same predicate with no
+# heap traffic. (`view` would also avoid the copy, but a SubArray is itself an object; measured on
+# `next_items` the same day, swapping an owned Vector for a SubArray made allocation WORSE, so the
+# explicit loop is the one that actually costs nothing — see
+# [[reference_pathmap_next_items_borrow_is_worse]].)
+# Semantics are unchanged at both edges: lp == 0 returns true (the loop never runs), and
+# length(a) < lp short-circuits false exactly as the old length guard did.
 @inline function slice_starts_with(
     a::AbstractVector{UInt8}, prefix::AbstractVector{UInt8}
 )::Bool
     lp = length(prefix)
-    length(a) >= lp && a[1:lp] == prefix
+    length(a) >= lp || return false
+    @inbounds for i in 1:lp
+        a[i] != prefix[i] && return false
+    end
+    true
 end
 
 # =====================================================================
