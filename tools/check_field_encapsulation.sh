@@ -34,6 +34,22 @@
 # assertion upstream differential included — then failed at runtime because MORK reached in. A
 # differential over PathMap's own API CANNOT exercise a consumer that reaches through it. That is
 # why this gate exists and why strengthening PathMap's tests would not have helped.
+# ─── WHAT THIS GATE CANNOT SEE (validated scope, not assumed) ───────────────────────────────────
+# It matches `.field` SYNTAX. Verified 2026-08-23 to FIRE on a seeded known-positive
+# (`_p(z) = z.focus_iter_token` in MORK/src) — so it catches what it was designed to catch. That is
+# NOT the same as the design being complete. Three ways a consumer still slips past:
+#   · `getproperty(z, :focus_node)` — reflection instead of dot syntax
+#   · an aliased binding: `b = z.anc_nodes` elsewhere, then `b` used freely
+#   · `for f in fieldnames(ReadZipperCore)` — enumeration, never naming a field at all
+# None occur in Space.jl today. The risk arrives LATER: once encapsulation lands and the direct
+# accesses become errors, reflection is exactly the workaround someone reaches for — i.e. the gate
+# is weakest at the moment it matters most. If that happens, the fix is another known-positive seed
+# and a widened matcher, not trust in a green run.
+#
+# \U0001f534 GENERAL RULE THIS INHERITED THE HARD WAY: an instrument that matches on NAMES inherits the
+# defect it was built to measure. `workflows/codemap_coverage.sh` reported 36% coverage, then 72%,
+# before a token check showed ~93% — both wrong figures came from name-matching, in a script written
+# to measure name-matching failures. VALIDATE ANY SUCH MEASURE ON A KNOWN-POSITIVE BEFORE QUOTING IT.
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FIELDS="root_key_start root_val root_node focus_node focus_iter_token prefix_buf origin_path_len anc_nodes anc_toks anc_offs"
