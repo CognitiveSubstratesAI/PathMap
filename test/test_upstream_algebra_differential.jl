@@ -92,25 +92,16 @@ map_from_set(keys) = begin
     m
 end
 
-# Ports `set_from_map`: upstream is `map.iter().map(|(key, ())| key).collect()`.
+# Ports `set_from_map`: upstream is `map.iter().map(|(key, ())| key).collect()`. Ours is the same
+# call now that `PathMap::iter` is ported — `Base.iterate(::PathMap)` yields the ROOT VALUE first,
+# which a bare `read_zipper` walk never does.
 #
-# 🔴 THE ROOT VALUE MUST BE ADDED EXPLICITLY. `read_zipper` + `zipper_to_next_val!` does NOT yield
-# the empty key, even when the map holds one: for a map built with `set_val_at!(m, UInt8[], v)`,
-# `val_count(m) == 1` while the zipper walk yields ZERO paths. `prefix_heavy_set` inserts the empty
-# key on roughly 1 seed in 8, so without this the oracle reports the map as having LOST a key and
-# the failure reads as broken copy-on-write. It cost a wrong diagnosis here — a delta-reduction of
-# a 60-key failing case landed on the single key `UInt8[]`, i.e. no clone was needed to "fail".
-# ⚠️ `val_count` and zipper iteration disagreeing on the root value is a REAL inconsistency in the
-# port and is recorded as such; this helper works around it rather than hiding it.
-set_from_map(m) = begin
-    out = Set{Vector{UInt8}}()
-    m.root_val !== nothing && push!(out, UInt8[])
-    z = P.read_zipper(m)
-    while P.zipper_to_next_val!(z)
-        push!(out, copy(P.zipper_path(z)))
-    end
-    out
-end
+# ⚠️ THE FIRST VERSION OF THIS HELPER USED THE RAW ZIPPER AND WAS WRONG. `prefix_heavy_set` inserts
+# the empty key on roughly 1 seed in 8, so the oracle reported those maps as having LOST a key and
+# the failure read as broken copy-on-write. Delta-reducing a 60-key failing case landed on the
+# single key `UInt8[]` — no clone involved at all, which is what exposed the oracle as the bug.
+# Do not "optimise" this back to a bare zipper walk.
+set_from_map(m) = Set{Vector{UInt8}}(P.pm_keys(m))
 
 @testset "upstream pathmap_algebra_differential.rs (ported)" begin
 

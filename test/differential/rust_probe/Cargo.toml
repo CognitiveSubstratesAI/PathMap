@@ -22,3 +22,11 @@ name = "gen_fuzz"
 path = "src/bin/gen_fuzz.rs"
 
 [workspace]
+
+[[bin]]
+name = "gen_keysets"
+path = "src/bin/gen_keysets.rs"
+
+[[bin]]
+name = "gen_rootval"
+path = "src/bin/gen_rootval.rs"

@@ -260,6 +260,57 @@ end
 # result_into_map + the map-level join / meet / subtract
 # =====================================================================
 
+# =====================================================================
+# Iteration over every (path, value) pair — ports `PathMap::iter`
+# =====================================================================
+
+"""
+    Base.iterate(m::PathMap)
+
+Every `(path, value)` pair in the map, THE ROOT VALUE INCLUDED. Ports `PathMap::iter`
+(trie_map.rs:309), which is `self.read_zipper().into_iter()`.
+
+🔴 THE ROOT VALUE IS WHY THIS EXISTS, and why a raw zipper walk is not a substitute. Upstream's
+`to_next_val` DESCENDS before testing, so it never reports a value sitting AT the root — but
+`iter()` does, and `val_count()` counts it. VERIFIED against the upstream binary rather than
+inferred (test/differential/rust_probe/src/bin/gen_rootval.rs):
+
+    map holding only the empty key   val_count=1  iter_count=1  to_next_val_count=0
+    empty key plus "ab"              val_count=2  iter_count=2  iter_keys=["", "ab"]
+
+Our `zipper_to_next_val!` matches the 0 — correct, and NOT the defect. The gap was that nothing
+ported `iter()`, so there was no enumeration that agreed with `val_count`. MEASURED at the time:
+all 13 enumeration sites across PathMap's own tests used the bare zipper walk, i.e. every one of
+them silently skipped a root value if the map had one. It cost a wrong diagnosis — a "broken
+copy-on-write" that delta-reduced to the single key `UInt8[]`, where no clone was involved at all.
+
+⚠️ Upstream notes `iter` is "much less efficient than using the read_zipper method". Same here: use
+`read_zipper` when you are walking a subtree and know there is no root value in play.
+"""
+function Base.iterate(m::PathMap{V, A}) where {V, A}
+    # The root value first, exactly as upstream's `into_iter` surfaces it before descending.
+    if m.root_val !== nothing
+        return ((UInt8[], m.root_val::V), (true, read_zipper(m)))
+    end
+    return iterate(m, (true, read_zipper(m)))
+end
+
+function Base.iterate(m::PathMap{V, A}, state) where {V, A}
+    _, z = state
+    zipper_to_next_val!(z) || return nothing
+    ((copy(zipper_path(z)), zipper_val(z)::V), (false, z))
+end
+
+Base.IteratorSize(::Type{<:PathMap}) = Base.SizeUnknown()
+Base.eltype(::Type{PathMap{V, A}}) where {V, A} = Tuple{Vector{UInt8}, V}
+
+"""
+    pm_keys(m) -> Vector{Vector{UInt8}}
+
+Every path holding a value, root included. The common case of iterating for keys alone.
+"""
+pm_keys(m::PathMap) = [k for (k, _) in m]
+
 """
     result_into_map(result, self_map, other_map, region) -> PathMap
 
