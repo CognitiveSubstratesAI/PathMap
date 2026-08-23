@@ -974,5 +974,11 @@ include("test_trie_ref_cow.jl")
 # when test_act_validation.jl sat uncalled through two green runs.
 include("test_gxhash_map_hash.jl")
 
+# UPSTREAM'S OWN algebra tests (`pathmap/tests/pathmap_algebra_differential.rs`), all four, at
+# upstream's full non-miri seed counts — a seeded PRNG against a set oracle checking the algebraic
+# LAWS, not point cases. Ported rather than reinvented: four hand-made fixtures aimed at the same
+# defect all passed, while these caught a genuine copy-on-write bug on run one. 4 097 assertions.
+include("test_upstream_algebra_differential.jl")
+
 # Post-suite: a testset that asserted NOTHING must fail the build, not read as green.
 assert_no_inert_testsets(_PM_TS)

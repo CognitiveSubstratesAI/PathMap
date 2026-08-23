@@ -256,6 +256,70 @@ function psubtract(a::PathMap{V, A}, b::PathMap{V, A}) where {V, A}
     )
 end
 
+# =====================================================================
+# result_into_map + the map-level join / meet / subtract
+# =====================================================================
+
+"""
+    result_into_map(result, self_map, other_map, region) -> PathMap
+
+Ports `result_into_map` (trie_map.rs:684). Collapses an `AlgebraicResult{PathMap}` into a concrete
+map — which is the ONLY place the *variant* of an algebraic result becomes observable at map level:
+
+    None            -> an EMPTY map
+    Identity(SELF)   -> a copy of `self`
+    Identity(COUNTER)-> a copy of `other`
+    Element(m)       -> m
+
+🔴 THAT DISTINCTION IS WHY THE `Ring.jl` BLANKET-IMPL DIVERGENCE MATTERED and why nothing in this
+repo could see it. Our `Union{Nothing,V}` impls returned `Identity(SELF_IDENT)` where upstream
+returns `None` (ring.rs:718/734); through this function that is "a copy of self" instead of "empty".
+Every existing check goes through the ZIPPER forms (`wz_meet_into!` etc.), which consume the result
+internally and never expose the variant — so a 46-scenario upstream differential, upstream's own
+`option_subtract_test`, and the full suite were all green over it. Ported 2026-08-23 together with
+the fix, so the observing function exists.
+"""
+function result_into_map(
+    result::AlgebraicResult, self_map::PathMap{V, A}, other_map::PathMap{V, A}, region::A
+) where {V, A}
+    if result isa AlgResElement
+        return result.value::PathMap{V, A}
+    elseif result isa AlgResNone
+        return PathMap{V, A}(region)
+    else
+        mask = (result::AlgResIdentity).mask
+        return (mask & SELF_IDENT) > 0 ? _pm_clone(self_map) : _pm_clone(other_map)
+    end
+end
+
+# Ports `impl Clone for PathMap` (trie_map.rs:38): `root_ref.clone()`, i.e. clone the Rc HANDLE.
+#
+# 🔴 MUST BE `copy(m.root)`, NOT `m.root`. The first version of this function aliased the root
+# reference raw and carried a comment claiming "cloning bumps a refcount" — it did not. Sharing the
+# handle without incrementing leaves the node believing it has ONE owner, so the next write takes
+# the in-place path instead of the COW fork and MUTATES THE ORIGINAL THROUGH THE CLONE. Caught by
+# the ported upstream test `cloned_prefix_heavy_maps_are_logically_isolated_under_mutation`, which
+# asserts the ORIGINAL is unchanged after writing to the clone — 10 of 128 seeds failed.
+# `Base.copy(::TrieNodeODRc)` is the sanctioned path (TrieNode.jl:409, "bumps the NODE's atomic
+# refcount, mirrors Arc::clone"); `make_unique!` on the write side reads that count to decide
+# whether to fork.
+_pm_clone(m::PathMap{V, A}) where {V, A} =
+    PathMap{V, A}(m.root === nothing ? nothing : copy(m.root), m.root_val, m.alloc)
+
+"""
+    pm_join(a, b) / pm_meet(a, b) / pm_subtract(a, b) -> PathMap
+
+Port `PathMap::join` / `::meet` / `::subtract` (trie_map.rs:523/528/559): the algebraic op followed
+by `result_into_map`. Named `pm_*` because bare `join`/`meet` would collide with Base and with the
+`AlgebraicResult`-returning `pjoin`/`pmeet`/`psubtract` above, which stay as the direct ports.
+"""
+pm_join(a::PathMap{V, A}, b::PathMap{V, A}) where {V, A} =
+    result_into_map(pjoin(a, b), a, b, a.alloc)
+pm_meet(a::PathMap{V, A}, b::PathMap{V, A}) where {V, A} =
+    result_into_map(pmeet(a, b), a, b, a.alloc)
+pm_subtract(a::PathMap{V, A}, b::PathMap{V, A}) where {V, A} =
+    result_into_map(psubtract(a, b), a, b, a.alloc)
+
 """
     prestrict(a::PathMap{V,A}, b::PathMap{V,A}) → AlgebraicResult{PathMap{V,A}}
 

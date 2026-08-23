@@ -191,6 +191,46 @@ function differential_results()
     end
     out["algebra/subtract_root"] = _dump(a)
 
+    # ---- the Option<V> blanket-impl boundary --------------------------------
+    # `a` has a CHILD at "a" but NO VALUE there; `b` HAS a value at "a". Both ops then drive
+    # `Ring.jl`'s `Union{Nothing,V}` blanket with a === nothing and b !== nothing — the branch
+    # upstream's own `option_subtract_test` never asserts (its left side is always `Some(..)`) and
+    # that NONE of the previous 42 fixtures reached. Added 2026-08-23 with real upstream output.
+    a = _mk(["ab"])
+    b = _mk(["a"])
+    let wz = PathMaps.write_zipper(a)
+        PathMaps.wz_subtract_into!(wz, _anr(b), false)
+    end
+    out["algebra/subtract_val_absent"] = _dump(a)
+
+    a = _mk(["ab"])
+    b = _mk(["a"])
+    let wz = PathMaps.write_zipper(a)
+        PathMaps.wz_meet_into!(wz, _anr(b), false)
+    end
+    out["algebra/meet_val_absent"] = _dump(a)
+
+    # The SAME boundary on a DENSE node — the only place CoFreeEntry pairs are subtracted/met
+    # field-by-field. The two fixtures above use a single 2-byte key, which path-compresses to a
+    # LineListNode and never enters `_cf_psubtract`/`_cf_pmeet` at all: a fixture that cannot reach
+    # the branch cannot catch the bug in it. 300 flat 2-byte keys force a DenseByteNode root whose
+    # entry for 'a' has CHILDREN BUT NO VALUE, while `b` has a VALUE at "a" and no children.
+    _dense = [string(Char(0x61 + i ÷ 26)) * string(Char(0x61 + i % 26)) for i in 0:299]
+
+    a = _mk(_dense)
+    b = _mk(["a"])
+    let wz = PathMaps.write_zipper(a)
+        PathMaps.wz_subtract_into!(wz, _anr(b), false)
+    end
+    out["algebra/subtract_dense_val_absent"] = _dump(a)
+
+    a = _mk(_dense)
+    b = _mk(["a"])
+    let wz = PathMaps.write_zipper(a)
+        PathMaps.wz_meet_into!(wz, _anr(b), false)
+    end
+    out["algebra/meet_dense_val_absent"] = _dump(a)
+
     # ---- prefix ops -------------------------------------------------------
     m = _mk(["foo:bar"])
     let wz = PathMaps.write_zipper_at_path(m, _b("foo:"))

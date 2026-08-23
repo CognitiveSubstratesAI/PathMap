@@ -198,6 +198,61 @@ fn main() {
     }
     emit("algebra/subtract_root", dump(&a));
 
+    // ---- the Option<V> blanket-impl boundary ---------------------------------
+    // `a` has a CHILD at "a" but NO VALUE there; `b` HAS a value at "a". Both ops then drive the
+    // `impl for Option<V>` blanket with self = None and other = Some(()) — the branch upstream's
+    // own `option_subtract_test` never asserts (it only ever has `Some(..)` on the left) and that
+    // none of the existing 42 fixtures reached. Our port returned Identity(SELF_IDENT) there where
+    // ring.rs:734 says `None => AlgebraicResult::None`, which routes `_cf_combine_results` down a
+    // different branch: KEEP the entry instead of REMOVE it.
+    let mut a = mk(&["ab"]);
+    let b = mk(&["a"]);
+    {
+        let sz = b.read_zipper();
+        let mut wz = a.write_zipper();
+        wz.subtract_into(&sz, false);
+    }
+    emit("algebra/subtract_val_absent", dump(&a));
+
+    let mut a = mk(&["ab"]);
+    let b = mk(&["a"]);
+    {
+        let sz = b.read_zipper();
+        let mut wz = a.write_zipper();
+        wz.meet_into(&sz, false);
+    }
+    emit("algebra/meet_val_absent", dump(&a));
+
+    // The SAME boundary but on a DENSE node, which is the only place `CoFreeEntry` pairs are
+    // subtracted/met field-by-field. The two fixtures above use a single 2-byte key, which
+    // path-compresses to a LineListNode and never enters that code at all — a fixture that cannot
+    // reach the branch cannot catch the bug in it. 300 flat 2-byte keys force a DenseByteNode root
+    // whose entry for 'a' has CHILDREN BUT NO VALUE, while `b` has a VALUE at "a" and no children.
+    let keys: Vec<String> = (0..300)
+        .map(|i: usize| format!("{}{}",
+            (b'a' + (i / 26) as u8) as char,
+            (b'a' + (i % 26) as u8) as char))
+        .collect();
+    let kr: Vec<&str> = keys.iter().map(|s| s.as_str()).collect();
+
+    let mut a = mk(&kr);
+    let b = mk(&["a"]);
+    {
+        let sz = b.read_zipper();
+        let mut wz = a.write_zipper();
+        wz.subtract_into(&sz, false);
+    }
+    emit("algebra/subtract_dense_val_absent", dump(&a));
+
+    let mut a = mk(&kr);
+    let b = mk(&["a"]);
+    {
+        let sz = b.read_zipper();
+        let mut wz = a.write_zipper();
+        wz.meet_into(&sz, false);
+    }
+    emit("algebra/meet_dense_val_absent", dump(&a));
+
     // ---- prefix ops ----------------------------------------------------------
     // The shape that made pathmap_prefix_ops.jl assert the wrong path: an insert
     // through write_zipper_at_path(b"foo:") lands the prefix INSIDE that subtree.

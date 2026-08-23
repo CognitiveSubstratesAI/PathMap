@@ -443,7 +443,7 @@ function pjoin(
         b === nothing && return AlgResIdentity(SELF_IDENT)
         r = pjoin(a, b)
         if is_none(r)
-            return AlgResElement{Union{Nothing, V}}(nothing)
+            return AlgResNone()          # `map` preserves None; do not synthesise Element(nothing)
         elseif is_element(r)
             return AlgResElement{Union{Nothing, V}}((r::AlgResElement{V}).value)
         else
@@ -455,14 +455,17 @@ end
 function pmeet(
     a::Union{Nothing, V}, b::Union{Nothing, V}
 )::AlgebraicResult{Union{Nothing, V}} where {V}
+    # Upstream `ring.rs:718`: `None => AlgebraicResult::None` — self being None short-circuits
+    # WITHOUT inspecting other, and Some/None is None too. `AlgebraicResult::map` (ring.rs:84)
+    # preserves None as None, so an inner None must NOT become Element(nothing): None means
+    # "the values annihilate, discard the output", Element(nothing) means "store this value".
     if a === nothing
-        b === nothing && return AlgResIdentity(SELF_IDENT | COUNTER_IDENT)
-        return AlgResElement{Union{Nothing, V}}(nothing)
+        return AlgResNone()
     else
-        b === nothing && return AlgResElement{Union{Nothing, V}}(nothing)
+        b === nothing && return AlgResNone()
         r = pmeet(a, b)
         if is_none(r)
-            return AlgResElement{Union{Nothing, V}}(nothing)
+            return AlgResNone()
         elseif is_element(r)
             return AlgResElement{Union{Nothing, V}}((r::AlgResElement{V}).value)
         else
@@ -474,8 +477,11 @@ end
 function psubtract(
     a::Union{Nothing, V}, b::Union{Nothing, V}
 )::AlgebraicResult{Union{Nothing, V}} where {V}
+    # Upstream `ring.rs:734`: `None => AlgebraicResult::None`. Ours returned Identity(SELF_IDENT),
+    # i.e. "the result equals self" — true in effect (self IS nothing) but the WRONG VARIANT, and
+    # consumers branch on the variant, not on the value.
     if a === nothing
-        return AlgResIdentity(SELF_IDENT)
+        return AlgResNone()
     else
         b === nothing && return AlgResIdentity(SELF_IDENT)
         # Rebind to V to avoid recursing back into this Union{Nothing,V} overload
@@ -483,7 +489,7 @@ function psubtract(
         bv::V = b
         r = psubtract(av, bv)
         if is_none(r)
-            return AlgResElement{Union{Nothing, V}}(nothing)
+            return AlgResNone()          # `map` preserves None; do not synthesise Element(nothing)
         elseif is_element(r)
             return AlgResElement{Union{Nothing, V}}((r::AlgResElement{V}).value)
         else
@@ -496,9 +502,24 @@ end
 # Blanket impls — trivial (unit type)
 # =====================================================================
 
-# Rust: `impl Lattice for ()`, `impl DistributiveLattice for ()`
-# Julia: `Nothing` is the natural analog
-
+# Rust: `impl Lattice for ()`, `impl DistributiveLattice for ()` (ring.rs:849)
+# Julia: `Nothing` is the analog USED AS A VALUE.
+#
+# 🔴 DO NOT "CORRECT" THESE TO AlgResNone(). Attempted 2026-08-23 on the reasoning that `nothing`
+# is `Option::None`, so None/None should follow upstream's Option impls (ring.rs:690/718) and
+# return `AlgebraicResult::None`. THAT BROKE THE SET LATTICE: `Set{K}` is ported as
+# `Dict{K, Nothing}` (see `pjoin(a::Set{K}, ...)` below), so `nothing` there is the UNIT VALUE and
+# these methods decide whether a SHARED KEY SURVIVES a join. Returning None dropped every shared
+# key and turned union into symmetric difference — `pjoin(Set([a,b,c]), Set([b,c,d]))` gave
+# `Set([a,d])` instead of `Set([a,b,c,d])`. Caught by MORK's suite, 8 failures.
+#
+# ⚠️ THE CONFLATION IS REAL AND UNRESOLVED HERE: `nothing` serves BOTH as Rust's `()` (a present
+# value, via the Set/Dict ports) AND as `Option::None` (absence, via `Union{Nothing,V}`), and a
+# method dispatched on `(::Nothing, ::Nothing)` cannot tell which was meant. Upstream needs
+# DIFFERENT answers for the two — `Identity(SELF|COUNTER)` for `()`, `None` for `Option`. The clean
+# fix is to make the Set/Dict ports carry `UnitVal` (which already exists, with these same impls)
+# so `nothing` means absence only; until then the unit reading wins here because it is the one with
+# live consumers. The `Union{Nothing,V}` blanket impls above ARE fixed and follow the Option port.
 pjoin(::Nothing, ::Nothing) = AlgResIdentity(SELF_IDENT | COUNTER_IDENT)
 pmeet(::Nothing, ::Nothing) = AlgResIdentity(SELF_IDENT | COUNTER_IDENT)
 psubtract(::Nothing, ::Nothing) = AlgResNone()
