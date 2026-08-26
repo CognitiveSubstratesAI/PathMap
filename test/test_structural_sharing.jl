@@ -39,6 +39,12 @@ using Test, PathMaps
 
     # `shared_node_id` is `objectid(rc.node)`, so distinct identities vs positions visited is the
     # whole measurement — two wrappers of the SAME physical node collapse to one id.
+    # ⚠️ THIS WALK ONLY ENUMERATES SINGLE-BYTE-KEYED NODES. It descends via
+    # `node_branches_mask(n, UInt8[])`, which returns nothing for a node carrying a MULTI-BYTE key —
+    # measured 2026-08-24 on a 115k-fact trie, where the same walk reported positions=1, ids=1.
+    # It is correct for THIS fixture (every level is keyed by one of a,b,c,d) and the assertions
+    # below would FAIL LOUDLY rather than pass wrongly if that stopped holding. Do not reuse this
+    # walk as a general node counter without handling multi-byte keys.
     ids = Set{UInt64}(); positions = Ref(0)
     function walk(rc, depth)
         depth > 12 && return
