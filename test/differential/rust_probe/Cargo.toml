@@ -11,7 +11,7 @@ edition = "2021"
 #     cargo run --release --bin gen_expected --config 'patch.crates-io.pathmap.path="/abs/path"'
 # NOTE: the GATE itself never needs this crate — upstream output is vendored at
 # ../expected/upstream.tsv. Rust is only required to REGENERATE that file.
-pathmap = { path = "../../../../../../JuliaAGI/dev-zone/PathMap" }
+pathmap = { path = "../../../../../../dev-zone/PathMap" }
 
 [[bin]]
 name = "gen_expected"

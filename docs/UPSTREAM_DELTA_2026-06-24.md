@@ -7,11 +7,11 @@ Decision recorded so this is a known, ready-to-pick-up gap — not a silent drif
 
 | | Rust `pathmap` commit | date |
 | --- | --- | --- |
-| Our Julia port tracks (~baseline) | `0ca5aaa` (`~/JuliaAGI/dev-zone/PathMap-upstream`) | 2026-05-07 |
-| Fresh upstream downloaded | `27d9b09` — PR #38 `rz_path_api_and_fast_multi_branch_graft` (`~/JuliaAGI/dev-zone/PathMap`) | 2026-06-23 |
+| Our Julia port tracks (~baseline) | `0ca5aaa` (`~/dev-zone/PathMap-upstream`) | 2026-05-07 |
+| Fresh upstream downloaded | `27d9b09` — PR #38 `rz_path_api_and_fast_multi_branch_graft` (`~/dev-zone/PathMap`) | 2026-06-23 |
 
 Crate version unchanged (0.3.0) across the range. Delta = ~30 commits, **+1616 / −67 across 19 files**
-(`git -C ~/JuliaAGI/dev-zone/PathMap log --oneline 0ca5aaa..27d9b09`).
+(`git -C ~/dev-zone/PathMap log --oneline 0ca5aaa..27d9b09`).
 
 ## What the delta actually is (all NEW functionality + perf — none used by our MORK)
 
@@ -46,7 +46,7 @@ get_focus_at temp-buffer) — fix the **new** code above, **not** anything we al
 
 Port the relevant slice **the moment a consumer calls it** — i.e. if a future MORK/Core sync starts
 using `graft_masked_branches` (fast multi-branch graft) or the `val_at`/`graft_src_at` read API. At
-that point port from `~/JuliaAGI/dev-zone/PathMap` (the fresh `27d9b09` source) 1:1 — read the Rust
+that point port from `~/dev-zone/PathMap` (the fresh `27d9b09` source) 1:1 — read the Rust
 first (`src/write_zipper.rs`, `src/zipper.rs`, `src/trie_ref.rs`, `src/prefix_zipper.rs`), skip the
 benchmarks + micro-perf opts, and add warm-REPL coverage per new method.
 
@@ -58,7 +58,7 @@ Re-checked after the coref-join became the MORK default (921c05c) — the change
 could have made a PathMap op hot. Three layers checked; **conclusion unchanged: nothing to port.**
 
 ### (a) The genuinely-new upstream delta `27d9b09..233fbba` is 100% experimental, 0 consumers
-`git -C ~/JuliaAGI/dev-zone/PathMap diff --stat 27d9b09..233fbba` = **one file,
+`git -C ~/dev-zone/PathMap diff --stat 27d9b09..233fbba` = **one file,
 `src/experimental/zipper_algebra.rs` (+2165/−443)** — all 17 commits (DNF clause-merge engine,
 XOR→`sym_diff`, majority-of-three, the `ValuePolicy` Cow rewrite, and the `active_bits` iteration
 opt saga 9da58e3→revert 9724ca1→8447ab8). It is the **experimental DNF zipper-merge module**. Our

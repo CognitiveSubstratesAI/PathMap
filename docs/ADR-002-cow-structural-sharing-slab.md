@@ -71,7 +71,7 @@ compaction (Q2). **Consequence (sequence): this GATES MORK integration and must 
 the start.** The PoC's single reallocatable `Memory{UInt8}` is NOT concurrency-viable; retrofitting
 concurrency onto it later is a rewrite, not a patch.
 
-## ✅ UPSTREAM CROSS-CHECK — DONE (2026-06-24, `~/JuliaAGI/dev-zone/PathMap-upstream` + `MORK`)
+## ✅ UPSTREAM CROSS-CHECK — DONE (2026-06-24, `~/dev-zone/PathMap-upstream` + `MORK`)
 
 Read `alloc.rs`, `trie_node.rs` (`make_mut`), and MORK's space construction. Result: **the slab has NO
 direct Rust analog — it is a Julia-specific adaptation, so there is nothing upstream to "deviate" from

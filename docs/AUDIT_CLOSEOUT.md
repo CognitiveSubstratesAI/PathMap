@@ -167,7 +167,7 @@ deliberately.
 
 - Deep-audit findings + the corrected bug-#7 analysis: session memory
   `project_pathmap_cow_audit_2026-06-02` and `project_packages_migration_to_cognitivesubstrates`.
-- Upstream Rust: `~/JuliaAGI/dev-zone/PathMap/src/` (`trie_node.rs`, `line_list_node.rs`,
+- Upstream Rust: `~/dev-zone/PathMap/src/` (`trie_node.rs`, `line_list_node.rs`,
   `dense_byte_node.rs`, `write_zipper.rs`, `ring.rs`).
 - MORK-impact on the integer/bool lattice divergence: DONE — MORK uses `PathMap{UnitVal}`
   exclusively for algebraic ops; `UnitVal` lattice is bit-exact to Rust `Lattice for ()`.

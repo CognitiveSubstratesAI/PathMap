@@ -1,6 +1,10 @@
 algebra/join_root
+algebra/meet_dense_val_absent
 algebra/meet_root
+algebra/meet_val_absent
+algebra/subtract_dense_val_absent
 algebra/subtract_root
+algebra/subtract_val_absent
 ascend/over_ascend_ret
 ascend/over_ascend_then_setval
 basic/empty
@@ -20,6 +24,7 @@ graft/subtract_into_rootval_at_p
 graft/take_map_valonly_residue
 graft/take_map_valonly_taken
 path_exists_at/16z_prefixes
+path_exists_at/<empty>
 path_exists_at/a
 path_exists_at/ab
 path_exists_at/abc
@@ -28,7 +33,6 @@ path_exists_at/abcdefghi
 path_exists_at/abcdefghij
 path_exists_at/abcx
 path_exists_at/abz
-path_exists_at/<empty>
 path_exists_at/empty_map_empty_path
 path_exists_at/empty_map_some_path
 path_exists_at/rootval_empty_path

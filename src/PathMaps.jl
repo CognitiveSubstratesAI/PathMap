@@ -1,5 +1,5 @@
 # PathMap — Julia port of adam-Vandervorst/PathMap
-# Upstream reference: ~/JuliaAGI/dev-zone/PathMap
+# Upstream reference: ~/dev-zone/PathMap
 module PathMaps
 
 using Mmap   # real OS memory-mapping for read-only .act backing (act_open_mmap)

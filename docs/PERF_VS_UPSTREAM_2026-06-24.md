@@ -185,7 +185,7 @@ usefully can.
 ## Fresh cross-check 2026-07-06 — LIVE Rust bench + small-N read parity (confirms the above)
 
 Re-ran a live head-to-head after the coref work (which touched MORK, not PathMap — so no read/write-path
-change here). **Rust**: `cargo bench --bench binary_keys` on upstream `~/JuliaAGI/dev-zone/PathMap`
+change here). **Rust**: `cargo bench --bench binary_keys` on upstream `~/dev-zone/PathMap`
 (rustup nightly, `--no-default-features --features nightly,graft_root_vals,slim_ptrs` to skip the
 libz/cmake serialization dep), divan. **Julia**: fresh `BenchmarkTools`, deterministic 12-byte keys.
 
