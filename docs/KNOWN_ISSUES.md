@@ -1,5 +1,33 @@
 # PathMap — known issues / hardening backlog
 
+## KI-CLASS-COW — refcount-based COW where a sharing relationship goes unaccounted
+
+**Named 2026-08-27.** KI-1 below is not an isolated bug; it is the fourth known instance of one
+mechanism. Our COW is refcount-based (`_cow_in_place!`, `src/zipper/Zipper.jl:118-125`, forks only
+at `refcnt > 1` and otherwise returns the SAME object). Every instance is a place where a value
+DERIVED from a node — a cached path length, a memo entry, an aliased root — outlives a fork or a
+mutation that should have invalidated it.
+
+| # | Site | What went unaccounted | Status |
+|---|---|---|---|
+| 1 | `src/pathmap/Morphisms.jl:444-489` | persisted cata memo: at `refcnt <= 1` the write lands in place, so the object-keyed entry still hits and returns the PRE-EDIT digest. *Object identity implies content* is FALSE for unshared nodes | built, measured, **reverted** 2026-08-05 |
+| 2 | KI-1 (below) | `wz_prune_path!` collapses a single-child node on a COW-**shared** spine; the shared sibling's cached key/path length is not updated, so `ProductZipper` reports `pz_is_val == true` at a path one byte short | **open**, gated (`prune=false` everywhere) |
+| 3 | `nodes/TrieNode.jl` `join_into_dyn!` | delegating overload mutated a shared node without COW-forking (upstream `trie_node.rs:3094-3103` always `make_mut()`s first) | fixed `09c7117` |
+| 4 | MORK `kernel/Space.jl` `space_transform_multi_multi!` | `read_btm` aliased `s.btm` during its own write pass — `read_zipper`/`write_zipper` never bump the root refcount, so the justifying "Rc snapshot at construction" comment was false | fixed `dbbfa5b` |
+
+**Why upstream mostly escapes it:** Rust's `Rc` clone BUMPS the refcount as a side effect of holding
+a reference, forcing the next write to COW-fork. `merkleization.rs` records that extra copying as a
+*cost*; it is also the correctness mechanism. Julia's references never touch our MANUAL `refcnt`
+field, so we remove the cost and the safety together.
+
+**Where the next one will be:** anywhere a cached or derived value survives a fork — path lengths,
+digests, counts, aliased roots. When adding a cache keyed on a node, state which of those four
+shapes it is not.
+
+Related: `feedback_guarantee_not_convention` (three of the four had a comment asserting an isolation
+property the code never enforced).
+
+
 ## KI-1 — `remove_val_at!(…, prune=true)` crashes a subsequent multi-factor query
 
 **Status:** open · **Filed:** 2026-06-11 · **Severity:** medium (the `prune=true` path is opt-in and
