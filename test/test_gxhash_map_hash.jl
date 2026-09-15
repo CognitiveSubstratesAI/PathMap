@@ -65,6 +65,46 @@ using Test, PathMaps
     @test gx_finish_u128(x) != gx_finish_u128(y)
 end
 
+@testset "map_hash_value — value BYTES, not Base.hash (independent reference)" begin
+    # Expected values from a SEPARATE Python re-implementation of upstream's fallback GxHasher
+    # (lib.rs:22-56), fed the way Rust's std `Hash` impls feed a `Hasher` — never from our Julia.
+    # Sanity anchor: an empty value reproduces vector #1 of the GxHasher testset above.
+    # These are the numbers that must NOT move when Julia changes `Base.hash`; 1.12 -> 1.13 moved
+    # every value type's digest under the old `UInt64(hash(v))` form.
+    ref = [
+        (UnitVal(), UInt128(220182708007666064593948275397026489765)),
+        (nothing, UInt128(220182708007666064593948275397026489765)),
+        (true, UInt128(220182708007666102364199317613618998581)),
+        (false, UInt128(220182708007666064585267454656457289005)),
+        (UInt8(5), UInt128(220182708007665951248471865784972160341)),
+        (Int8(-1), UInt128(220182708007662097797421844154477786405)),
+        (UInt32(5), UInt128(220182708007665951251727173562685631066)),
+        (Int32(5), UInt128(220182708007665951251727173562685631066)),
+        (Int64(5), UInt128(220182708007665951257152686525625247141)),
+        (UInt64(5), UInt128(220182708007665951257152686525625247141)),
+        (Int64(-1), UInt128(220182708007666064593948275401915849565)),
+        (UInt64(1), UInt128(220182708007666102372880138354204976549)),
+        (UInt64(2), UInt128(220182708007666140151812001311383463333)),
+        (UInt64(3), UInt128(220182708007666177930743864268561950117)),
+        (UInt64(4), UInt128(220182708007665913478220823568446760357)),
+        (UInt128(12345678901234567890123456789), UInt128(220184103051614735511667354223648522938)),
+        (Int128(-1), UInt128(120099658913272398869426332034741721691)),
+        (1.5, UInt128(220182708007663608963377183181515384221)),
+        (-0.0, UInt128(220182708007661228890669816880327666085)),
+        (Float32(1.5), UInt128(220182708007662097800677151932191247442))
+    ]
+    for (v, want) in ref
+        @test map_hash_value(v) === want
+    end
+
+    # the two deliberate departures from the old `Base.hash` form, both toward upstream
+    @test map_hash_value(Int32(5)) !== map_hash_value(Int64(5))   # width is part of the value (Rust i32 vs i64)
+    @test map_hash_value(0.0) !== map_hash_value(-0.0)            # raw bits, not `isequal`
+
+    # no silent fallback — the analogue of Rust's `V: Hash` bound
+    @test_throws MethodError map_hash_value("no encoding for String")
+end
+
 @testset "map_hash — 128-bit Merkle fold over the logical trie" begin
     mk(ps) = (m=PathMaps.PathMap{UInt64}();
         for (k, v) in ps
@@ -88,7 +128,13 @@ end
 
     # A pinned digest. If the fold order changes (mask, then children, then value) this fires — which
     # is the point: a checkpoint digest whose meaning drifts silently is worse than none.
-    @test map_hash(a) === UInt128(0xe7085ccc27c1bc52e8a14da474677f37)
+    #
+    # RE-PINNED ONCE, DELIBERATELY, 2026-09-15. Under the old `UInt64(hash(v))` value path this was
+    # 0xe7085ccc27c1bc52e8a14da474677f37 on Julia 1.12.7 and 0xe7085ccc27c7cc52e89de3ce6c626b2b on 1.13.0 —
+    # the digest drifted with `Base.hash`. With value BYTES (`gx_write_value!`) the value below was
+    # measured IDENTICAL on Julia 1.12.7 and 1.13.0. That cross-version stability is what this pin now
+    # protects: it must not move on a Julia upgrade, and if it ever does, that is a bug, not a re-pin.
+    @test map_hash(a) === UInt128(0xe7085ccc27c5fc52e89de467430b7a3b)
 
     # custom val_hash, mirroring upstream's `hash_with`
     @test map_hash(a, _ -> UInt128(0)) !== map_hash(a)     # the value hash genuinely participates

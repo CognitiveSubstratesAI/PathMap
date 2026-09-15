@@ -402,15 +402,73 @@ const _MAP_HASH_SEED = reinterpret(Int64,
 """
     map_hash_value(v) → UInt128
 
-Per-VALUE hash. Upstream's default `val_hash` (`morphisms.rs:241-245`): a fresh `GxHasher` seeded 0,
-the value hashed into it, read out as u128. Julia's `hash(v)` is used to reduce an arbitrary `V` to
-bytes first — `V` is user-chosen and has no byte encoding of its own, exactly as upstream leans on
-`V: std::hash::Hash`.
+Per-VALUE hash — upstream's default `val_hash` (`morphisms.rs:241-245`): a fresh `GxHasher` seeded 0,
+the value's own BYTES written into it the way Rust's `Hash` impls feed a `Hasher`, read out as u128.
+See `gx_write_value!` for the encoding of each supported value type.
+
+🔴 **CHANGED 2026-09-15: VALUES NO LONGER GO THROUGH `Base.hash`.** The 2026-08-05 rewrite moved the
+structural fold onto `GxHasher` because `Base.hash` is not stable across Julia versions, but left this
+function reducing the value with `UInt64(hash(v))`. Julia 1.13 then changed `hash` — the default seed
+(`0` → `HASH_SEED`) and the integer mix, not only strings — and EVERY value type's digest moved
+(`UnitVal`, `Nothing`, `Bool`, `Int32`, `UInt32`, `Int64`, `Float64`; measured on 1.12.7 vs 1.13.0,
+each stable across two processes within its version). Julia's own `hash` docstring says "the hash
+value may change when a new Julia process is started", and JuliaLang/julia#37166 proposes randomising
+it per process. A digest meant for checkpoints cannot be built on it.
+
+Two deliberate differences from the old form, both toward upstream: integer WIDTH is now part of the
+encoding (`Int32(5)` and `Int64(5)` differ, as Rust's `i32`/`i64` do; `Base.hash` equated them), and a
+value type with NO `gx_write_value!` method raises a `MethodError` instead of silently falling back —
+the analogue of Rust's `V: Hash` bound. Pass `val_hash` explicitly, or add a method.
 """
 function map_hash_value(v)::UInt128
     h = GxHasher(Int64(0))
-    gx_write!(h, gx_u64_le_bytes(UInt64(hash(v))))
+    gx_write_value!(h, v)
     gx_finish_u128(h)
+end
+
+"""
+    gx_write_value!(h::GxHasher, v)
+
+Write a value's canonical bytes into `h`, mirroring what Rust's standard `Hash` impls feed a `Hasher`.
+Checked against an independent Python re-implementation in `test_gxhash_map_hash.jl`.
+
+| value | Rust impl | bytes written |
+|---|---|---|
+| `UnitVal`, `nothing` | `()` | none |
+| `Bool` | `write_u8` | one byte, `0x00` / `0x01` |
+| `Int8`, `UInt8` | `write_u8` | one byte |
+| `Int16` … `UInt64` | default `write_uN`, i.e. `write(&n.to_ne_bytes())` | `sizeof(T)` little-endian bytes, byte-wise |
+| `Int128`, `UInt128` | `write_u128` | the SEPARATE u128 lane |
+| `Float16/32/64` | none in Rust | OUR encoding: raw IEEE bits, little-endian, byte-wise |
+
+Floats use raw bits, so `0.0` and `-0.0` hash differently and each NaN payload is distinct — the
+content-digest convention, not `isequal`. There is deliberately NO catch-all method: an unsupported
+type fails loudly, and a downstream package (MORK's `ThinBytes`, say) extends this with its own method.
+
+⚠️ **THE MIXER IS WEAK, AND THIS DOES NOT FIX THAT.** Upstream describes its fallback `GxHasher`
+(`lib.rs:17-56`) as "just a simple XOR hasher so miri doesn't explode". A zero byte only rotates
+`state_lo` by 3 bits, and the seed-0 state is the repeating pattern `0xA5…`, so any run of zero bytes
+whose length is a multiple of 8 leaves the state UNCHANGED: `UInt64(0)` and `0.0` hash exactly like no
+value at all. `map_hash` still tells presence from absence (it writes a value lane only when a value
+exists), but "128 bits" here is a width, not collision resistance. Recorded 2026-09-15, not addressed.
+"""
+gx_write_value!(::GxHasher, ::UnitVal) = nothing
+gx_write_value!(::GxHasher, ::Nothing) = nothing
+gx_write_value!(h::GxHasher, v::Bool) = gx_write_u8!(h, v ? 0x01 : 0x00)
+gx_write_value!(h::GxHasher, v::Union{Int8, UInt8}) = gx_write_u8!(h, v % UInt8)
+gx_write_value!(h::GxHasher, v::Union{Int128, UInt128}) = gx_write_u128!(h, v % UInt128)
+gx_write_value!(h::GxHasher, v::Union{Int16, UInt16, Int32, UInt32, Int64, UInt64}) =
+    _gx_write_le!(h, v % unsigned(typeof(v)))
+gx_write_value!(h::GxHasher, v::Float16) = _gx_write_le!(h, reinterpret(UInt16, v))
+gx_write_value!(h::GxHasher, v::Float32) = _gx_write_le!(h, reinterpret(UInt32, v))
+gx_write_value!(h::GxHasher, v::Float64) = _gx_write_le!(h, reinterpret(UInt64, v))
+
+"Feed an unsigned integer's bytes, little-endian, one at a time — Rust's default `write_uN`."
+@inline function _gx_write_le!(h::GxHasher, u::Unsigned)
+    for k in 0:(sizeof(u) - 1)
+        gx_write_u8!(h, (u >> (8k)) % UInt8)
+    end
+    nothing
 end
 
 """
