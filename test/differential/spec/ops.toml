@@ -1,0 +1,191 @@
+# ops.toml — the ONE operation table for the PathMapsSpec differential harness.
+#
+# `julia PathMap/tools/gen_spec_ops.jl` generates BOTH sides from this file:
+#   lean/PathMapsSpec/SpecOps.lean                 (the model side, built by `lake build`)
+#   test/differential/spec/ops_generated.jl        (the Julia side, run against PathMaps)
+# so the two op tables cannot drift apart. Never edit the generated files by hand.
+#
+# Wire format (our own; not upstream's):
+#   header: n0 := u8%8 ; n0 × (len := u8%6 ; len × pathbyte ; val := u8)     -- map0 (reserved for write ops)
+#           n1 := u8%8 ; n1 × (len := u8%6 ; len × pathbyte ; val := u8)     -- map1, read by rz
+#           r0 := u8%4 ; r0 × pathbyte ;  r1 := u8%4 ; r1 × pathbyte          -- roots (created if absent)
+#   body:   repeated  op := u8 % nops ; operands
+# Path bytes are masked to b%4 so generated tries share prefixes and branch.
+#
+# Operand kinds: path (len u8%6, then bytes), byte (pathbyte), n8 (u8%8), i6 (u8%6), k4 (u8%4)
+# Each op binds its operands to a1, a2, ... and the read zipper to `z`.
+#   lean  : a Lean expression of type `String × Zip V` (rendered result, new zipper)
+#   julia : a Julia expression returning the rendered result String; it mutates `z` in place
+#   skip  : optional { lean = <Bool expr>, julia = <Bool expr>, token = "skip:<reason>" } — evaluated
+#           BEFORE the op on the unmodified zipper; both sides must decide identically.
+#
+# Rendering (identical on both sides): paths as lowercase hex or "_", values decimal or "-",
+# bools "1"/"0", optional bytes as hex or "-".
+#
+# Semantics: the model specifies the INTENDED behaviour of our port (lean/README.md). A divergence is either
+# a defect in PathMaps (see docs/UPSTREAM_DELTA_2026-09-16.md) or a model error — attribute each one.
+
+version = 1
+
+[[op]]
+name = "descend_to"
+operands = ["path"]
+lean = "(hexPath a1, z.descendTo a1)"
+julia = "(zipper_descend_to!(z, a1); hex_path(a1))"
+
+[[op]]
+name = "descend_to_byte"
+operands = ["byte"]
+lean = "(hexByte a1, z.descendToByte a1)"
+julia = "(zipper_descend_to_byte!(z, a1); hex_byte(a1))"
+
+[[op]]
+name = "ascend"
+operands = ["n8"]
+lean = "let (r, z) := z.ascend a1; (toString r, z)"
+julia = "string(sp_ascend!(z, a1))"
+
+[[op]]
+name = "ascend_byte"
+operands = []
+lean = "let (r, z) := z.ascendByte; (showBool r, z)"
+julia = "show_bool(zipper_ascend_byte!(z))"
+
+[[op]]
+name = "reset"
+operands = []
+lean = "(\"-\", z.reset)"
+julia = "(zipper_reset!(z); \"-\")"
+
+[[op]]
+name = "descend_first_byte"
+operands = []
+lean = "let (r, z) := z.descendFirstByte; (showByteOpt r, z)"
+julia = "show_byte_opt(sp_moved_byte(z, zipper_descend_first_byte!))"
+
+[[op]]
+name = "descend_last_byte"
+operands = []
+lean = "let (r, z) := z.descendLastByte; (showByteOpt r, z)"
+julia = "show_byte_opt(sp_moved_byte(z, zipper_descend_last_byte!))"
+
+[[op]]
+name = "descend_indexed_byte"
+operands = ["i6"]
+lean = "let (r, z) := z.descendIndexedByte a1; (showByteOpt r, z)"
+julia = "show_byte_opt(sp_moved_byte(z, zz -> zipper_descend_indexed_byte!(zz, a1)))"
+
+[[op]]
+name = "descend_until"
+operands = []
+lean = "let (r, z) := z.descendUntil; (showBool r, z)"
+julia = "show_bool(zipper_descend_until!(z))"
+
+[[op]]
+name = "ascend_until"
+operands = []
+lean = "let (r, z) := z.ascendUntil; (toString r, z)"
+julia = "string(sp_ascended(z, zipper_ascend_until!))"
+
+[[op]]
+name = "ascend_until_branch"
+operands = []
+lean = "let (r, z) := z.ascendUntilBranch; (toString r, z)"
+julia = "string(sp_ascended(z, zipper_ascend_until_branch!))"
+
+# Upstream's harness skips the two sibling moves at the zipper root because the Rust read zipper escapes
+# its root there. Our port guards the root (Zipper.jl:914), so our spec COMPARES it: the model answers none.
+[[op]]
+name = "to_next_sibling_byte"
+operands = []
+lean = "let (r, z) := z.toNextSiblingByte; (showByteOpt r, z)"
+julia = "show_byte_opt(sp_moved_byte(z, zipper_to_next_sibling_byte!))"
+
+[[op]]
+name = "to_prev_sibling_byte"
+operands = []
+lean = "let (r, z) := z.toPrevSiblingByte; (showByteOpt r, z)"
+julia = "show_byte_opt(sp_moved_byte(z, zipper_to_prev_sibling_byte!))"
+
+[[op]]
+name = "to_next_step"
+operands = []
+lean = "let (r, z) := z.toNextStep; (showBool r, z)"
+julia = "show_bool(zipper_to_next_step!(z))"
+
+[[op]]
+name = "to_next_val"
+operands = []
+lean = "let (r, z) := z.toNextVal; (showBool r, z)"
+julia = "show_bool(zipper_to_next_val!(z))"
+
+# k = 0 is degenerate (upstream skips it too). A childless focus is skipped because our
+# `_zipper_k_path_internal!` never returns there (docs/UPSTREAM_DELTA_2026-09-16.md P0 #1).
+# REMOVE `known-hang` from both k-path ops once that defect is fixed.
+[[op]]
+name = "descend_first_k_path"
+operands = ["k4"]
+skip = [
+  { lean = "a1 == 0", julia = "a1 == 0", token = "skip:k0" },
+  { lean = "z.childCount == 0", julia = "zipper_child_count(z) == 0", token = "skip:known-hang" },
+]
+lean = "let (r, z) := z.descendFirstKPath a1; (showBool r, z)"
+julia = "show_bool(zipper_descend_first_k_path!(z, a1))"
+
+[[op]]
+name = "k_path_walk"
+operands = ["k4"]
+skip = [
+  { lean = "a1 == 0", julia = "a1 == 0", token = "skip:k0" },
+  { lean = "z.childCount == 0", julia = "zipper_child_count(z) == 0", token = "skip:known-hang" },
+]
+lean = "let (ps, z) := kWalk z a1; (String.intercalate \",\" (ps.map hexPath), z)"
+julia = "join(hex_path.(sp_k_walk!(z, a1)), \",\")"
+
+[[op]]
+name = "descend_last_path"
+operands = []
+lean = "let (r, z) := z.descendLastPath; (showBool r, z)"
+julia = "show_bool(zipper_descend_last_path!(z))"
+
+[[op]]
+name = "move_to_path"
+operands = ["path"]
+lean = "let (r, z) := z.moveToPath a1; (toString r, z)"
+julia = "string(zipper_move_to_path!(z, a1))"
+
+[[op]]
+name = "descend_to_existing"
+operands = ["path"]
+lean = "let (r, z) := z.descendToExisting a1; (toString r, z)"
+julia = "string(zipper_descend_to_existing!(z, a1))"
+
+[[op]]
+name = "descend_to_val"
+operands = ["path"]
+lean = "let (r, z) := z.descendToVal a1; (toString r, z)"
+julia = "string(zipper_descend_to_val!(z, a1))"
+
+[[op]]
+name = "descend_to_existing_byte"
+operands = ["byte"]
+lean = "let (r, z) := z.descendToExistingByte a1; (showBool r, z)"
+julia = "show_bool(zipper_descend_to_existing_byte!(z, a1))"
+
+[[op]]
+name = "descend_until_max_bytes"
+operands = ["n8"]
+lean = "let (r, z) := z.descendUntilMaxBytes a1; (showBool r, z)"
+julia = "show_bool(zipper_descend_until_max_bytes!(z, a1))"
+
+[[op]]
+name = "descend_to_check"
+operands = ["path"]
+lean = "let (r, z) := z.descendToCheck a1; (showBool r, z)"
+julia = "show_bool(zipper_descend_to_check!(z, a1))"
+
+[[op]]
+name = "val_at"
+operands = ["path"]
+lean = "(showVal (z.valAt a1), z)"
+julia = "show_val(zipper_val_at(z, a1))"

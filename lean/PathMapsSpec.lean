@@ -6,3 +6,4 @@ import PathMapsSpec.Map
 import PathMapsSpec.Spec
 import PathMapsSpec.Fuzz
 import PathMapsSpec.Check
+import PathMapsSpec.SpecOps

@@ -33,6 +33,15 @@ the upstream-fixed expectation (upstream tests translated, or the upstream HEAD 
 | 11 | `cab3ed7` | ACT `reset` of a zipper rooted off-trie restores `invalid = 0` → returns the ancestor's value/existence | `pathmap/ArenaCompact.jl:611-619, 707-716` (needs `origin_invalid`, also in `copy`) |
 | 12 | — (found via `cbbf219`'s test) | `act_zipper_with_root_here!` reads `origin_ndepth` before the stack swap → wrong bytes after `reset` at a mid-line root | `ArenaCompact.jl:613` |
 
+### Confirmed later the same day by the Lean-model harness (`test/differential/spec/`)
+
+| # | defect | where | evidence |
+|---|---|---|---|
+| 12a | **`zipper_val_count` is wrong**: counts values under NON-EXISTENT paths (`e0` with `n1`) and misses values that exist (`n0` where the model has `n1`). Its partial-key fallback copies the zipper and calls `to_next_val`, which does not stay inside the focus subtree. (Was the P3 "verify first" item — now confirmed.) | `zipper/Zipper.jl:658-680` | 49 of 200 random programs first differ on `n`; the fingerprint masks everything after it |
+| 12b | **`zipper_val_at` misses values when the zipper is rooted below the map root**: it resolves the absolute path from `z.root_node`, which for `read_zipper_at_path` zippers is the descended node, not the trie root (the pitfall `zipper_fork!` documents) | `zipper/Zipper.jl:607-618` | program #1823 (seed 2): root `0201`, `val_at` → `-`, model → `68` |
+
+With `n` masked, 2000 programs (seed 2) differ in 30: 29 `to_next_val` (items 9–10) and 1 `val_at` (12b).
+
 ## P2 — throws where upstream returns a result
 
 | # | upstream | defect | where |
@@ -52,7 +61,7 @@ and most `*_dyn` methods have no `Nothing` method. Mapping the sentinel to `Empt
 - `4470349` `to_next_val` root-escape exit should invalidate the token (not run)
 - `e659a96` LineList `get_sibling_of_child` prev direction wrong for missing keys — no callers in `src`
 - `45f78dc` TrieRef unchecked `consumed - node_key_len` (`zipper/TrieRef.jl:100-101`) — unreachable today
-- `val_count` at a focus counts from the zipper root (ACT and read zipper, `{aa,ab,b}` at `aa` → 3); `FINDINGS` A1 says 1 — **verify against the upstream binary before calling it a bug**
+- ~~`val_count` at a focus~~ → confirmed, now item 12a (the ACT zipper's `act_val_count` has the same shape; unverified)
 
 ## Already correct (evidence executed)
 

@@ -21,10 +21,15 @@ changed to our intended semantics and the change is noted at its site.
 
 ## Status
 
-- **Phase A (this commit):** the model builds; its `#guard` law checks and regression fixtures pass.
+- **Phase A (5eff3ff):** the model builds; its `#guard` law checks and regression fixtures pass.
   `PathMapsSpec/Fuzz.lean` and `Main.lean` are still upstream's operation table and trace format (the Rust
   harness's contract) — kept as a working baseline and to be replaced.
-- **Phase B–C:** a Julia-native harness (not a port of the Rust crate or the Python drivers): one operation
+- **Phase B (done 2026-09-16):** `../test/differential/spec/` — one op table (`ops.toml`, 25 read-zipper
+  operations) generating both `PathMapsSpec/SpecOps.lean` and `ops_generated.jl` via `../tools/gen_spec_ops.jl`;
+  `SpecHarness.jl` runs PathMaps in-process against a resident `pathmaps-oracle --server --spec`
+  (2000 programs in ~9 s warm). First results are recorded in `../docs/UPSTREAM_DELTA_2026-09-16.md`.
+- **Phase C:** write-zipper and algebra operations, then a ratchet in the PathMap suite. Originally planned as:
+  a Julia-native harness (not a port of the Rust crate or the Python drivers): one operation
   table as data from which both the Lean and the Julia sides are generated, an in-process driver in the warm
   Revise session talking to a resident `pathmaps-oracle`, Julia threads for parallelism, shrinking with
   `../test/differential/shrink.jl`, and a known-divergence ratchet in the PathMap suite.

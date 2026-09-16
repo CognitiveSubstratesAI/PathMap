@@ -74,7 +74,7 @@ def hexDecode (s : String) : Option ByteArray :=
     go cs ByteArray.empty
 
 /-- The resident command loop. -/
-partial def serve (act : Bool) : IO Unit := do
+partial def serve (act spec : Bool) : IO Unit := do
   let stdin ← IO.getStdin
   let stdout ← IO.getStdout
   let rec loop : IO Unit := do
@@ -90,7 +90,8 @@ partial def serve (act : Bool) : IO Unit := do
           -- "Why there is no in-process timeout here" above.
           match ms.toNat?, hexDecode (String.intercalate " " rest) with
           | some _, some bytes => do
-              for line in Fuzz.run bytes 256 act do
+              let lines := if spec then SpecFuzz.run bytes 256 else Fuzz.run bytes 256 act
+              for line in lines do
                 stdout.putStrLn line
               pure "!DONE"
           | _, _ => pure "!PANIC bad run-input arguments"
@@ -102,11 +103,14 @@ partial def serve (act : Bool) : IO Unit := do
 
 def main (args : List String) : IO Unit := do
   let act := args.contains "--act"
+  -- `--spec`: our own op table (SpecOps.lean, generated from test/differential/spec/ops.toml).
+  let spec := args.contains "--spec"
   if args.contains "--server" then
-    return ← serve act
-  let files := args.filter (fun a => a != "--act" && a != "--server")
+    return ← serve act spec
+  let files := args.filter (fun a => a != "--act" && a != "--server" && a != "--spec")
   let bytes ← match files with
     | [] => (← IO.getStdin).readBinToEnd
     | path :: _ => IO.FS.readBinFile path
-  for line in Fuzz.run bytes 256 act do
+  let lines := if spec then SpecFuzz.run bytes 256 else Fuzz.run bytes 256 act
+  for line in lines do
     IO.println line
