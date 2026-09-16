@@ -1,0 +1,9 @@
+name = "pathmaps-spec"
+defaultTargets = ["PathMapsSpec", "pathmaps-oracle"]
+
+[[lean_lib]]
+name = "PathMapsSpec"
+
+[[lean_exe]]
+name = "pathmaps-oracle"
+root = "Main"
