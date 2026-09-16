@@ -20,8 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.13'
-          - '1.12'   # node-keyed @atomic COW refcount needs Julia 1.12+
+          - '1.13'   # node-keyed @atomic COW refcount needs Julia 1.12+
         os:
           - ubuntu-latest
         arch:
