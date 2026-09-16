@@ -35,12 +35,21 @@ the upstream-fixed expectation (upstream tests translated, or the upstream HEAD 
 
 ### Confirmed later the same day by the Lean-model harness (`test/differential/spec/`)
 
+Each case was attributed by replaying the program to the diverging step and testing the mechanism on that
+state, not by the name of the op where the traces first differ (probes: session scratchpad `spec_attr*.juliasrc`).
+
 | # | defect | where | evidence |
 |---|---|---|---|
-| 12a | **`zipper_val_count` is wrong**: counts values under NON-EXISTENT paths (`e0` with `n1`) and misses values that exist (`n0` where the model has `n1`). Its partial-key fallback copies the zipper and calls `to_next_val`, which does not stay inside the focus subtree. (Was the P3 "verify first" item — now confirmed.) | `zipper/Zipper.jl:658-680` | 49 of 200 random programs first differ on `n`; the fingerprint masks everything after it |
-| 12b | **`zipper_val_at` misses values when the zipper is rooted below the map root**: it resolves the absolute path from `z.root_node`, which for `read_zipper_at_path` zippers is the descended node, not the trie root (the pitfall `zipper_fork!` documents) | `zipper/Zipper.jl:607-618` | program #1823 (seed 2): root `0201`, `val_at` → `-`, model → `68` |
+| 12a | **`zipper_val_count` is wrong whenever the focus is inside a node key** (not a node boundary and not an existing child edge). Upstream's read zipper answers `get_focus()`: 0 for a missing focus, otherwise the count below the synthesised focus (`zipper.rs:2075-2088`). Our fallback instead copies the zipper and counts `to_next_val` steps, which do not stop at the focus subtree, so it counts every value **after** the focus inside the zipper root, even when the focus does not exist. (Upstream `FINDINGS` A1 is the separate ACT variant.) | `zipper/Zipper.jl:658-680` | 49 of 200 programs (seed 1) first differ on `n`; all 49 take the fallback branch; the model's `n` equals an independent child-mask count in all 49. 48 equal "focus value + values after the focus" (17 of them only once the copied stale token is discarded, i.e. items 9–10 compound it); 1 (#173) is 12c |
+| 12b | **`zipper_val_at` misses values when the zipper root lies below the root node**: `read_zipper_at_path` makes `root_node` the node reached along the root path (`Zipper.jl:375-385`), but `zipper_val_at` walks the FULL `prefix_buf` from that node instead of the part after `root_key_start` | `zipper/Zipper.jl:607-618` | #1823 (seed 2): root `0201`, `root_key_start = 1`, `root_node` ≠ map root; `val_at` → `-`, model → `68` |
+| 12c | `401881e` (was P3, now executed): dense `iter_token_for_path` returns a fresh token (iterate from the start of the node) for a missing key of 2+ bytes; upstream returns `NODE_ITER_INVALID`. `to_next_val` from such a focus jumps **backwards** | `nodes/DenseByteNode.jl:1337` | 6 programs (seed 2 #511, #653, #955, #1200, #1422, #1871): focus missing, `DenseByteNode`, node key ≥ 2 bytes; a fresh zipper at the same path still differs |
 
-With `n` masked, 2000 programs (seed 2) differ in 30: 29 `to_next_val` (items 9–10) and 1 `val_at` (12b).
+With `n` masked, 2000 programs (seed 2) differ in 30: 23 `to_next_val` from stale tokens (items 9–10: discarding
+the focus token, or a fresh zipper at the same path, reproduces the model), 6 `to_next_val` from 12c, 1 `val_at`
+(12b). Only each program's FIRST divergence is reported, so fixing these can uncover more.
+
+Not exercised by phase B: `to_next_k_path` with k > depth (P3 `8082317`) — the walk calls it only after
+`descend_first_k_path` succeeded, so depth ≥ k; and the childless-focus k-path case is skipped (#1).
 
 ## P2 — throws where upstream returns a result
 
@@ -56,7 +65,7 @@ and most `*_dyn` methods have no `Nothing` method. Mapping the sentinel to `Empt
 
 ## P3 — latent or not yet executed
 
-- `401881e` dense `iter_token_for_path` for 2+-byte missing keys (code is pre-fix; reproducer not run)
+- ~~`401881e`~~ → confirmed, now item 12c
 - `8082317` `to_next_k_path` with k > depth should reset to root (code differs; not run)
 - `4470349` `to_next_val` root-escape exit should invalidate the token (not run)
 - `e659a96` LineList `get_sibling_of_child` prev direction wrong for missing keys — no callers in `src`
