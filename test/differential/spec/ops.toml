@@ -47,7 +47,7 @@
 # a defect in PathMaps (see docs/UPSTREAM_DELTA_2026-09-16.md) or a model error — attribute each one
 # by replaying the state, never by the op name.
 
-version = 2
+version = 3
 
 # Write-side operations of the upstream model that are NOT in this table, and why:
 gaps = [
@@ -174,16 +174,14 @@ operands = []
 lean = "let (r, z) := z.toNextVal; (showBool r, z)"
 julia = "show_bool(zipper_to_next_val!(z))"
 
-# k = 0 is degenerate (upstream skips it too). A childless focus is skipped because our
-# `_zipper_k_path_internal!` never returns there (docs/UPSTREAM_DELTA_2026-09-16.md P0 #1).
-# REMOVE `known-hang` from both k-path ops once that defect is fixed.
+# k = 0 is degenerate (upstream skips it too). The childless-focus skip (P0 #1, the trait-default
+# k-path loop never returned) was removed when the read zipper got upstream's token walk.
 [[op]]
 name = "descend_first_k_path"
 target = "r"
 operands = ["k4"]
 skip = [
   { lean = "a1 == 0", julia = "a1 == 0", token = "skip:k0" },
-  { lean = "z.childCount == 0", julia = "zipper_child_count(z) == 0", token = "skip:known-hang" },
 ]
 lean = "let (r, z) := z.descendFirstKPath a1; (showBool r, z)"
 julia = "show_bool(zipper_descend_first_k_path!(z, a1))"
@@ -194,7 +192,6 @@ target = "r"
 operands = ["k4"]
 skip = [
   { lean = "a1 == 0", julia = "a1 == 0", token = "skip:k0" },
-  { lean = "z.childCount == 0", julia = "zipper_child_count(z) == 0", token = "skip:known-hang" },
 ]
 lean = "let (ps, z) := kWalk z a1; (String.intercalate \",\" (ps.map hexPath), z)"
 julia = "join(hex_path.(sp_k_walk!(z, a1)), \",\")"

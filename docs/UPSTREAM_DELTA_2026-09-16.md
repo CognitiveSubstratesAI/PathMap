@@ -13,6 +13,17 @@ the upstream-fixed expectation (upstream tests translated, or the upstream HEAD 
 
 ## P0 — hangs and wrong hashes (not upstream commits)
 
+**Both FIXED (phase D).** #1: `zipper_descend_first_k_path!` / `zipper_to_next_k_path!` now port upstream's
+`ReadZipperCore` token walk (143ecd1 `k_path_internal`, which upstream had before our port point) with
+86180a2 and 8082317, plus two fixes expressed in our 0.3 token contract: bdbdfdc (a finished walk leaves
+NODE_ITER_INVALID, not FINISHED — harness program #357) and never re-yielding the k-path being resumed from
+(upstream's `ascend_iter_token` effect — harness program #526, `0002,0302,0302`). Upstream's k-path tests
+1–9, a are ported (`test/test_upstream_k_path.jl`); mutants without the base guard / the 8082317 reset / the
+resume skip / the INVALID token each fail them. The harness's `skip:known-hang` is gone (op table v3).
+#2: `zipper_shared_node_id` ports upstream's guard, with `zipper_is_shared` (zipper.rs:2618-2653);
+`test/test_shared_node_id.jl` (incl. upstream `cata_test_cached`) fails 7 assertions on the old body.
+
+
 | # | defect | where | evidence |
 |---|---|---|---|
 | 1 | `descend_first_k_path` never returns from a focus with no children and no later sibling (trait-default loop; upstream `FINDINGS.md` #6). Upstream's `ReadZipperCore` overrides it with a token k-path. | `src/zipper/Zipper.jl:1082-1098` | hung the warm server for 12 min |

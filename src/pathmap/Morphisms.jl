@@ -128,12 +128,35 @@ function zipper_origin_path(z::ReadZipperCore)
 end
 
 """
-Unique ID for the current focus node (for caching). 0 if not at node root.
+    zipper_is_shared(z) → Bool
+
+Whether the focus may be reached by two or more distinct paths: at a node boundary, the focus node is
+non-empty and its refcount is above 1. Upstream `ZipperConcrete::is_shared` for `ReadZipperCore`
+(zipper.rs:2618-2635). Only for optimisations, never for correctness (upstream's own warning).
+"""
+function zipper_is_shared(z::ReadZipperCore{V, A}) where {V, A}
+    isempty(_znode_key(z)) || return false
+    if !isempty(z.ancestors)
+        parent = _fnode(z.ancestors[end][1], V, A)
+        _, focus_rc = node_get_child(parent, _parent_key(z))
+        !is_empty_node(focus_rc) && refcount(focus_rc) > 1
+    else
+        !is_empty_node(z.root_node) && refcount(z.root_node) > 1
+    end
+end
+
+"""
+    zipper_shared_node_id(z) → Union{Nothing, UInt64}
+
+An id for the focus node, usable as a cache key, or `nothing`. Upstream `read_zipper_shared_node_id`
+(zipper.rs:2638-2653): `nothing` unless the focus is SHARED, at a node boundary, and carries NO value —
+values live outside the node, so one node reached by two paths can carry two different focus values
+and must not be cached. Ours returned an id at every node boundary, so `cata_cached` / `map_hash`
+reused a result across paths with different focus values (docs/UPSTREAM_DELTA_2026-09-16.md P0 #2).
 """
 function zipper_shared_node_id(z::ReadZipperCore)
-    # Only meaningful when node_key is empty (at a node boundary)
-    isempty(_znode_key(z)) || return nothing
-    z.focus_node === nothing ? nothing : UInt64(objectid(z.focus_node))
+    (!zipper_is_shared(z) || !isempty(_znode_key(z)) || zipper_val(z) !== nothing) && return nothing
+    UInt64(objectid(z.focus_node))
 end
 
 # =====================================================================
@@ -909,4 +932,4 @@ export ana_jumping!
 export TrieBuilder, tb_push_byte!, tb_push!, tb_len, tb_child_mask
 export tb_graft_at_byte!, tb_reset!
 export map_hash, map_hash_value
-export zipper_origin_path, zipper_shared_node_id
+export zipper_origin_path, zipper_shared_node_id, zipper_is_shared

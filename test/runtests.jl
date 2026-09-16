@@ -944,6 +944,12 @@ include("fuzz_gate.jl")
 # operations, first divergence per program ratcheted by class. See test/lean_spec_gate.jl.
 include("lean_spec_gate.jl")
 
+# Upstream's k-path iteration tests (zipper.rs:4720-5125), ported with the token-walk k-path fix (P0 #1).
+include("test_upstream_k_path.jl")
+
+# shared_node_id guard + cached catamorphism (P0 #2; upstream zipper.rs:2638-2653, morphisms.rs:1922).
+include("test_shared_node_id.jl")
+
 # UPSTREAM'S OWN zipper conformance battery, ported (src/zipper.rs:3037+). Covers the ONE layer the
 # two gates above do not: rust_probe references no zipper composition, and the fuzz corpus exercises
 # the trie ALGEBRA (join/meet/subtract/graft) only. Upstream applies this battery to ProductZipper,

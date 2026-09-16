@@ -1079,37 +1079,140 @@ end
 # ZipperIteration — k-path traversal
 # =====================================================================
 
-function _zipper_k_path_internal!(z::ReadZipperCore, k::Int, base_idx::Int)
+# 🔴 PORT OF `ReadZipperCore::k_path_internal`, not of the trait default. Upstream's read zipper has
+# overridden `descend_first_k_path` / `to_next_k_path` with a token walk since before our port point
+# (143ecd1 zipper.rs:2114-2132, 2548-2635); ours used the trait default `k_path_default_internal`,
+# which never returns from a childless focus: the first `to_next_sibling_byte` steps OUT of the base
+# (to a sibling of the focus) and the loop spins — upstream lean/FINDINGS.md #6. It hung the warm
+# server for 12 minutes (docs/UPSTREAM_DELTA_2026-09-16.md P0 #1).
+# The token walk cannot leave the base: every item is checked against the base bytes first.
+# Body = 143ecd1 (same two-argument `next_items` token contract as our nodes), plus the later fixes
+# that do not need the 0.4.0 contract: 86180a2 (invalidate the token after an overshoot) and 8082317
+# (`to_next_k_path` with k > depth resets and returns false). Two more upstream fixes are expressed in
+# our (0.3) token contract, because their 0.4.0 form needs byte-offset tokens our nodes do not have:
+#   * bdbdfdc / `reascend_iter_token` — a walk that returns `false` must not leave a token that says
+#     "node finished" for the base focus (a following `to_next_val` then found nothing): we leave
+#     NODE_ITER_INVALID, which every iterator recomputes from the path.
+#   * `ascend_iter_token` / the 0.4.0 "token names a path" contract — `to_next_k_path` must never
+#     return the k-path it started from again. With keys `02` and `020000` in one node, 143ecd1 visits
+#     `…02` via the first key and then, resuming, truncates the second key to the same `…02`
+#     (Lean-harness program #526: `0002,0302,0302`). Every item whose first `k` bytes equal the start
+#     path lies below it, so `resume_from` skips those; the INVALID resync likewise skips every item
+#     that continues the node key.
+# ProductZipper/ProductZipperG keep the trait default, as upstream's do.
+function _zipper_k_path_internal!(z::ReadZipperCore, k::Int, base_idx::Int,
+    resume_from::Union{Nothing, Vector{UInt8}} = nothing)
+    target_idx = base_idx + k
     while true
-        if length(zipper_path(z)) < base_idx + k
-            while zipper_descend_first_byte!(z)
-                length(zipper_path(z)) == base_idx + k && return true
+        # Resume after another method invalidated the token (143ecd1 zipper.rs:2556-2567)
+        if z.focus_iter_token == NODE_ITER_INVALID
+            node = _zfnode(z)
+            node_key = _znode_key(z)
+            tok = iter_token_for_path(node, node_key)
+            # Resume AFTER the focus: skip every item in this node that continues `node_key`
+            # (143ecd1 skipped one; see the header on `ascend_iter_token`).
+            while tok != NODE_ITER_FINISHED
+                new_tok, key_bytes, _, _ = next_items(node, tok)
+                (new_tok != NODE_ITER_FINISHED && length(key_bytes) >= length(node_key) &&
+                    view(key_bytes, 1:length(node_key)) == node_key) || break
+                tok = new_tok
+            end
+            z.focus_iter_token = tok
+        end
+
+        if z.focus_iter_token == NODE_ITER_FINISHED
+            # Have we reached the root of this k_path iteration?
+            if _znode_key_start(z) <= base_idx
+                z.focus_iter_token = NODE_ITER_INVALID      # bdbdfdc (see header)
+                resize!(z.prefix_buf, base_idx)
+                return false
+            end
+            if !isempty(z.ancestors)
+                focus_node, iter_tok, prefix_offset = pop!(z.ancestors)
+                z.focus_node = focus_node
+                z.focus_iter_token = iter_tok
+                resize!(z.prefix_buf, prefix_offset)
+            else
+                z.focus_iter_token = NODE_ITER_INVALID
+                resize!(z.prefix_buf, z.origin_path_len)
+                return false
             end
         end
-        if zipper_to_next_sibling_byte!(z)
-            length(zipper_path(z)) == base_idx + k && return true
-            continue
-        end
-        while length(zipper_path(z)) > base_idx
-            zipper_ascend_byte!(z)
-            length(zipper_path(z)) == base_idx && return false
-            zipper_to_next_sibling_byte!(z) && break
+
+        # Move to the next sibling position, if we can
+        new_tok, key_bytes, child_rc, _ = next_items(_zfnode(z), z.focus_iter_token)
+        if new_tok != NODE_ITER_FINISHED
+            # Has the iteration modified more bytes than `k` allows?
+            key_start = _znode_key_start(z)
+            if key_start < base_idx
+                base_key_len = base_idx - key_start   # bytes we must not modify
+                if base_key_len > length(key_bytes) ||
+                   view(key_bytes, 1:base_key_len) != view(z.prefix_buf, (key_start + 1):base_idx)
+                    length(z.prefix_buf) > base_idx && (z.focus_iter_token = NODE_ITER_INVALID)  # bdbdfdc
+                    resize!(z.prefix_buf, base_idx)
+                    return false
+                end
+            end
+
+            z.focus_iter_token = new_tok
+            resize!(z.prefix_buf, key_start)
+            append!(z.prefix_buf, key_bytes)
+
+            # Below the k-path we are resuming from (see header): not a new k-path, skip the item.
+            if resume_from !== nothing && length(z.prefix_buf) >= target_idx &&
+               view(z.prefix_buf, 1:target_idx) == resume_from
+                resize!(z.prefix_buf, key_start)
+                continue
+            end
+
+            if length(z.prefix_buf) <= target_idx
+                if child_rc !== nothing
+                    push!(z.ancestors, (z.focus_node, new_tok, length(z.prefix_buf)))
+                    z.focus_node = _rc_inner(child_rc)
+                    z.focus_iter_token = new_iter_token(_zfnode(z))
+                end
+            else
+                resize!(z.prefix_buf, target_idx)
+                # 86180a2: the token has advanced past the whole node-local key run, but the focus is
+                # only its prefix, so it no longer describes this focus.
+                z.focus_iter_token = NODE_ITER_INVALID
+            end
+
+            length(z.prefix_buf) == target_idx && return true
+        else
+            z.focus_iter_token = NODE_ITER_FINISHED
         end
     end
 end
 
 """
-Descend to first path exactly `k` bytes from current focus. Mirrors `descend_first_k_path`.
+    zipper_descend_first_k_path!(z, k) → Bool
+
+Descend to the first path exactly `k` bytes below the focus. Upstream
+`ReadZipperCore::descend_first_k_path` (143ecd1 zipper.rs:2114-2122).
 """
-zipper_descend_first_k_path!(z::ReadZipperCore, k::Int) =
-    _zipper_k_path_internal!(z, k, length(zipper_path(z)))
+function zipper_descend_first_k_path!(z::ReadZipperCore, k::Int)
+    _prepare_buffers!(z)
+    z.focus_iter_token = iter_token_for_path(_zfnode(z), _znode_key(z))
+    _zipper_k_path_internal!(z, k, length(z.prefix_buf))
+end
 
 """
-Move to next path at same depth (k steps from common root). Mirrors `to_next_k_path`.
+    zipper_to_next_k_path!(z, k) → Bool
+
+Move to the next path at the same depth, under the common root `k` bytes above the focus. Upstream
+`ReadZipperCore::to_next_k_path` (143ecd1 zipper.rs:2123-2132); with `k` deeper than the focus it
+resets the zipper and returns `false` (`k_path_depth_exceeded`, upstream 8082317).
 """
 function zipper_to_next_k_path!(z::ReadZipperCore, k::Int)
-    length(zipper_path(z)) >= k || return false
-    _zipper_k_path_internal!(z, k, length(zipper_path(z)) - k)
+    if length(zipper_path(z)) < k
+        zipper_reset!(z)
+        return false
+    end
+    base_idx = length(z.prefix_buf) - k
+    resume_from = copy(z.prefix_buf)
+    _zc_deregularize!(z)
+    _zipper_k_path_internal!(z, k, base_idx, resume_from)
 end
 
 # =====================================================================
