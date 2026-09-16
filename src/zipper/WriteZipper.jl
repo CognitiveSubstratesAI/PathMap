@@ -714,43 +714,64 @@ CoFree type and a `const REMOVE_UNSET`. That is a PERFORMANCE implementation of 
 and it reaches into `ByteNode`'s internal layout; it also forces a `split_at_focus` and node-type
 conversions (LineList/TinyRef -> Dense) purely so the bulk path applies.
 
-We implement the contract with the zipper's own descend/graft/ascend, which needs none of that
-machinery and keeps the COW path intact. Same observable result — verified against all four of
-upstream's own cases, including the dangling-branch one. If this ever shows up in a profile, the
-bulk path is the optimisation to port, not a correctness fix.
+The 0/1/2-bit arms ARE upstream's (`descend_to_byte; graft_src_at; ascend_byte`). For 3+ bits we
+use the same per-byte graft instead of the bulk merge, which needs none of that machinery and keeps
+the COW path intact. ⚠️ The earlier version of this function claimed "the same observable result"
+while grafting with `node_get_child` (misses a byte that ends inside a source key) and without the
+`graft_root_vals` value step; the Lean-model harness disproved it (program #607, delta P1 #8).
 """
 function wz_graft_masked_branches!(
     z::WriteZipperCore{V, A}, src_anr::AbstractNodeRef{V, A},
     child_mask::ByteMask, remove_unset::Bool
 ) where {V, A}
-    # upstream: `src.get_focus().try_as_tagged()` yielding None makes the whole call a no-op
-    is_none(src_anr) && return nothing
-    src_node = as_tagged(src_anr)
-
-    if remove_unset
-        # Drop the destination's children outside the mask. Collected FIRST — removing while
-        # iterating the live mask would read a structure being mutated underneath.
-        doomed = UInt8[b for b in iter(wz_child_mask(z)) if !test_bit(child_mask, b)]
-        for b in doomed
+    n = count_bits(child_mask)
+    if n <= 2
+        # upstream write_zipper.rs:1561-1592, arm by arm: clear first when asked, then
+        # `descend_to_byte; graft_src_at(src, [byte]); ascend_byte` for each set bit.
+        remove_unset && _wz_remove_branches!(z, false)
+        for b in iter(child_mask)
             wz_descend_to!(z, UInt8[b])
-            _wz_remove_branches!(z, false)
+            _wz_graft_src_at_byte!(z, src_anr, b)
             wz_ascend!(z, 1)
         end
+        return nothing
     end
-
+    # 3+ bits: upstream merges in bulk (merge_branches_into_focus, :1593-1675); an absent / empty
+    # source removes (remove_unset ? everything : the masked branches). The per-byte graft below is
+    # the same contract (the deviation noted above).
+    if is_none(src_anr) || node_is_empty(as_tagged(src_anr))
+        remove_unset ? _wz_remove_branches!(z, false) :
+            wz_remove_unmasked_branches!(z, ByteMask(.~child_mask.bits), false)
+        return nothing
+    end
+    remove_unset && _wz_remove_branches!(z, false)
     for b in iter(child_mask)
-        child = node_get_child(src_node, UInt8[b])
         wz_descend_to!(z, UInt8[b])
-        if child === nothing
-            # absent in the source => remove. Upstream's Case 3 pins that this must NOT leave a
-            # dangling branch when the destination lacked the byte too.
-            _wz_remove_branches!(z, false)
-        else
-            (_klen, child_rc) = child
-            _wz_graft_internal!(z, child_rc)
-        end
+        _wz_graft_src_at_byte!(z, src_anr, b)
         wz_ascend!(z, 1)
     end
+    nothing
+end
+
+"""
+    _wz_graft_src_at_byte!(z, src_anr, b)
+
+`graft_src_at(src, [b])` (write_zipper.rs `graft_src_at`) for a source given as its focus node:
+graft the source's subtrie at `[b]` — `get_focus_at`, i.e. `get_node_at_key`, which synthesises the
+node when `[b]` ends inside a key (`node_get_child` does not: harness program #607) — then, under
+`graft_root_vals`, set or clear the focus value from the source's value at `[b]`.
+"""
+function _wz_graft_src_at_byte!(z::WriteZipperCore{V, A}, src_anr::AbstractNodeRef{V, A}, b::UInt8) where {V, A}
+    if is_none(src_anr)
+        _wz_graft_internal!(z, nothing)
+        wz_remove_val!(z, false)
+        return nothing
+    end
+    src_node = as_tagged(src_anr)
+    at = get_node_at_key(src_node, UInt8[b])
+    _wz_graft_internal!(z, is_none(at) ? nothing : into_option(at))
+    v = node_get_val(src_node, UInt8[b])
+    v === nothing ? wz_remove_val!(z, false) : wz_set_val!(z, v)
     nothing
 end
 
@@ -1000,8 +1021,10 @@ Replace the subtrie at the cursor with `map`'s root node.
 function wz_graft_map!(z::WriteZipperCore{V, A}, map::PathMap{V, A}) where {V, A}
     # copy() bumps the refcount so both map and the graft site track sharing;
     # make_unique! at write time will then COW-clone before any mutation.
-    src = map.root !== nothing ? copy(map.root) : nothing
-    src_root_val = map.root_val
+    # upstream `map.into_root()` (write_zipper.rs:1518): an EMPTY root node counts as no root, so
+    # grafting an empty map at a missing focus does not create the path (Lean-harness #240/#697/#923)
+    (src_node, src_root_val) = _pm_into_root(map)
+    src = src_node !== nothing ? copy(src_node) : nothing
     _wz_graft_internal!(z, src)
     # graft_root_vals (DEFAULT): the focus value becomes the source's root value —
     # UNCONDITIONALLY, so a source with no root value CLEARS it (write_zipper.rs:1468-1473,
@@ -1090,9 +1113,10 @@ function wz_join_map_into!(z::WriteZipperCore{V, A}, map::PathMap{V, A}) where {
     #
     # ⚠️ `join_into` (the read-zipper form, :1652) has NO such block upstream. The two are
     # deliberately asymmetric, so a caller wanting `join_into` semantics must NOT route here.
-    (val_status, _) = _wz_root_val_op!(z, pjoin, map.root_val, false)
+    # upstream `map.into_root()` (write_zipper.rs:1794): an EMPTY root node counts as no root
+    (src_rc, src_root_val) = _pm_into_root(map)
+    (val_status, _) = _wz_root_val_op!(z, pjoin, src_root_val, false)
 
-    src_rc = map.root
     if src_rc === nothing
         # ⚠️ Upstream tests ONLY `self_focus.is_none()` here (write_zipper.rs:1696-1700) — NOT
         # emptiness. An EMPTY-but-present focus is `Some`, so upstream answers Identity where an
@@ -1251,8 +1275,11 @@ function wz_meet_2!(
     elseif result isa AlgResIdentity
         # SELF_IDENT names `a` here (self is the FIRST source, not the destination); anything else
         # must be COUNTER_IDENT, i.e. `b` — upstream debug_asserts exactly that.
-        _wz_graft_internal!(z, into_option((result.mask & SELF_IDENT) > 0 ? a_anr : b_anr))
-        ALG_STATUS_ELEMENT
+        # An EMPTY identity source clears the destination and reports None (upstream
+        # write_zipper.rs:2096-2105) — reachable since `as_tagged` yields EmptyNode for the sentinel.
+        src = into_option((result.mask & SELF_IDENT) > 0 ? a_anr : b_anr)
+        _wz_graft_internal!(z, src)
+        src === nothing ? ALG_STATUS_NONE : ALG_STATUS_ELEMENT
     else
         _wz_graft_internal!(z, nothing)
         ALG_STATUS_NONE
@@ -1589,7 +1616,7 @@ Mirrors `WriteZipperCore::child_mask` (write_zipper.rs:922).
 """
 function wz_child_mask(z::WriteZipperCore{V, A}) where {V, A}
     isempty(z.focus_stack) && return ByteMask()
-    focus_node = z.focus_stack[end].node
+    focus_node = as_tagged(z.focus_stack[end])     # upstream `focus_stack.top()`: EmptyNode, never nothing
     nk = collect(_wz_node_key(z))
     if isempty(nk)
         return node_branches_mask(focus_node, UInt8[])
@@ -1615,9 +1642,8 @@ Mirrors `WriteZipperCore::child_count` (write_zipper.rs:914).
 """
 function wz_child_count(z::WriteZipperCore{V, A}) where {V, A}
     isempty(z.focus_stack) && return 0
-    focus_node = z.focus_stack[end].node
-    nk = collect(_wz_node_key(z))
-    count_branches(focus_node, nk)
+    # upstream write_zipper.rs:974-981 — the RECURSIVE count (delta #16), on `focus_stack.top()`
+    node_count_branches_recursive(as_tagged(z.focus_stack[end]), collect(_wz_node_key(z)))
 end
 
 """
@@ -1943,7 +1969,25 @@ function wz_remove_unmasked_branches!(
     _wz_ensure_write_unique!(z)
     nk = collect(_wz_node_key(z))
     focus_node = z.focus_stack[end].node
-    node_remove_unmasked_branches!(focus_node, nk, mask, prune)
+    # 1:1 with upstream write_zipper.rs:2271-2297: when the node key reaches a child, the removal
+    # happens INSIDE the child (and an emptied child's edge is removed) — harness program #766.
+    if !isempty(nk)
+        r = node_get_child_mut(focus_node, nk)
+        if r !== nothing
+            consumed, child_rc = r
+            if length(nk) >= consumed
+                is_empty_node(child_rc) || make_unique!(child_rc)
+                node_remove_unmasked_branches!(child_rc.node, nk[(consumed + 1):end], mask, prune)
+                if node_is_empty(as_tagged(child_rc))
+                    node_remove_all_branches!(focus_node, nk[1:consumed], prune)
+                end
+            end   # else: positioned at a non-existent node — removing from nothing is nothing
+        else
+            node_remove_unmasked_branches!(focus_node, nk, mask, prune)
+        end
+    else
+        node_remove_unmasked_branches!(focus_node, nk, mask, prune)
+    end
     if prune
         _wz_prune_path_internal!(z)
     end

@@ -246,3 +246,16 @@ _mask(bytes...) = foldl((a, b) -> P.ByteMask(a.bits .| P.ByteMask(UInt8(b)).bits
         @test !P.wz_to_next_k_path!(P.write_zipper(m), 5)
     end
 end
+
+# upstream write_zipper_test_remove_unmasked_branches_non_existent_path (0375ee5, write_zipper.rs:4406):
+# must not assert (a dense node's remove_unmasked_branches at a non-existent path is a no-op)
+@testset "remove_unmasked_branches at a non-existent path (upstream 0375ee5)" begin
+    m = PathMaps.PathMap{UnitVal}()
+    for k in ("a", "b", "c")
+        set_val_at!(m, Vector{UInt8}(k), UNIT_VAL)
+    end
+    wz = write_zipper_at_path(m, Vector{UInt8}("a:x"))
+    @test (wz_remove_unmasked_branches!(wz, ByteMask(), false); true)
+    @test sort([String(copy(k)) for (k, _) in m]) == ["a", "b", "c"]
+end
+

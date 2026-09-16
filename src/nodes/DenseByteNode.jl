@@ -1425,7 +1425,9 @@ end
 function node_remove_unmasked_branches!(
     n::AbstractByteNode{V, A}, key::AbstractVector{UInt8}, mask::ByteMask, prune::Bool
 ) where {V, A}
-    @assert isempty(key)
+    # upstream 0375ee5 (dense_byte_node.rs): a non-empty key is a non-existent path below this node —
+    # nothing to remove (was a debug_assert, and an @assert here; delta P2 #15)
+    isempty(key) || return nothing
     new_values = CoFreeEntry{V, A}[]
     sizehint!(new_values, length(n.values))
     idx = 1

@@ -64,6 +64,22 @@ Not exercised by phase B: `to_next_k_path` with k > depth (P3 `8082317`) — the
 
 ### Found by the harness's write / algebra ops (phase C, `ops.toml` version 2)
 
+**Phase D progress (2026-09-16).** Harness population (1000 programs, seed 1): 624 → 618 (P0 fixes) → **266**.
+- **#18 FIXED** — `as_tagged(::TrieNodeODRc)` returns the `EmptyNode` singleton for the empty sentinel, as upstream's
+  `TaggedNodeRef::EmptyNode`; every `*_dyn` / node query now handles an empty operand. Knock-on ports from the same
+  change: `wz_meet_2!`'s Identity arm reports None for an empty source (write_zipper.rs:2096-2105).
+- **#16 FIXED** — `node_count_branches_recursive` ported (trie_node.rs:682-697) and used by `wz_child_count`;
+  `wz_child_mask` reads `as_tagged(focus_stack[end])`.
+- **graft_map / join_map_into** now take the source through `_pm_into_root` (upstream `map.into_root()`,
+  write_zipper.rs:1518/1794): an empty root counts as no root (harness #240/#697/#923 created the focus path).
+- **remove_unmasked_branches** ported 1:1 (write_zipper.rs:2271-2297): a node key reaching a child removes inside
+  the child (harness #766).
+- **P1 #8 (graft_masked_branches)** — the 0/1/2-bit arms are upstream's (`graft_src_at` per byte, via
+  `get_node_at_key` + the `graft_root_vals` value step; harness #607); 3+ bits use the same per-byte graft.
+- **P2 #15 FIXED** — `0375ee5` ported with its upstream test.
+- Still open from this table: **#17** (`tr_make_map` root value, `wz_graft!` value step), the 12a/12b read-zipper
+  items, and the unattributed residues.
+
 1000 programs (seed 1): 624 diverge on their first step that differs (`test/differential/spec/KNOWN_DIVERGENT.tsv`,
 ratcheted by `test/lean_spec_gate.jl`). The classes below were attributed by replaying the program to the
 diverging step and applying the candidate fix to that state (probe `spec_c3.juliasrc`). Upstream names are used

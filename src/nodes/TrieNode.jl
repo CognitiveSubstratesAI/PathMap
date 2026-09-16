@@ -17,7 +17,7 @@ This file contains:
 **Deferred** (require concrete node types — see `nodes/` sub-files):
   - `TaggedNodeRef` variant definitions (DenseByteNode, LineListNode, …)
   - `TaggedNodeRefMut` / `TaggedNodePtr` definitions
-  - `pmeet_generic` / `pmeet_generic_internal` / `node_count_branches_recursive`
+  - `pmeet_generic` / `pmeet_generic_internal` (`node_count_branches_recursive` is ported below `as_tagged`)
 
 1:1 port of upstream non-slim, non-nightly path. `slim_ptrs` is an upstream
 `#[cfg(feature)]`-gated optimisation — not Tier-1 substrate parity.
@@ -438,9 +438,32 @@ is_empty_node(rc::TrieNodeODRc) = rc.node === nothing
 """
     as_tagged(rc::TrieNodeODRc) -> AbstractTrieNode
 
-Returns the inner node (= `TaggedNodeRef`). Mirrors `as_tagged`.
+Returns the inner node (= `TaggedNodeRef`). Mirrors `TrieNodeODRc::as_tagged`, which yields
+`TaggedNodeRef::EmptyNode` for the empty sentinel (trie_node.rs `TaggedNodePtr`:
+`EMPTY_NODE_TAG => Self::EmptyNode`) — so here the `EmptyNode` singleton, never `nothing`.
+Returning `nothing` made every node query and `*_dyn` operation on an empty child a MethodError
+(`count_branches(::Nothing, …)`, `pmeet_dyn(::Nothing, …)`, …), patched one `::Nothing` method at a
+time (EmptyNode.jl); the Lean-model harness found nine more such sites
+(docs/UPSTREAM_DELTA_2026-09-16.md #18). `rc.node` itself still holds `nothing` for the sentinel.
 """
-@inline as_tagged(rc::TrieNodeODRc) = rc.node
+@inline as_tagged(rc::TrieNodeODRc{V, A}) where {V, A} =
+    rc.node === nothing ? EmptyNode{V, A}() : rc.node
+
+"""
+    node_count_branches_recursive(node, key) -> Int
+
+Child count at `key` below `node`, stepping into the child when `key` covers a whole child edge.
+1:1 with upstream `node_count_branches_recursive` (trie_node.rs:682-697), which
+`WriteZipperCore::child_count` uses (write_zipper.rs:974-981): a write zipper's node key can span a
+full child edge, where one-node `count_branches` answers 0 (docs/UPSTREAM_DELTA_2026-09-16.md #16).
+"""
+function node_count_branches_recursive(node, key::AbstractVector{UInt8})
+    isempty(key) && return count_branches(node, UInt8[])
+    result = node_get_child(node, key)
+    result === nothing && return count_branches(node, key)
+    consumed, child_rc = result
+    length(key) >= consumed ? count_branches(as_tagged(child_rc), view(key, (consumed + 1):length(key))) : 0
+end
 
 """
     shared_node_id(rc::TrieNodeODRc) -> UInt64
