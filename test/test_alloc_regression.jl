@@ -80,7 +80,14 @@ if _HAS_ALLOCCHECK
             AllocCheck.check_allocs(
                 PathMaps.set_val_at!, (typeof(m), Vector{UInt8}, Int32); ignore_throw=true
             ))
-        @test set_dyn <= 21
+        #
+        # JULIA 1.13: 21 -> 22, and only there (2026-09-16). Same AllocCheck 0.2.6 / LLVM 9.13.1 on
+        # both versions; per-site listing diffed: every chain is identical EXCEPT
+        #     _has_refcnt <- _node_inc_refcnt! <- copy <- _cf_copy @ DenseByteNode.jl:43
+        # which 1.13 reports TWICE (1.12: once) — the same `@nospecialize` dispatch counted through a
+        # second `_cf_copy` specialization, not a new kind of cost. Total alloc sites FELL 111 -> 104.
+        # 1.12 keeps its 21. Removing the dispatch itself is a perf change with its own measurement.
+        @test set_dyn <= (VERSION >= v"1.13" ? 22 : 21)
     end
 else
     @info "AllocCheck not loadable (plain julia --project=.) — read-path alloc guard runs under Pkg.test/CI"
