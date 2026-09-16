@@ -28,11 +28,12 @@ changed to our intended semantics and the change is noted at its site.
   operations) generating both `PathMapsSpec/SpecOps.lean` and `ops_generated.jl` via `../tools/gen_spec_ops.jl`;
   `SpecHarness.jl` runs PathMaps in-process against a resident `pathmaps-oracle --server --spec`
   (2000 programs in ~9 s warm). First results are recorded in `../docs/UPSTREAM_DELTA_2026-09-16.md`.
-- **Phase C:** write-zipper and algebra operations, then a ratchet in the PathMap suite. Originally planned as:
-  a Julia-native harness (not a port of the Rust crate or the Python drivers): one operation
-  table as data from which both the Lean and the Julia sides are generated, an in-process driver in the warm
-  Revise session talking to a resident `pathmaps-oracle`, Julia threads for parallelism, shrinking with
-  `../test/differential/shrink.jl`, and a known-divergence ratchet in the PathMap suite.
+- **Phase C (done 2026-09-16):** op table version 2 — 49 operations over a write zipper (map0) and a read
+  zipper (map1): read-only movement on either, writes, grafts and the algebra with `rz` as the source, values
+  under our own `UInt64` lattice (`ourOps` in `SpecOps.lean`). `../test/lean_spec_gate.jl` ratchets 1000
+  programs against `../test/differential/spec/KNOWN_DIVERGENT.tsv`; attribution is in the delta doc.
+- **Next:** fix the port list with the harness as the check; add the remaining write ops as our API grows
+  (`gaps` in `ops.toml`); shrink failing programs; move the harness onto threads.
 
 ## Build
 

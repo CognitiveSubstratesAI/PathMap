@@ -51,6 +51,28 @@ the focus token, or a fresh zipper at the same path, reproduces the model), 6 `t
 Not exercised by phase B: `to_next_k_path` with k > depth (P3 `8082317`) — the walk calls it only after
 `descend_first_k_path` succeeded, so depth ≥ k; and the childless-focus k-path case is skipped (#1).
 
+### Found by the harness's write / algebra ops (phase C, `ops.toml` version 2)
+
+1000 programs (seed 1): 624 diverge on their first step that differs (`test/differential/spec/KNOWN_DIVERGENT.tsv`,
+ratcheted by `test/lean_spec_gate.jl`). The classes below were attributed by replaying the program to the
+diverging step and applying the candidate fix to that state (probe `spec_c3.juliasrc`). Upstream names are used
+throughout so a search from either side finds the row.
+
+| # | defect | where | evidence |
+|---|---|---|---|
+| 16 | **`child_count` on the write zipper ignores a node key that spans a child edge.** Upstream's `WriteZipperCore::child_count` calls `node_count_branches_recursive(focus, node_key)` (`trie_node.rs:682-697`), which steps into the child when the key covers its edge; our port never ported that helper (it is only named in a comment, `nodes/TrieNode.jl:20`) and calls one-node `count_branches`. Upstream's `LineListNode::count_branches` documents that a full child key answers 0 because "the node would have advanced", which a write zipper at a mended or un-mended root does not guarantee (`mend_root` skips origins of length ≤ 1 on both sides). | `zipper/WriteZipper.jl:1616-1621` `wz_child_count` | 156 programs first differ on `W.c`; a restatement of `node_count_branches_recursive` reproduces the model in 146. Of the other 10: 3 reach an empty-sentinel child (item 18), **7 are unattributed** (6 `graft_masked_branches`, 1 `set_val`) |
+| 17 | **`graft_root_vals` is not applied on two paths.** (a) `make_map` from a TrieRef keeps the focus node but drops the focus value: upstream `trie_ref.rs:327-335` passes `self.val().cloned()` as the root value; our `tr_make_map` never sets `root_val`. (b) `graft` from a source zipper: upstream `write_zipper.rs:1497-1505` sets or removes the focus value from `read_zipper.val()` after `graft_internal`; our `wz_graft!` takes an `AbstractNodeRef`, which carries no value, so the step cannot happen (the signature needs the source value, as `wz_meet_into!`'s `src_root_val` already does) | `zipper/TrieRef.jl:232-252` `tr_make_map`; `zipper/WriteZipper.jl:991-993` `wz_graft!` | (b) `graft W.v` 34/34: the model's value is the source's focus value. (a) 34 of 52 `graft_map` / `join_map_into` / `make_map_val_count` cases match once `make_map` carries the value; the other 18 differ for another reason (not yet attributed) |
+| 18 | **The empty sentinel reaches `*_dyn` / node methods as `nothing`** (the P2 common root cause) on many more paths than P2 lists: `tr_get_focus_anr` / `tr_get_focus_rc` call `get_node_at_key(as_tagged(focus_node), key)` with `as_tagged` → `nothing`; `wz_child_count` calls `count_branches(nothing, key)` on an empty focus; `wz_restrict!`, `wz_subtract_into!`, `wz_meet_into!`, `wz_join_map_into!`, `wz_meet_2!` call `prestrict_dyn` / `psubtract_dyn` / `pmeet_dyn` / `pjoin_dyn` with a `nothing` operand; `join_k_path_into` reaches `make_unique!` on the sentinel (`nodes/TrieNode.jl` assertion) | throw sites, by function: `TrieRef.jl:tr_get_focus_anr`, `TrieRef.jl:tr_get_focus_rc`, `WriteZipper.jl:wz_child_count`, `wz_restrict!`, `wz_subtract_into!`, `wz_meet_into!`, `wz_join_map_into!`, `wz_meet_2!`, `TrieNode.jl:make_unique!` | the THROW classes in KNOWN_DIVERGENT.tsv; `remove_unmasked_branches` @`DenseByteNode.jl` is P2 #15 |
+
+Not yet attributed: `restrict` / `meet_into` / `join_k_path_into` / `take_map_restore` / `remove_branches` /
+`restricting` `ret` classes, `join_map_into W.e`, `graft W.e`, `graft_masked_branches W.n` (each 1–5 programs),
+and the 7 + 18 residues above. Each needs its own replay before it is called a defect.
+
+Write-side ops of upstream's model that the harness does NOT run, and why, are listed in `ops.toml` (`gaps`):
+`prune_ascend`, `graft_src_at`, `get_val_or_set_mut_with`, `descend_until_observed` and `to_next_get_val` have no
+counterpart in our port; the read-only movement ops without a write-zipper method run on `rz` only
+(`skip:wz-gap`).
+
 ## P2 — throws where upstream returns a result
 
 | # | upstream | defect | where |

@@ -940,6 +940,10 @@ include("differential_gate.jl")
 # only find what someone thought to write down; this searches. See test/fuzz_gate.jl.
 include("fuzz_gate.jl")
 
+# The Lean-model differential (lean/PathMapsSpec): 1000 programs over the read, write and algebra
+# operations, first divergence per program ratcheted by class. See test/lean_spec_gate.jl.
+include("lean_spec_gate.jl")
+
 # UPSTREAM'S OWN zipper conformance battery, ported (src/zipper.rs:3037+). Covers the ONE layer the
 # two gates above do not: rust_probe references no zipper composition, and the fuzz corpus exercises
 # the trie ALGEBRA (join/meet/subtract/graft) only. Upstream applies this battery to ProductZipper,
