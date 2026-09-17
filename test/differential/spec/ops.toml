@@ -360,7 +360,7 @@ name = "graft"
 target = "w"
 operands = []
 lean = "(\"-\", z.graft r)"
-julia = "(wz_graft!(z, src_anr(st)); \"-\")"
+julia = "(wz_graft!(z, src_anr(st), src_val(st)); \"-\")"
 
 [[op]]
 name = "graft_map"

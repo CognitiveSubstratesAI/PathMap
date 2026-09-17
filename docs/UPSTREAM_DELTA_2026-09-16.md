@@ -77,8 +77,13 @@ Not exercised by phase B: `to_next_k_path` with k > depth (P3 `8082317`) — the
 - **P1 #8 (graft_masked_branches)** — the 0/1/2-bit arms are upstream's (`graft_src_at` per byte, via
   `get_node_at_key` + the `graft_root_vals` value step; harness #607); 3+ bits use the same per-byte graft.
 - **P2 #15 FIXED** — `0375ee5` ported with its upstream test.
-- Still open from this table: **#17** (`tr_make_map` root value, `wz_graft!` value step), the 12a/12b read-zipper
-  items, and the unattributed residues.
+- **#17 FIXED** — `tr_make_map` ports trie_ref.rs:327-335 (focus value as root value; an empty focus node is no
+  root); `wz_graft!(z, src_anr, src_val)` is upstream `graft` with the `graft_root_vals` step (the 2-argument
+  form stays node-only = `graft_internal`). Population 266 → **161**. The one newly exposed class
+  (`to_next_val ret`, #938) is item 9: `ascend 2` left the read zipper's token from its old focus (a token reset
+  or a fresh zipper finds the value the model expects).
+- Still open from this table: the 12a/12b read-zipper items, items 9–10 / 12c (iteration tokens), and the
+  unattributed residues.
 
 1000 programs (seed 1): 624 diverge on their first step that differs (`test/differential/spec/KNOWN_DIVERGENT.tsv`,
 ratcheted by `test/lean_spec_gate.jl`). The classes below were attributed by replaying the program to the

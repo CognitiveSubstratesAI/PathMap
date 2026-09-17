@@ -1005,10 +1005,21 @@ function _wz_root_val_op!(
 end
 
 """
+    wz_graft!(z, src_anr, src_val)
     wz_graft!(z, src_anr)
 
-Replace the subtrie at the cursor with `src_anr`'s subtrie.
+Upstream `WriteZipperCore::graft` (write_zipper.rs:1497-1505) takes a source ZIPPER: it grafts the
+source focus node, then — `graft_root_vals`, a default feature — sets the focus value to the source's
+focus value, or REMOVES it when the source has none. Our sources are node refs, which carry no value,
+so the value is passed explicitly (as `wz_meet_into!`'s `src_root_val` already is): the 3-argument
+form is upstream's `graft`. The 2-argument form grafts the node ONLY and leaves the focus value
+alone — it is `graft_internal`, not `graft` (docs/UPSTREAM_DELTA_2026-09-16.md #17b).
 """
+function wz_graft!(z::WriteZipperCore{V, A}, src_anr::AbstractNodeRef{V, A}, src_val::Union{Nothing, V}) where {V, A}
+    _wz_graft_internal!(z, into_option(src_anr))
+    src_val === nothing ? wz_remove_val!(z, false) : wz_set_val!(z, src_val)
+    nothing
+end
 function wz_graft!(z::WriteZipperCore{V, A}, src_anr::AbstractNodeRef{V, A}) where {V, A}
     _wz_graft_internal!(z, into_option(src_anr))
 end

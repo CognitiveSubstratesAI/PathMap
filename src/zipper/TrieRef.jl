@@ -247,7 +247,13 @@ function tr_make_map(t::TrieRefBorrowed{V, A}) where {V, A}
     # This is `pathmap_rs_reference.md` §1.2 invariant 2 ("a write zipper descending past a share
     # point must uniquify the nodes along its path"): uniquification is DRIVEN BY the refcount, so a
     # share that never raises it is invisible to the mechanism meant to protect it.
-    focus_rc === nothing || (m.root = copy(focus_rc))
+    #
+    # Upstream trie_ref.rs:327-335, both halves: the root node is `get_focus().into_option()`, which
+    # drops an EMPTY node (our key-empty branch of `tr_get_focus_rc` returns it as is), and under
+    # `graft_root_vals` (default) the focus VALUE becomes the map's root value. Ours kept neither
+    # (docs/UPSTREAM_DELTA_2026-09-16.md #17a).
+    (focus_rc === nothing || node_is_empty(as_tagged(focus_rc))) || (m.root = copy(focus_rc))
+    m.root_val = tr_get_val(t)
     m
 end
 

@@ -387,7 +387,7 @@ function spec_step!(st::SpecState, d::Dec)
         z = st.wz
         r = st.rz
         sk = nothing
-        emit!(st, "graft", sk === nothing ? ((wz_graft!(z, src_anr(st)); "-")) : sk)
+        emit!(st, "graft", sk === nothing ? ((wz_graft!(z, src_anr(st), src_val(st)); "-")) : sk)
     elseif op == 38   # graft_map
         z = st.wz
         r = st.rz
