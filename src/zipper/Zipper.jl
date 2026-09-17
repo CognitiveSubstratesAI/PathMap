@@ -876,6 +876,7 @@ function _to_next_get_val!(z::ReadZipperCore{V, A}) where {V, A}
                     view(z.prefix_buf, (key_start + 1):origin_len) !=
                    view(key_bytes, 1:unmod_len)
                     resize!(z.prefix_buf, origin_len)
+                    z.focus_iter_token = NODE_ITER_INVALID   # upstream 4470349 (zipper.rs:2955)
                     return nothing
                 end
             end
@@ -1153,6 +1154,10 @@ function _zipper_k_path_internal!(z::ReadZipperCore, k::Int, base_idx::Int,
                 z.focus_node = focus_node
                 z.focus_iter_token = iter_tok
                 resize!(z.prefix_buf, prefix_offset)
+                # ac241e2: a parent pushed by `descend_to` & co. carries NODE_ITER_INVALID; loop back so it
+                # is re-synced before `next_items` (143ecd1 fell through and handed the sentinel to the
+                # node — a dense node decoded it as a byte index and read out of bounds: segfault).
+                continue
             else
                 z.focus_iter_token = NODE_ITER_INVALID
                 resize!(z.prefix_buf, z.origin_path_len)

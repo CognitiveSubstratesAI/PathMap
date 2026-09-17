@@ -1378,7 +1378,9 @@ function next_items(n::AbstractByteNode{V, A}, token::UInt128) where {V, A}
             k = i * UInt8(64) + wi
             new_token = (UInt128(i) << 64) | UInt128(w)
             idx = Int(index_of(n.mask, k)) + 1
-            @inbounds cf = n.values[idx]
+            # Bounds-CHECKED on purpose: a sentinel token (INVALID/FINISHED) decodes to a garbage index,
+            # and `@inbounds` turned that caller bug into a segfault (k-path walk, 2026-09-17).
+            cf = n.values[idx]
             return (new_token, UInt8[k], cf.rec, cf.val)
         elseif i < 3
             i += UInt8(1)

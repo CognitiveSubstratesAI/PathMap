@@ -947,6 +947,10 @@ include("lean_spec_gate.jl")
 # Upstream's k-path iteration tests (zipper.rs:4720-5125), ported with the token-walk k-path fix (P0 #1).
 include("test_upstream_k_path.jl")
 
+# Upstream's read-zipper iteration-state tests (zipper.rs:5926-6607), written against the 0.4.0 API
+# (docs/ZIPPER_API_0.4.0_PORT_PLAN.md phase 0). Found the ac241e2 segfault in the k-path walk.
+include("test_upstream_zipper_iter_state.jl")
+
 # shared_node_id guard + cached catamorphism (P0 #2; upstream zipper.rs:2638-2653, morphisms.rs:1922).
 include("test_shared_node_id.jl")
 
