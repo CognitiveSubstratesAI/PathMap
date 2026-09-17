@@ -607,14 +607,24 @@ so neither could be ported.
 function zipper_val_at(z::ReadZipperCore{V, A}, path::AbstractVector{UInt8}) where {V, A}
     _prepare_buffers!(z)
     isempty(path) && return _get_val(z)
-    abs_path = vcat(z.prefix_buf, path)
-    # Same two-phase lookup as `get_val_at` (PathMap.jl:97): `node_along_path_off` walks the
-    # child edges, then `node_get_val` over the REMAINING bytes picks up value-slot entries,
-    # which `node_get_child` never returns. Phase 1 alone misses every leaf value — measured:
-    # `roman` (has children) resolved, `romane` (leaf) came back nothing.
-    last_rc, off, _ = node_along_path_off(z.root_node, abs_path)
-    inner = _fnode(_rc_inner(last_rc), V, A)
-    node_get_val(inner, view(abs_path, (off + 1):length(abs_path)))
+    # 1:1 with upstream `get_val_at` (zipper.rs:2891-2911): a trie ref built from the FOCUS node and
+    # `node_key() ++ path`. Ours used to walk the whole `prefix_buf ++ path` from `z.root_node` — but
+    # for `read_zipper_at_path` that is the node the ROOT path already reached, so the root bytes were
+    # walked twice and values were missed (docs/UPSTREAM_DELTA_2026-09-16.md #12b).
+    # Two phases, as before: follow child edges, then `node_get_val` over the remaining bytes (a value
+    # slot is never returned by `node_get_child`).
+    key = vcat(collect(_znode_key(z)), path)
+    inner = _zfnode(z)
+    off = 0
+    while off < length(key)
+        r = node_get_child(inner, view(key, (off + 1):length(key)))
+        r === nothing && break
+        consumed, next_rc = r
+        consumed < length(key) - off || break      # a full edge: the value sits in `inner`
+        off += consumed
+        inner = _fnode(_rc_inner(next_rc), V, A)
+    end
+    node_get_val(inner, view(key, (off + 1):length(key)))
 end
 
 function zipper_child_count(z::ReadZipperCore{V, A}) where {V, A}
@@ -661,21 +671,12 @@ function zipper_val_count(z::ReadZipperCore{V, A}) where {V, A}
     if isempty(nk)
         val_count_below_root(_zfnode(z)) + root_val_cnt
     else
-        result = node_get_child(_zfnode(z), nk)
-        if result !== nothing
-            _, sub_rc = result
-            val_count_below_root(_fnode(_rc_inner(sub_rc), V, A)) + root_val_cnt
-        else
-            # `nk` is a prefix of a stored edge key (partial-prefix from read_zipper_at_path).
-            # Mirrors Rust get_node_at_key which synthesises a virtual sub-node for the
-            # remaining edge bytes. Use iteration fallback: copy the zipper and count.
-            cnt = root_val_cnt
-            z2 = deepcopy(z)
-            while zipper_to_next_val!(z2)
-                cnt += 1
-            end
-            cnt
-        end
+        # 1:1 with upstream `val_count` (zipper.rs:2075-2088): the focus node is `get_focus()` —
+        # `get_node_at_key`, which also synthesises the node when `nk` ends inside a key — and a
+        # missing focus counts only the focus value. The old fallback counted `to_next_val` steps,
+        # which do not stop at the focus subtree (docs/UPSTREAM_DELTA_2026-09-16.md #12a).
+        focus = get_node_at_key(_zfnode(z), nk)
+        is_none(focus) ? root_val_cnt : val_count_below_root(as_tagged(focus)) + root_val_cnt
     end
 end
 
@@ -760,13 +761,19 @@ function zipper_descend_first_byte!(z::ReadZipperCore{V, A}) where {V, A}
     # continue it, so `descend_first_byte` must agree with `descend_indexed_byte(0)` and refuse.
     slice_starts_with(key_bytes, node_key) || return false
 
-    z.focus_iter_token = new_tok
     push!(z.prefix_buf, key_bytes[byte_idx])
 
-    if length(key_bytes) == byte_idx && child_rc !== nothing
-        push!(z.ancestors, (z.focus_node, new_tok, length(z.prefix_buf)))
-        z.focus_node = _rc_inner(child_rc)
-        z.focus_iter_token = new_iter_token(_zfnode(z))
+    # upstream f365d00: the advanced token describes the new focus only when the item ENDS there;
+    # otherwise the focus is a prefix of the item and the token must be rebuilt later.
+    if length(key_bytes) == byte_idx
+        z.focus_iter_token = new_tok
+        if child_rc !== nothing
+            push!(z.ancestors, (z.focus_node, new_tok, length(z.prefix_buf)))
+            z.focus_node = _rc_inner(child_rc)
+            z.focus_iter_token = new_iter_token(_zfnode(z))
+        end
+    else
+        z.focus_iter_token = NODE_ITER_INVALID
     end
     true
 end
@@ -790,8 +797,11 @@ function zipper_ascend!(z::ReadZipperCore, steps::Int)
             z.focus_iter_token = iter_tok
         end
         cur_jump = min(steps, _excess_key_len(z))
-        resize!(z.prefix_buf, length(z.prefix_buf) - cur_jump)
-        steps -= cur_jump
+        if cur_jump > 0                                  # upstream d19a7c8
+            resize!(z.prefix_buf, length(z.prefix_buf) - cur_jump)
+            z.focus_iter_token = NODE_ITER_INVALID
+            steps -= cur_jump
+        end
     end
     true
 end
@@ -802,6 +812,8 @@ function zipper_ascend_byte!(z::ReadZipperCore)
         focus_node, iter_tok, _ = pop!(z.ancestors)
         z.focus_node = focus_node
         z.focus_iter_token = iter_tok
+    else
+        z.focus_iter_token = NODE_ITER_INVALID          # upstream d19a7c8
     end
     pop!(z.prefix_buf)
     true
@@ -811,7 +823,9 @@ function zipper_ascend_until!(z::ReadZipperCore{V, A}) where {V, A}
     zipper_at_root(z) && return false
     while true
         isempty(_znode_key(z)) && _ascend_across_nodes!(z)
+        before = length(z.prefix_buf)
         _ascend_within_node!(z)
+        length(z.prefix_buf) < before && (z.focus_iter_token = NODE_ITER_INVALID)   # upstream d19a7c8
         (zipper_child_count(z) > 1 || _is_val_internal(z) || zipper_at_root(z)) &&
             return true
     end
@@ -821,7 +835,9 @@ function zipper_ascend_until_branch!(z::ReadZipperCore{V, A}) where {V, A}
     zipper_at_root(z) && return false
     while true
         isempty(_znode_key(z)) && _ascend_across_nodes!(z)
+        before = length(z.prefix_buf)
         _ascend_within_node!(z)
+        length(z.prefix_buf) < before && (z.focus_iter_token = NODE_ITER_INVALID)   # upstream d19a7c8
         (zipper_child_count(z) > 1 || zipper_at_root(z)) && return true
     end
 end

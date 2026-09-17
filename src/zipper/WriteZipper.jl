@@ -1521,18 +1521,24 @@ function wz_join_k_path_into!(
     #     `focus_stack`, so (1) cannot see it. Mirrors `self_node.make_mut().drop_head_dyn(...)`
     #     (write_zipper.rs:1620). Without it, dropping the head of a shared subtrie corrupts the
     #     SOURCE map — reachable via MorkL OP_DROP_HEAD on a shared space.
+    #
+    # (3) THE BODY is upstream's current one (write_zipper.rs:1879-1900): the focus is
+    #     `get_focus().into_option()`, which drops an EMPTY node (ours asserted in `make_unique!` on the
+    #     empty sentinel — 62 of 161 Lean-harness divergences); `byte_cnt == 0` is the identity (e0f47f7,
+    #     delta P1 #4); an empty drop result clears the branch instead of grafting an empty node.
     _wz_ensure_write_unique!(z)
-    focus_anr = _wz_get_focus_anr(z)
-    if is_none(focus_anr)
-        prune && wz_prune_path!(z)
-        return false
+    self_rc = into_option(_wz_get_focus_anr(z))   # a COPY of the rc: make_unique! then forks it if shared
+    result = if self_rc === nothing
+        false
+    elseif byte_cnt > 0
+        make_unique!(self_rc)
+        new_node = drop_head_dyn!(as_tagged(self_rc), byte_cnt)
+        new_node = (new_node === nothing || node_is_empty(as_tagged(new_node))) ? nothing : new_node
+        _wz_graft_internal!(z, new_node)
+        new_node !== nothing
+    else
+        !node_is_empty(as_tagged(self_rc))
     end
-    focus_rc = borrow(focus_anr)
-    focus_rc !== nothing && make_unique!(focus_rc)
-    self_node = as_tagged(focus_anr)
-    new_node = drop_head_dyn!(self_node, byte_cnt)
-    _wz_graft_internal!(z, new_node)
-    result = new_node !== nothing
     prune && !result && wz_prune_path!(z)   # see the note above — public prune_path, not the helper
     result
 end

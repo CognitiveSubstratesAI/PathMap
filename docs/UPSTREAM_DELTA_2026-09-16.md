@@ -82,8 +82,19 @@ Not exercised by phase B: `to_next_k_path` with k > depth (P3 `8082317`) — the
   form stays node-only = `graft_internal`). Population 266 → **161**. The one newly exposed class
   (`to_next_val ret`, #938) is item 9: `ascend 2` left the read zipper's token from its old focus (a token reset
   or a fresh zipper finds the value the model expects).
-- Still open from this table: the 12a/12b read-zipper items, items 9–10 / 12c (iteration tokens), and the
-  unattributed residues.
+- **2026-09-17 batch — 161 → 2.** 12a (`zipper_val_count` = upstream zipper.rs:2075-2088 via
+  `get_node_at_key`), 12b (`zipper_val_at` walks `node_key ++ path` from the focus node, zipper.rs:2891-2911),
+  item 9 (`d19a7c8`: every in-node ascend invalidates the token), item 10 (`f365d00`: `descend_first_byte`
+  keeps the advanced token only when the item ends at the focus), P1 #4 (`join_k_path_into` = upstream's
+  current body: `into_option` drops an empty focus, `k = 0` is the identity — the harness no longer skips it,
+  op table v4). Model change (`ofValRes` follows upstream `AlgebraicResult::status()`: an identity without
+  SELF_IDENT is Element) closed the 5 `meet_into ret` programs. 12c produced no remaining first divergence.
+  Verified WARM: related test files, PathMap suite 172/172 and MORK 8168/8168 in `MORK/tools/warm_suite.sh`.
+- **The 2 left, attributed:** #686 is **P1 #5** (`f0cd6b7`): `insert_prefix` at a one-byte write-zipper root kept
+  the old key run beside the prefixed copy (`graft_internal` lacks `node_remove_all_branches`), surfacing later at
+  `set_val`. #747 is an **upstream defect we ported 1:1**: dense `prestrict_abstract` (dense_byte_node.rs:489-545)
+  drops a value-only entry (or an entry's value) when `other` has no value at that byte without clearing
+  `is_identity`, so `restrict` reports Identity and the branch survives.
 
 1000 programs (seed 1): 624 diverge on their first step that differs (`test/differential/spec/KNOWN_DIVERGENT.tsv`,
 ratcheted by `test/lean_spec_gate.jl`). The classes below were attributed by replaying the program to the

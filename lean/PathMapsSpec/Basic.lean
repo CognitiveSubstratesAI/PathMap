@@ -195,10 +195,16 @@ def merge : AlgStatus → AlgStatus → Bool → Bool → AlgStatus
   | .identity, .none, _, bNone => if bNone then .identity else .element
   | .element, _, _, _ => .element
 
-/-- The `AlgebraicStatus` a `ValRes` induces. -/
+/-- The `AlgebraicStatus` a `ValRes` induces — upstream `AlgebraicResult::status()` (ring.rs:290-301):
+an identity WITHOUT the `SELF_IDENT` flag means the result is the other operand, so `self` changed and
+the status is `Element`.
+
+PathMapsSpec change (2026-09-17): the upstream model mapped every identity to `.identity`, which is
+indistinguishable for upstream's `u64` instance (it only ever returns `SELF_IDENT`) but wrong for our
+lattice (`ourOps`), whose meet returns a counter-only identity when the source value is smaller. -/
 def ofValRes {V : Type} : ValRes V → AlgStatus
   | .elem _ => .element
-  | .identity _ _ => .identity
+  | .identity s _ => if s then .identity else .element
   | .none => .none
 
 end AlgStatus

@@ -47,7 +47,7 @@
 # a defect in PathMaps (see docs/UPSTREAM_DELTA_2026-09-16.md) or a model error — attribute each one
 # by replaying the state, never by the op name.
 
-version = 3
+version = 4
 
 # Write-side operations of the upstream model that are NOT in this table, and why:
 gaps = [
@@ -429,12 +429,11 @@ operands = ["path"]
 lean = "let (st, z) := z.meet2 ourOps r { r with path := r.path ++ a1 }; (toString st, z)"
 julia = "show_status(wz_meet_2!(z, src_anr(st), src_anr(st, a1)))"
 
-# `k = 0` is P1 #4 (should be the identity).
+# `k = 0` is the identity (upstream e0f47f7, ported 2026-09-17; it used to be skipped as P1 #4).
 [[op]]
 name = "join_k_path_into"
 target = "w"
 operands = ["k4"]
-skip = [{ lean = "a1 == 0", julia = "a1 == 0", token = "skip:k0" }]
 lean = "let (b, z) := z.joinKPathInto ourOps a1 false; (if z.focusNodeIsEmpty then \"?\" else showBool b, z)"
 julia = "(b = wz_join_k_path_into!(z, a1, false); sp_child_count(z) == 0 ? \"?\" : show_bool(b))"
 
