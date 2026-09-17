@@ -66,7 +66,12 @@ Node token contract (trie_node.rs:195-256, constants :408-478): `IterToken = u64
    `ac241e2` does (loop back to the re-sync); dense `next_items` is bounds-checked again. The Lean harness never
    calls `to_next_k_path` after `descend_to`, so it could not see this — widen its op sequencing in phase 2.
    321/321.
-1. **Token contract** — `TrieNode.jl` constants/declarations (UInt64), EmptyNode, TinyRef, Bridge, ByteNode
+1. **Token contract** — DONE 2026-09-17: `IterToken = UInt64` and the 0.4.0 constants (load-time layout
+   asserts), `ascend_iter_token`, `next_items(node, tok, after_focus)`; byte node `values_idx<<9 | next_byte`
+   with the bit-62 rule (supersedes our 12c workaround); LineList offset tokens + `TOKEN_LAST` + `after_focus`
+   (e0f32c0, 662e593); Empty `TOKEN_AFTER_LAST`; sentinel inputs raise instead of reading garbage. The zipper
+   passes `after_focus = false` (behaviour-preserving, traced per LineList case); MORK's node tests updated.
+   Upstream node tests: `test/test_upstream_iter_token.jl` 121/121. Originally planned scope: `TrieNode.jl` constants/declarations (UInt64), EmptyNode, TinyRef, Bridge, ByteNode
    (dense_byte_node.rs:315-381, 1010-1053), LineList (line_list_node.rs:1950-2133), Viz callers; node tests
    (`byte_node_iter_token_crosses_mask_word_boundaries`, `test_line_list_ascend_iter_token`,
    `…after_focus_skips_partial_item`, `…skips_descendant_item`, `…uses_canonical_tokens`).

@@ -125,7 +125,7 @@ function _viz_node_physical!(rc::TrieNodeODRc, dc::DrawConfig, ds::_DrawState)
     iter_node = node isa TinyRefNode ? into_full(node) : node
     token = new_iter_token(iter_node)
     while token != NODE_ITER_FINISHED
-        (token, key_bytes, rec, value) = next_items(iter_node, token)
+        (token, key_bytes, rec, value) = next_items(iter_node, token, false)
         if rec !== nothing
             other = shared_node_id(rec)
             push!(ds.cmds, _EdgeCmd(addr, other, Vector{UInt8}(key_bytes)))
@@ -234,7 +234,7 @@ function _pre_init_node_hashes!(rc::TrieNodeODRc, ds::_DrawState)
     iter_node = node isa TinyRefNode ? into_full(node) : node
     token = new_iter_token(iter_node)
     while token != NODE_ITER_FINISHED
-        (token, _key, rec, _val) = next_items(iter_node, token)
+        (token, _key, rec, _val) = next_items(iter_node, token, false)
         rec !== nothing && _pre_init_node_hashes!(rec, ds)
     end
 end
@@ -266,7 +266,7 @@ function _build_ascii!(rc::TrieNodeODRc, ds::_DrawState, graph::Dict{UInt64, _AN
     iter_node = node isa TinyRefNode ? into_full(node) : node
     token = new_iter_token(iter_node)
     while token != NODE_ITER_FINISHED
-        (token, key, rec, value) = next_items(iter_node, token)
+        (token, key, rec, value) = next_items(iter_node, token, false)
         if rec !== nothing
             cid = _build_ascii!(rec, ds, graph)
             push!(an.edges, _AEdge(Vector{UInt8}(key), true, cid, ""))

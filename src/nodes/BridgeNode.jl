@@ -225,24 +225,25 @@ function node_first_val_depth_along_key(n::BridgeNode, key::AbstractVector{UInt8
     end
 end
 
-# Iteration — BridgeNode is similar to TinyRefNode (unreachable in normal iteration)
-new_iter_token(::BridgeNode) = UInt128(0)
+# Iteration — BridgeNode is similar to TinyRefNode (unreachable in normal iteration). Upstream's bridge_node.rs:400-432
+# is stale against the 0.4.0 trait (tuple-returning iter_token_for_path, no ascend_iter_token); kept as upstream has it.
+new_iter_token(::BridgeNode) = zero(IterToken)
 function iter_token_for_path(n::BridgeNode, key::AbstractVector{UInt8})
     nk = n.key
     nklen = length(nk)
     length(key) <= nklen || return (NODE_ITER_FINISHED, UInt8[])
     short = nk[1:length(key)]
-    key < short && return (UInt128(0), UInt8[])
-    key == short && return (UInt128(1), nk)
+    key < short && return (zero(IterToken), UInt8[])
+    key == short && return (one(IterToken), nk)
     (NODE_ITER_FINISHED, UInt8[])
 end
-function next_items(n::BridgeNode{V, A}, tok::UInt128) where {V, A}
+function next_items(n::BridgeNode{V, A}, tok::IterToken, _after_focus::Bool) where {V, A}
     tok == 0 || return (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
     nk = n.key
     n.is_child && !node_is_empty(n) &&
-        return (UInt128(1), nk, into_child(_bn_pl(n)), nothing)
+        return (one(IterToken), nk, into_child(_bn_pl(n)), nothing)
     !n.is_child && !node_is_empty(n) &&
-        return (UInt128(1), nk, nothing, into_val(_bn_pl(n)))
+        return (one(IterToken), nk, nothing, into_val(_bn_pl(n)))
     (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
 end
 

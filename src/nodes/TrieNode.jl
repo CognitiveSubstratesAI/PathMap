@@ -38,21 +38,49 @@ sub-path it contains. Matches upstream `MAX_NODE_KEY_BYTES = 48`.
 """
 const MAX_NODE_KEY_BYTES = 48
 
-"""
-    NODE_ITER_INVALID :: UInt128
-
-Sentinel token: iteration has NOT been initialized.
-Matches upstream `NODE_ITER_INVALID = 0xFFFFFFFF…`.
-"""
-const NODE_ITER_INVALID = typemax(UInt128)
+# ── Iteration tokens (upstream trie_node.rs:408-479, 0.4.0 contract) ─────────────────────────────────────
+"Node-specific encoding representing a position within the node (upstream `IterToken = u64`)."
+const IterToken = UInt64
 
 """
-    NODE_ITER_FINISHED :: UInt128
-
-Sentinel token: iteration has concluded.
-Matches upstream `NODE_ITER_FINISHED = NODE_ITER_INVALID - 1`.
+Reserved high bit marking a token with a special, non-node-specific meaning. When set, the complete token
+value is one of `TOKEN_LAST`, `TOKEN_AFTER_LAST`, `NODE_ITER_INVALID`, `NODE_ITER_FINISHED`; node-specific
+encodings leave it clear.
 """
-const NODE_ITER_FINISHED = typemax(UInt128) - UInt128(1)
+const NODE_TOKEN_SPECIAL_BIT = one(IterToken) << 63
+
+"""
+Reserved flag returned by `iter_token_for_path` for a nonexistent path: clear = the token names a path that
+exists in the node; set = a path *below or after* the one named by the token with the bit cleared. Set on
+`TOKEN_LAST` it gives `TOKEN_AFTER_LAST`. No singular meaning in the control sentinels.
+"""
+const NODE_TOKEN_NONEXISTENT_BIT = one(IterToken) << 62
+
+"Canonical token for the last valid path in a node that supports it; `next_items` on it reports exhaustion."
+const TOKEN_LAST = typemax(IterToken) & ~NODE_TOKEN_NONEXISTENT_BIT
+
+"The nonexistent-path companion to `TOKEN_LAST`: a focus after the node's last valid path."
+const TOKEN_AFTER_LAST = TOKEN_LAST | NODE_TOKEN_NONEXISTENT_BIT
+
+"Special sentinel token: an unknown or invalid location."
+const NODE_ITER_INVALID = NODE_TOKEN_SPECIAL_BIT
+
+"Special sentinel token: iteration of a node has concluded. Returned, never passed in."
+const NODE_ITER_FINISHED = typemax(IterToken) - 1
+
+# upstream `debug_assert_iter_token_layout` (trie_node.rs:449-469), checked once at load
+@assert TOKEN_LAST & NODE_TOKEN_SPECIAL_BIT == NODE_TOKEN_SPECIAL_BIT
+@assert TOKEN_LAST & NODE_TOKEN_NONEXISTENT_BIT == 0
+@assert TOKEN_LAST & ~(NODE_TOKEN_SPECIAL_BIT | NODE_TOKEN_NONEXISTENT_BIT) == NODE_TOKEN_NONEXISTENT_BIT - 1
+@assert TOKEN_AFTER_LAST == typemax(IterToken)
+@assert NODE_ITER_INVALID < TOKEN_LAST < NODE_ITER_FINISHED < TOKEN_AFTER_LAST
+
+"""
+    node_iter_token_is_nonexistent(token) -> Bool
+
+Whether `token` names a nonexistent path within the node (trie_node.rs:475). Not for the sentinels.
+"""
+@inline node_iter_token_is_nonexistent(token::IterToken) = (token & NODE_TOKEN_NONEXISTENT_BIT) != 0
 
 # =====================================================================
 # Node-type tag constants
@@ -200,17 +228,42 @@ function node_remove_unmasked_branches! end
 function node_is_empty end
 
 """
-    new_iter_token(node) -> UInt128
+    new_iter_token(node) -> IterToken
+
+A new token, to iterate the children and values of this node. The token is a node-local cursor that must
+represent any position within the node; every representable existing path has ONE canonical token
+(trie_node.rs:196-210).
 """
 function new_iter_token end
 
 """
-    iter_token_for_path(node, key::Vector{UInt8}) -> UInt128
+    iter_token_for_path(node, key) -> IterToken
+
+The token representing `key` within this node. `NODE_TOKEN_NONEXISTENT_BIT` clear = an exact existing
+in-node path; set = a nonexistent path below or after the token with the bit cleared (likewise
+`TOKEN_LAST` / `TOKEN_AFTER_LAST`). Never returns `NODE_ITER_INVALID` or `NODE_ITER_FINISHED`
+(trie_node.rs:212-222).
 """
 function iter_token_for_path end
 
 """
-    next_items(node, token::UInt128) -> (UInt128, Vector{UInt8}, Union{Nothing, TrieNodeODRc}, Union{Nothing, V})
+    ascend_iter_token(node, token, byte_count) -> IterToken
+
+The token for the focus reached by ascending `byte_count` bytes within this node. `token` must be valid
+with the nonexistent bit clear; `byte_count` a non-zero in-node ascent not passing the node root
+(trie_node.rs:224-229).
+"""
+function ascend_iter_token end
+
+"""
+    next_items(node, token, after_focus::Bool) -> (IterToken, bytes, Union{Nothing,TrieNodeODRc}, Union{Nothing,V})
+
+Step to the next existing path within the node, depth-first (trie_node.rs:231-256). `token` must not be a
+control sentinel; a nonexistent-flagged token is a lower-bound cursor, treated as the unflagged token.
+`TOKEN_LAST` / `TOKEN_AFTER_LAST` always give `(NODE_ITER_FINISHED, [], nothing, nothing)`. With
+`after_focus`, steps to the first item strictly after (and not below) the focus. On success the returned
+token is the canonical token of the returned path and the continuation token; when nothing is left the
+result is `(NODE_ITER_FINISHED, [], nothing, nothing)` with no item.
 """
 function next_items end
 
@@ -1080,6 +1133,8 @@ end
 # =====================================================================
 
 export MAX_NODE_KEY_BYTES, NODE_ITER_INVALID, NODE_ITER_FINISHED
+export IterToken, NODE_TOKEN_SPECIAL_BIT, NODE_TOKEN_NONEXISTENT_BIT, TOKEN_LAST, TOKEN_AFTER_LAST
+export node_iter_token_is_nonexistent
 export EMPTY_NODE_TAG, DENSE_BYTE_NODE_TAG, LINE_LIST_NODE_TAG
 export CELL_BYTE_NODE_TAG, TINY_REF_NODE_TAG, BRIDGE_NODE_TAG
 
@@ -1092,7 +1147,7 @@ export node_set_val!, node_remove_val!
 export node_create_dangling!, node_remove_dangling!
 export node_set_branch!, node_remove_all_branches!, node_remove_unmasked_branches!
 export node_is_empty
-export new_iter_token, iter_token_for_path, next_items
+export new_iter_token, iter_token_for_path, ascend_iter_token, next_items
 export node_val_count, node_goat_val_count
 export node_child_iter_start, node_child_iter_next
 export node_first_val_depth_along_key

@@ -328,10 +328,10 @@ mutable struct ReadZipperCore{V, A <: Allocator}
     root_val::Union{Nothing, V} # value at the zipper root (if any)
     root_node::TrieNodeODRc{V, A} # anchor Rc — keeps root sub-trie alive
     focus_node::Union{Nothing, AbstractTrieNode{V, A}}  # nothing = EmptyNode sentinel (TaggedNodeRef<V,A>)
-    focus_iter_token::UInt128           # iteration token (NODE_ITER_INVALID = unstarted)
+    focus_iter_token::IterToken           # iteration token (NODE_ITER_INVALID = unstarted)
     prefix_buf::Vector{UInt8}     # full path buffer: origin_path ++ relative_path
     origin_path_len::Int               # length of initial path prefix embedded in prefix_buf
-    ancestors::Vector{Tuple{Union{Nothing, AbstractTrieNode{V, A}}, UInt128, Int}} # (TaggedNodeRef, iter_tok, key_offset_0)
+    ancestors::Vector{Tuple{Union{Nothing, AbstractTrieNode{V, A}}, IterToken, Int}} # (TaggedNodeRef, iter_tok, key_offset_0)
     alloc::A
 end
 
@@ -354,7 +354,7 @@ function ReadZipperCore(
     # in the hot descent loop.  sizehint! returns the vector in Julia 1.1+.
     _pbuf = Vector{UInt8}(path)
     length(_pbuf) < EXPECTED_PATH_LEN && sizehint!(_pbuf, EXPECTED_PATH_LEN)
-    _anc_type = Tuple{Union{Nothing, AbstractTrieNode{V, A}}, UInt128, Int}
+    _anc_type = Tuple{Union{Nothing, AbstractTrieNode{V, A}}, IterToken, Int}
     _anc = sizehint!(Vector{_anc_type}(), EXPECTED_DEPTH)
     ReadZipperCore{V, A}(
         root_key_start_0,
@@ -749,7 +749,7 @@ function zipper_descend_first_byte!(z::ReadZipperCore{V, A}) where {V, A}
     _prepare_buffers!(z)
     cur_tok = iter_token_for_path(_zfnode(z), _znode_key(z))
     z.focus_iter_token = cur_tok
-    new_tok, key_bytes, child_rc, _value = next_items(_zfnode(z), z.focus_iter_token)
+    new_tok, key_bytes, child_rc, _value = next_items(_zfnode(z), z.focus_iter_token, false)
     new_tok == NODE_ITER_FINISHED && return false
 
     node_key = _znode_key(z)
@@ -859,7 +859,7 @@ function _to_next_get_val!(z::ReadZipperCore{V, A}) where {V, A}
         end
 
         new_tok, key_bytes, child_rc, value = if z.focus_iter_token != NODE_ITER_FINISHED
-            next_items(_zfnode(z), z.focus_iter_token)
+            next_items(_zfnode(z), z.focus_iter_token, false)
         else
             (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
         end
@@ -1134,7 +1134,7 @@ function _zipper_k_path_internal!(z::ReadZipperCore, k::Int, base_idx::Int,
             # Resume AFTER the focus: skip every item in this node that continues `node_key`
             # (143ecd1 skipped one; see the header on `ascend_iter_token`).
             while tok != NODE_ITER_FINISHED
-                new_tok, key_bytes, _, _ = next_items(node, tok)
+                new_tok, key_bytes, _, _ = next_items(node, tok, false)
                 (new_tok != NODE_ITER_FINISHED && length(key_bytes) >= length(node_key) &&
                     view(key_bytes, 1:length(node_key)) == node_key) || break
                 tok = new_tok
@@ -1166,7 +1166,7 @@ function _zipper_k_path_internal!(z::ReadZipperCore, k::Int, base_idx::Int,
         end
 
         # Move to the next sibling position, if we can
-        new_tok, key_bytes, child_rc, _ = next_items(_zfnode(z), z.focus_iter_token)
+        new_tok, key_bytes, child_rc, _ = next_items(_zfnode(z), z.focus_iter_token, false)
         if new_tok != NODE_ITER_FINISHED
             # Has the iteration modified more bytes than `k` allows?
             key_start = _znode_key_start(z)

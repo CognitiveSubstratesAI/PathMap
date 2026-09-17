@@ -1343,52 +1343,69 @@ end
 
 node_is_empty(n::AbstractByteNode) = isempty(n.values)
 
-function new_iter_token(n::AbstractByteNode)
-    UInt128(n.mask.bits[1])
+# ------ IterToken format for ByteNode (dense_byte_node.rs:315-381) ------
+#
+#    63         62         61                18                     9                     0
+#     +----------+----------+-----------------+---------------------+---------------------+
+#     | special  | non-exist| always zero     | values_idx (9 bits) | next_byte (9 bits)  |
+#     +----------+----------+-----------------+---------------------+---------------------+
+#
+# `next_byte` is the first byte the next scan may return: 0 before iteration begins, else one more than the
+# last returned byte. `values_idx` is the matching 0-based index into `values` (both range 0..=256). The byte
+# node never produces TOKEN_LAST; TOKEN_LAST / TOKEN_AFTER_LAST decode to next_byte = 511 >= 256 = finished.
+const ITER_TOKEN_BYTE_BITS = 9
+const ITER_TOKEN_BYTE_MASK = (one(IterToken) << ITER_TOKEN_BYTE_BITS) - 1
+
+@inline _bn_iter_token(next_byte::Int, values_idx::Int) =
+    (IterToken(values_idx) << ITER_TOKEN_BYTE_BITS) | IterToken(next_byte)
+@inline _bn_iter_token_next_byte(token::IterToken) = Int(token & ITER_TOKEN_BYTE_MASK)
+@inline _bn_iter_token_values_idx(token::IterToken) = Int(token >> ITER_TOKEN_BYTE_BITS)
+
+# `next_iter_item_from` (dense_byte_node.rs:361-381): the first set byte >= next_byte, with values_idx.
+@inline function _bn_next_iter_item_from(n::AbstractByteNode, token::IterToken)
+    start = _bn_iter_token_next_byte(token)
+    start >= 256 && return nothing
+    word_idx = start >> 6
+    bit_idx = start & 0x3F
+    while true
+        word = @inbounds(n.mask.bits[word_idx + 1]) & (typemax(UInt64) << bit_idx)
+        word != 0 && return (UInt8(word_idx * 64 + trailing_zeros(word)), _bn_iter_token_values_idx(token))
+        word_idx += 1
+        word_idx == 4 && return nothing
+        bit_idx = 0
+    end
 end
 
+new_iter_token(n::AbstractByteNode) = _bn_iter_token(0, 0)
+
+# dense_byte_node.rs:1014-1030 (48658cd): the lower-bound cursor after `key[1]`, flagged nonexistent unless
+# `key` is exactly one existing byte. (Supersedes our "delta #12c" 1-byte-token workaround.)
 function iter_token_for_path(n::AbstractByteNode, key::AbstractVector{UInt8})
     isempty(key) && return new_iter_token(n)
-    # A key of 2+ bytes names a NON-EXISTENT path below the item at `key[1]` (a dense item is one
-    # byte; had `key[1]` an onward node, the zipper would be inside it). Upstream 401881e answers
-    # NODE_ITER_INVALID, which only has a meaning under its 0.4.0 token contract; under ours the
-    # equivalent is "continue after `key[1]`" — the one-byte token. Returning the FRESH token (as we
-    # did) restarted the node, so `to_next_val` jumped BACKWARDS and could leave the zipper root
-    # (delta #12c; Lean-harness s3#378, s4#379/#479, s5#1220, s6#697/#1445).
-    length(key) > 1 && return iter_token_for_path(n, view(key, 1:1))
-    k = Int(key[1])
-    idx = (k & 0b11000000) >> 6
-    bit_i = k & 0b00111111
-    mask_val = if bit_i + 1 < 64
-        (0xFFFFFFFFFFFFFFFF << (bit_i + 1)) & n.mask.bits[idx + 1]
-    else
-        UInt64(0)
-    end
-    (UInt128(idx) << 64) | UInt128(mask_val)
+    key_byte = @inbounds key[1]
+    has_bit = test_bit(n.mask, key_byte)
+    values_idx = Int(index_of(n.mask, key_byte)) + (has_bit ? 1 : 0)
+    token = _bn_iter_token(Int(key_byte) + 1, values_idx)
+    (length(key) == 1 && has_bit) ? token : (token | NODE_TOKEN_NONEXISTENT_BIT)
 end
 
-function next_items(n::AbstractByteNode{V, A}, token::UInt128) where {V, A}
-    i = UInt8((token >> 64) & 0xFF)
-    w = token % UInt64   # truncate lower 64 bits (silent, matches Rust `as u64`)
-    # ALL_BYTES array: byte k → &[k..=k] slice
-    while true
-        if w != 0
-            wi = UInt8(trailing_zeros(w))
-            w ⊻= UInt64(1) << wi
-            k = i * UInt8(64) + wi
-            new_token = (UInt128(i) << 64) | UInt128(w)
-            idx = Int(index_of(n.mask, k)) + 1
-            # Bounds-CHECKED on purpose: a sentinel token (INVALID/FINISHED) decodes to a garbage index,
-            # and `@inbounds` turned that caller bug into a segfault (k-path walk, 2026-09-17).
-            cf = n.values[idx]
-            return (new_token, UInt8[k], cf.rec, cf.val)
-        elseif i < 3
-            i += UInt8(1)
-            w = n.mask.bits[Int(i) + 1]
-        else
-            return (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
-        end
-    end
+# dense_byte_node.rs:1032-1036
+function ascend_iter_token(n::AbstractByteNode, token::IterToken, byte_count::Int)
+    token == NODE_ITER_INVALID && error("cannot ascend an invalid iteration token")
+    byte_count == 1 || error("ByteNode::ascend_iter_token: byte_count must be 1, got $byte_count")
+    new_iter_token(n)
+end
+
+# dense_byte_node.rs:1038-1053. `after_focus` is not needed: a one-byte token already means "after `k`".
+function next_items(n::AbstractByteNode{V, A}, token::IterToken, after_focus::Bool) where {V, A}
+    (token == NODE_ITER_INVALID || token == NODE_ITER_FINISHED) &&
+        error("ByteNode::next_items: control sentinel token $(repr(token))")
+    token &= ~NODE_TOKEN_NONEXISTENT_BIT
+    item = _bn_next_iter_item_from(n, token)
+    item === nothing && return (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
+    k, values_idx = item
+    cf = n.values[values_idx + 1]
+    (_bn_iter_token(Int(k) + 1, values_idx + 1), UInt8[k], cf.rec, cf.val)
 end
 
 function node_val_count(n::AbstractByteNode, cache::Dict{UInt64, Int})

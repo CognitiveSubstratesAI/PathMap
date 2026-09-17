@@ -171,7 +171,8 @@ node_is_empty(t::TinyRefNode) = isempty(t.key)   # empty iff header bit7 == 0 (n
 new_iter_token(::TinyRefNode) = error("TinyRefNode::new_iter_token — unreachable")
 iter_token_for_path(::TinyRefNode, ::AbstractVector{UInt8}) =
     error("TinyRefNode::iter_token_for_path — unreachable")
-next_items(::TinyRefNode, ::UInt128) = error("TinyRefNode::next_items — unreachable")
+ascend_iter_token(::TinyRefNode, ::IterToken, ::Int) = error("TinyRefNode::ascend_iter_token — unreachable")
+next_items(::TinyRefNode, ::IterToken, ::Bool) = error("TinyRefNode::next_items — unreachable")
 
 function node_val_count(t::TinyRefNode, cache::Dict{UInt64, Int})
     node_val_count(into_full(t), cache)

@@ -951,6 +951,9 @@ include("test_upstream_k_path.jl")
 # (docs/ZIPPER_API_0.4.0_PORT_PLAN.md phase 0). Found the ac241e2 segfault in the k-path walk.
 include("test_upstream_zipper_iter_state.jl")
 
+# Upstream's node iteration-token contract tests (0.4.0; dense_byte_node.rs:2419, line_list_node.rs:3107-3329).
+include("test_upstream_iter_token.jl")
+
 # shared_node_id guard + cached catamorphism (P0 #2; upstream zipper.rs:2638-2653, morphisms.rs:1922).
 include("test_shared_node_id.jl")
 

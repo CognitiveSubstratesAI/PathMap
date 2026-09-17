@@ -1132,47 +1132,116 @@ node_is_empty(n::LineListNode) = !is_used_0(n)
 # Iteration
 # =====================================================================
 
-# iter_token meanings for LineListNode:
-#   0 = not yet begun → next_items returns slot0 entry
-#   1 = slot0 returned → next_items returns slot1 if present
-#   2 = slot1 returned → done
+# Explanation of the meaning of iter_tokens for LineListNode (line_list_node.rs:1950-1977)
+#
+#    63          62          61                         6 5              0
+#     +-----------+-----------+---------------------------+----------------+
+#     | special   | non-exist | always zero               | buffer offset  |
+#     +-----------+-----------+---------------------------+----------------+
+#
+# The low six bits are an absolute offset in the node's contiguous key buffer `key0 ++ key1`:
+#     0                 key_end_0                         key_end_1
+#     |---- slot 0 key ----|---------- slot 1 key -----------|
+# Token 0 is the node root. An offset before a key's end names the prefix at that offset; a key's end offset
+# names its complete path. The final path of every nonempty node is `TOKEN_LAST` (also when both slots hold
+# the value and child at the same one-byte path; `key_end_0` is then never produced). A prefix shared by both
+# keys uses its slot-0 offset. With `after_focus`, `next_items` skips items at or below the focus.
+const ITER_TOKEN_OFFSET_MASK = (one(IterToken) << 6) - 1
 
-new_iter_token(::LineListNode) = UInt128(0)
+@inline _ll_key_len_1(n::LineListNode) = is_used_1(n) ? length(n.key1) : 0
+@inline _ll_starts_with(key::AbstractVector{UInt8}, prefix::AbstractVector{UInt8}) =
+    length(prefix) <= length(key) && view(key, 1:length(prefix)) == prefix
 
+new_iter_token(::LineListNode) = zero(IterToken)
+
+# line_list_node.rs:1986-2016
 function iter_token_for_path(n::LineListNode, key::AbstractVector{UInt8})
-    isempty(key) && return UInt128(0)
-    (k0, k1) = get_both_keys(n)
-    key < k0 && return UInt128(0)
-    key < k1 && return UInt128(1)
-    key == k1 && return UInt128(2)
-    NODE_ITER_FINISHED
+    isempty(key) && return zero(IterToken)
+    key0 = n.key0
+    key1 = n.key1
+    key_end_0 = IterToken(length(key0))
+    slot_1_used = is_used_1(n)
+    if _ll_starts_with(key0, key)
+        length(key) < length(key0) && return IterToken(length(key))
+        return (!slot_1_used || key0 == key1) ? TOKEN_LAST : key_end_0
+    end
+    key < key0 && return NODE_TOKEN_NONEXISTENT_BIT
+    if slot_1_used && _ll_starts_with(key1, key)
+        return length(key) == length(key1) ? TOKEN_LAST : key_end_0 + IterToken(length(key))
+    end
+    slot_1_used && key < key1 && return key_end_0 | NODE_TOKEN_NONEXISTENT_BIT
+    TOKEN_AFTER_LAST
 end
 
-function next_items(n::LineListNode{V, A}, token::UInt128) where {V, A}
-    if token == UInt128(0)
-        !is_used_0(n) && return (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
-        (k0, k1) = get_both_keys(n)
-        child = nothing
-        value = nothing
-        next_tok = UInt128(1)
-        if is_child_0(n)
-            child = into_child(n.slot0)
-        else
-            value = into_val(n.slot0)
-        end
-        # If slot0 and slot1 share the same key, return both at once
-        if is_used_1(n) && k0 == k1
-            if is_child_1(n)
-                child = into_child(n.slot1)
+# line_list_node.rs:2018-2057
+function ascend_iter_token(n::LineListNode, token::IterToken, byte_count::Int)
+    (token == NODE_ITER_INVALID || token == NODE_ITER_FINISHED) && error("cannot ascend a sentinel iteration token")
+    node_iter_token_is_nonexistent(token) && error("cannot ascend a nonexistent iteration token")
+    byte_count > 0 || error("cannot ascend zero bytes within a node")
+    key0 = n.key0
+    key1 = is_used_1(n) ? n.key1 : UInt8[]
+    key_end_0 = length(key0)
+    key_end_1 = key_end_0 + length(key1)
+    offset = if token == TOKEN_LAST
+        key_end_1
+    else
+        token & ~ITER_TOKEN_OFFSET_MASK == 0 || error("iteration token is not a LineListNode token")
+        Int(token & ITER_TOKEN_OFFSET_MASK)
+    end
+    (offset > 0 && offset <= key_end_1) || error("iteration token does not describe an in-node focus")
+    key, key_offset, key_start = offset <= key_end_0 ? (key0, offset, 0) : (key1, offset - key_end_0, key_end_0)
+    byte_count <= key_offset || error("ascent passes the LineListNode root")
+    ascended_offset = key_offset - byte_count
+    ascended_offset == 0 && return zero(IterToken)
+    # A shared prefix has one canonical token: its occurrence in slot 0's key.
+    if key_start > 0 && ascended_offset <= key_end_0 &&
+       view(key, 1:ascended_offset) == view(key0, 1:ascended_offset)
+        return IterToken(ascended_offset)
+    end
+    IterToken(key_start + ascended_offset)
+end
+
+# line_list_node.rs:2059-2133
+function next_items(n::LineListNode{V, A}, token::IterToken, after_focus::Bool) where {V, A}
+    (token == NODE_ITER_INVALID || token == NODE_ITER_FINISHED) &&
+        error("LineListNode::next_items: control sentinel token $(repr(token))")
+    offset = Int(token & ITER_TOKEN_OFFSET_MASK)
+    key_end_0 = length(n.key0)
+    key_len_1 = _ll_key_len_1(n)
+    key_end_1 = key_end_0 + key_len_1
+    offset >= key_end_1 && return (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
+    if is_used_0(n)
+        key0 = n.key0
+        if offset < key_end_0 && !(after_focus && offset > 0)
+            child = nothing
+            value = nothing
+            if is_child_0(n)
+                child = into_child(n.slot0)
             else
-                value = into_val(n.slot1)
+                value = into_val(n.slot0)
             end
-            next_tok = UInt128(2)
+            same_path = is_used_1(n) && key_len_1 == 1 && key0[1] == n.key1[1]
+            next_token = if same_path
+                if is_child_1(n)
+                    child = into_child(n.slot1)
+                else
+                    value = into_val(n.slot1)
+                end
+                TOKEN_LAST
+            elseif is_used_1(n)
+                IterToken(key_end_0)
+            else
+                TOKEN_LAST
+            end
+            return (next_token, copy(key0), child, value)
         end
-        return (next_tok, copy(k0), child, value)
-    elseif token == UInt128(1)
-        if is_used_1(n)
-            k1 = n.key1
+        if is_used_1(n) && !(after_focus && offset > key_end_0)
+            key1 = n.key1
+            # "after or below" slot0 has to mean below here: slot0's key is a prefix of slot1's key. And if
+            # we're below slot0 and not below slot1, slot 1 must not be skipped (e0f32c0).
+            if after_focus && !node_iter_token_is_nonexistent(token) && key0[1] == key1[1]
+                return (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
+            end
             child = nothing
             value = nothing
             if is_child_1(n)
@@ -1180,13 +1249,10 @@ function next_items(n::LineListNode{V, A}, token::UInt128) where {V, A}
             else
                 value = into_val(n.slot1)
             end
-            return (UInt128(2), copy(k1), child, value)
-        else
-            return (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
+            return (TOKEN_LAST, copy(key1), child, value)
         end
-    else
-        return (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
     end
+    (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
 end
 
 # =====================================================================

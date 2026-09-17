@@ -136,11 +136,14 @@ node_branches_mask(::Nothing, ::AbstractVector{UInt8}) = ByteMask()
 # guarded at its call site in WriteZipper.jl instead.)
 take_node_at_key!(::Nothing, ::AbstractVector{UInt8}, ::Bool) = nothing
 
-new_iter_token(::EmptyNode) = UInt128(0)
+new_iter_token(::EmptyNode) = zero(IterToken)
 
-iter_token_for_path(::EmptyNode, ::AbstractVector{UInt8}) = UInt128(0)
+# empty_node.rs:66-73 (888217e, 4917097)
+iter_token_for_path(::EmptyNode, key::AbstractVector{UInt8}) = isempty(key) ? zero(IterToken) : TOKEN_AFTER_LAST
 
-function next_items(::EmptyNode{V, A}, ::UInt128) where {V, A}
+ascend_iter_token(::EmptyNode, ::IterToken, ::Int) = error("EmptyNode::ascend_iter_token — unreachable")
+
+function next_items(::EmptyNode{V, A}, ::IterToken, ::Bool) where {V, A}
     # (next_token, path, child_node, value)
     (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
 end
