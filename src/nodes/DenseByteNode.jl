@@ -344,7 +344,7 @@ end
 Recursively counts values in the subtree rooted at `rc`, with memoisation.
 Ports upstream `val_count_below_node`.
 """
-function val_count_below_node(rc::TrieNodeODRc{V, A}, cache::Dict{UInt64, Int}) where {V, A}
+function val_count_below_node(rc::TrieNodeODRc{V, A}, cache::Dict{UInt64, Int})::Int where {V, A}
     # Mirrors upstream trie_node.rs:2377-2394: the empty-sentinel case (`rc.node === nothing`,
     # left behind by remove_val_at! without prune=true, the default) must short-circuit to 0
     # BEFORE as_tagged/node_val_count — it is not a node to recurse into. Caching is also
@@ -1378,13 +1378,14 @@ function next_items(n::AbstractByteNode{V, A}, token::IterToken, after_focus::Bo
         error("ByteNode::next_items: control sentinel token $(repr(token))")
     token &= ~NODE_TOKEN_NONEXISTENT_BIT
     item = _bn_next_iter_item_from(n, token)
-    item === nothing && return (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
+    item === nothing && return (NODE_ITER_FINISHED, no_key(), nothing, nothing)
     k, values_idx = item
     cf = n.values[values_idx + 1]
-    (_bn_iter_token(Int(k) + 1, values_idx + 1), UInt8[k], cf.rec, cf.val)
+    # a slice of the static table, as upstream's `&ALL_BYTES[k..=k]` (dense_byte_node.rs:1052)
+    (_bn_iter_token(Int(k) + 1, values_idx + 1), one_byte(k), cf.rec, cf.val)
 end
 
-function node_val_count(n::AbstractByteNode, cache::Dict{UInt64, Int})
+function node_val_count(n::AbstractByteNode, cache::Dict{UInt64, Int})::Int
     sum(
         cf ->
             (cf.val !== nothing ? 1 : 0) +

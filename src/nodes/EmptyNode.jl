@@ -145,7 +145,7 @@ ascend_iter_token(::EmptyNode, ::IterToken, ::Int) = error("EmptyNode::ascend_it
 
 function next_items(::EmptyNode{V, A}, ::IterToken, ::Bool) where {V, A}
     # (next_token, path, child_node, value)
-    (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
+    (NODE_ITER_FINISHED, no_key(), nothing, nothing)
 end
 
 node_val_count(::EmptyNode, ::Dict{UInt64, Int}) = 0

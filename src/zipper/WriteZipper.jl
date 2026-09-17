@@ -389,6 +389,11 @@ function remove_val!(z::WriteZipperCore{V, A}, prune::Bool=false) where {V, A}
         return old_val
     end
     _wz_ensure_write_unique!(z)
+    # 🔴 NOT `as_tagged` here. The sentinel and `EmptyNode` DIVERGE for this callee:
+    # `node_remove_val!(::Nothing, …)` returns `nothing` ("there was no value"), while
+    # `node_remove_val!(::EmptyNode, …)` ERRORS as unreachable (EmptyNode.jl:56). Narrowing this read
+    # cost 18 fuzz cases on 2026-09-17 — the other six sites in this file narrow safely because both
+    # of their methods agree.
     focus_node = z.focus_stack[end].node
     old_val = node_remove_val!(focus_node, nk, prune)
     # ⚠️ `_wz_prune_path_internal!`, NOT `prune_path!` — and note this is the OPPOSITE choice from
@@ -521,7 +526,7 @@ Mirrors `path_exists`.
 function path_exists(z::WriteZipperCore{V, A}) where {V, A}
     nk = _wz_node_key(z)
     isempty(nk) && return true
-    focus_node = z.focus_stack[end].node
+    focus_node = as_tagged(z.focus_stack[end])
     node_contains_partial_key(focus_node, nk)
 end
 
@@ -535,7 +540,7 @@ function is_val(z::WriteZipperCore{V, A}) where {V, A}
     if isempty(nk)
         return !isnothing(z.pathmap.root_val)
     end
-    focus_node = z.focus_stack[end].node
+    focus_node = as_tagged(z.focus_stack[end])
     node_contains_val(focus_node, nk)
 end
 
@@ -549,7 +554,7 @@ function val(z::WriteZipperCore{V, A}) where {V, A}
     if isempty(nk)
         return z.pathmap.root_val
     end
-    focus_node = z.focus_stack[end].node
+    focus_node = as_tagged(z.focus_stack[end])
     node_get_val(focus_node, nk)
 end
 
@@ -725,7 +730,7 @@ function _wz_remove_branches!(z::WriteZipperCore{V, A}, prune::Bool) where {V, A
     _wz_ensure_write_unique!(z)
     nk = collect(_wz_node_key(z))
     if !isempty(nk)
-        focus_node = z.focus_stack[end].node
+        focus_node = as_tagged(z.focus_stack[end])
         removed = node_remove_all_branches!(focus_node, nk, prune)
         removed && prune && _wz_prune_path_internal!(z)
         removed
@@ -1738,7 +1743,7 @@ function take_focus!(z::WriteZipperCore{V, A}, prune::Bool=false) where {V, A}
         z.focus_stack[1] = replacement
         return node_is_empty(old_rc.node) ? nothing : old_rc
     else
-        focus_node = z.focus_stack[end].node
+        focus_node = as_tagged(z.focus_stack[end])
         new_node = take_node_at_key!(focus_node, nk, prune)
         new_node === nothing && return nothing
         prune && _wz_prune_path_internal!(z)
@@ -1934,7 +1939,7 @@ Mirrors `WriteZipperCore::remove_branches`.
 function remove_branches!(z::WriteZipperCore{V, A}, prune::Bool=false) where {V, A}
     _wz_ensure_write_unique!(z)
     nk = collect(_wz_node_key(z))
-    focus_node = z.focus_stack[end].node
+    focus_node = as_tagged(z.focus_stack[end])
     if !isempty(nk)
         removed = node_remove_all_branches!(focus_node, nk, prune)
         if removed && prune

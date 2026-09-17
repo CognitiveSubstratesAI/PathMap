@@ -270,6 +270,10 @@ function next_items end
 """
     node_val_count(node, cache::Dict) -> Int
 """
+# ⚠️ Every method is annotated `::Int`. `node_val_count` and `val_count_below_node` are MUTUALLY
+# RECURSIVE across all six node types, and inference gives up on that cycle and returns `Any` — which
+# then propagated out through `val_count(::ReadZipperCore)` to every caller (perf audit 2026-09-17,
+# docs/PERF_AUDIT_2026-09-17.md Finding 2). The annotation breaks the cycle; it is not a conversion.
 function node_val_count end
 
 """
@@ -499,8 +503,9 @@ Returning `nothing` made every node query and `*_dyn` operation on an empty chil
 time (EmptyNode.jl); the Lean-model harness found nine more such sites
 (docs/UPSTREAM_DELTA_2026-09-16.md #18). `rc.node` itself still holds `nothing` for the sentinel.
 """
-@inline as_tagged(rc::TrieNodeODRc{V, A}) where {V, A} =
-    rc.node === nothing ? EmptyNode{V, A}() : rc.node
+# The narrowing definition lives in nodes/NodeVariant.jl — it needs the closed union of every node type,
+# which can only be written after the last node file. See that file's header (perf audit 2026-09-17).
+function as_tagged end
 
 """
     node_count_branches_recursive(node, key) -> Int
@@ -831,19 +836,7 @@ function into_option(r::AbstractNodeRef{V, A}) where {V, A}
     end
 end
 
-function as_tagged(r::AbstractNodeRef{V, A}) where {V, A}
-    if r isa ANRBorrowedDyn
-        return r.node
-    elseif r isa ANRBorrowedRc
-        return as_tagged(r.rc)
-    elseif r isa ANRBorrowedTiny
-        return r.node
-    elseif r isa ANROwnedRc
-        return as_tagged(r.rc)
-    else
-        error("as_tagged on ANRNone")
-    end
-end
+# `as_tagged(::AbstractNodeRef)` is also in nodes/NodeVariant.jl, for the same reason.
 
 # =====================================================================
 # Lattice / DistributiveLattice / Quantale on TrieNodeODRc

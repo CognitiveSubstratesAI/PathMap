@@ -25,38 +25,8 @@ Design note — inner-node storage (TaggedNodeRef analogue):
 const EXPECTED_DEPTH = 16
 const EXPECTED_PATH_LEN = 64
 
-# =====================================================================
-# Fix 1 — Closed union of all concrete trie node implementations.
-# =====================================================================
-#
-# Replacing abstract dispatch (`AbstractTrieNode`) with a closed Union lets Julia
-# generate a specialised if-else chain instead of a vtable lookup. Every call to
-# `first_child_from_key(_zfnode(z), ...)`, `count_branches(...)`, etc. in the hot
-# ProductZipper loop gets typed dispatch with potential inlining of concrete methods.
-#
-# All concrete subtypes of AbstractTrieNode are enumerated here, including EmptyNode
-# which `_fnode` materialises from the `nothing` sentinel.
-# Loaded AFTER all node files (BridgeNode is last), so all types are defined.
-
-const TrieNodeVariant{V, A} = Union{
-    EmptyNode{V, A}, LineListNode{V, A}, DenseByteNode{V, A}, CellByteNode{V, A},
-    TinyRefNode{V, A}, BridgeNode{V, A}
-}
-
-# =====================================================================
-# _fnode — EmptyNode-safe inner-node accessor
-# =====================================================================
-#
-# Upstream: `TaggedNodeRef<'a, V, A>` — a typed raw reference to the concrete node.
-# Julia: `Union{Nothing, AbstractTrieNode{V,A}}` — `nothing` = EmptyNode sentinel.
-#
-# The `::TrieNodeVariant{V,A}` assertion on the non-nothing branch narrows the
-# return type from `AbstractTrieNode` to the closed union, propagating specialised
-# dispatch to all callers of `_zfnode(z)` without changing struct field types.
-
-@inline function _fnode(inner, ::Type{V}, ::Type{A}) where {V, A <: Allocator}
-    inner === nothing ? EmptyNode{V, A}() : inner::TrieNodeVariant{V, A}
-end
+# The closed node union and the narrowing accessors (`TrieNodeVariant`, `_fnode`, `as_tagged`) live in
+# nodes/NodeVariant.jl, which is included after the last node type. See that file's header.
 
 # Extract the inner node from a TrieNodeODRc (returns nothing for empty)
 @inline _rc_inner(rc::TrieNodeODRc) = rc.node
@@ -294,7 +264,7 @@ end
 # val_count_below_root
 # =====================================================================
 
-function val_count_below_root(inner_node)
+function val_count_below_root(inner_node)::Int
     inner_node === nothing && return 0
     cache = Dict{UInt64, Int}()
     node_val_count(inner_node, cache)

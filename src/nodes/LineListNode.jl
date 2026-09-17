@@ -1208,7 +1208,7 @@ function next_items(n::LineListNode{V, A}, token::IterToken, after_focus::Bool) 
     key_end_0 = length(n.key0)
     key_len_1 = _ll_key_len_1(n)
     key_end_1 = key_end_0 + key_len_1
-    offset >= key_end_1 && return (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
+    offset >= key_end_1 && return (NODE_ITER_FINISHED, no_key(), nothing, nothing)
     if is_used_0(n)
         key0 = n.key0
         if offset < key_end_0 && !(after_focus && offset > 0)
@@ -1232,14 +1232,14 @@ function next_items(n::LineListNode{V, A}, token::IterToken, after_focus::Bool) 
             else
                 TOKEN_LAST
             end
-            return (next_token, copy(key0), child, value)
+            return (next_token, whole_key(key0), child, value)
         end
         if is_used_1(n) && !(after_focus && offset > key_end_0)
             key1 = n.key1
             # "after or below" slot0 has to mean below here: slot0's key is a prefix of slot1's key. And if
             # we're below slot0 and not below slot1, slot 1 must not be skipped (e0f32c0).
             if after_focus && !node_iter_token_is_nonexistent(token) && key0[1] == key1[1]
-                return (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
+                return (NODE_ITER_FINISHED, no_key(), nothing, nothing)
             end
             child = nothing
             value = nothing
@@ -1248,17 +1248,17 @@ function next_items(n::LineListNode{V, A}, token::IterToken, after_focus::Bool) 
             else
                 value = into_val(n.slot1)
             end
-            return (TOKEN_LAST, copy(key1), child, value)
+            return (TOKEN_LAST, whole_key(key1), child, value)
         end
     end
-    (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
+    (NODE_ITER_FINISHED, no_key(), nothing, nothing)
 end
 
 # =====================================================================
 # node_val_count / node_goat_val_count
 # =====================================================================
 
-function node_val_count(n::LineListNode, cache::Dict{UInt64, Int})
+function node_val_count(n::LineListNode, cache::Dict{UInt64, Int})::Int
     result = 0
     is_value_0(n) && (result += 1)
     is_value_1(n) && (result += 1)

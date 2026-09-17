@@ -199,8 +199,9 @@ function node_get_payloads(n::BridgeNode{V, A}, keys_expect_val, results_buf) wh
     requested
 end
 
-node_val_count(n::BridgeNode{V, A}, cache::Dict{UInt64, Int}) where {V, A} =
+function node_val_count(n::BridgeNode{V, A}, cache::Dict{UInt64, Int})::Int where {V, A}
     n.is_child ? node_val_count(as_tagged(into_child(_bn_pl(n))), cache) : 1
+end
 node_goat_val_count(n::BridgeNode) =
     if node_is_empty(n)
         0
@@ -238,13 +239,13 @@ function iter_token_for_path(n::BridgeNode, key::AbstractVector{UInt8})
     (NODE_ITER_FINISHED, UInt8[])
 end
 function next_items(n::BridgeNode{V, A}, tok::IterToken, _after_focus::Bool) where {V, A}
-    tok == 0 || return (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
+    tok == 0 || return (NODE_ITER_FINISHED, no_key(), nothing, nothing)
     nk = n.key
     n.is_child && !node_is_empty(n) &&
-        return (one(IterToken), nk, into_child(_bn_pl(n)), nothing)
+        return (one(IterToken), whole_key(nk), into_child(_bn_pl(n)), nothing)
     !n.is_child && !node_is_empty(n) &&
-        return (one(IterToken), nk, nothing, into_val(_bn_pl(n)))
-    (NODE_ITER_FINISHED, UInt8[], nothing, nothing)
+        return (one(IterToken), whole_key(nk), nothing, into_val(_bn_pl(n)))
+    (NODE_ITER_FINISHED, no_key(), nothing, nothing)
 end
 
 # Navigation helpers

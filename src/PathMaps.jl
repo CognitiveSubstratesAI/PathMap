@@ -42,6 +42,9 @@ include("nodes/TinyRefNode.jl")
 include("nodes/DenseByteNode.jl")
 include("nodes/BridgeNode.jl")
 
+# The CLOSED union of node types + the narrowing accessors — needs every node type to exist first.
+include("nodes/NodeVariant.jl")
+
 # ── ADR-001 node-slab scaffold (additive; NOT wired into the live trie yet) ────
 include("pathmap/NodeSlab.jl")
 include("pathmap/SlabTrie.jl")
