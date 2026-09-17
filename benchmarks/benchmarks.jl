@@ -7,8 +7,13 @@
 # Run:
 #   julia --project=. benchmarks/benchmarks.jl
 #   julia --project=. benchmarks/benchmarks.jl --tune   # longer calibration
+#   cd ../MORK && bash tools/warm_suite.sh file ../PathMap/benchmarks/benchmarks.jl   # warm, no cold start
+#
+# ⚠️ REPAIRED 2026-09-17. This file had been dead for a while: it still said `using PathMap` (the module
+# was renamed `PathMaps` on 2026-08-22) and built `PathMap{Nothing}` maps (the value type became `UnitVal`
+# when `Nothing` made "no value" and "value present" indistinguishable). It could not run at all.
 
-using PathMap, BenchmarkTools
+using PathMaps, BenchmarkTools
 
 const SUITE = BenchmarkGroup()
 
@@ -17,18 +22,18 @@ const SUITE = BenchmarkGroup()
 SUITE["construction"] = BenchmarkGroup()
 
 SUITE["construction"]["dense_keys_1k"] = @benchmarkable begin
-    m = PathMap.PathMap{Nothing}()
+    m = PathMaps.PathMap{UnitVal}()
     for i in 1:1000
-        set_val_at!(m, Vector{UInt8}(string(i, pad=6)), nothing)
+        set_val_at!(m, Vector{UInt8}(string(i, pad=6)), UNIT_VAL)
     end
 end
 
 SUITE["construction"]["sparse_keys_1k"] = @benchmarkable begin
-    m = PathMap.PathMap{Nothing}()
+    m = PathMaps.PathMap{UnitVal}()
     for i in 1:1000
         # Random-looking keys via hash — maximally sparse
         key = reinterpret(UInt8, [hash(i)])
-        set_val_at!(m, key, nothing)
+        set_val_at!(m, key, UNIT_VAL)
     end
 end
 
@@ -45,7 +50,7 @@ shocks that flesh is heir to tis a consummation devoutly to be wished
 """ ^ 10   # repeat to get more data
 
 function _build_word_map(text)
-    m = PathMap.PathMap{Int}()
+    m = PathMaps.PathMap{Int}()
     for word in split(lowercase(text), r"\W+"; keepempty=false)
         k = Vector{UInt8}(word)
         v = get_val_at(m, k)
@@ -76,14 +81,14 @@ end
 
 SUITE["algebra"] = BenchmarkGroup()
 
-const _MAP_A = let m = PathMap.PathMap{Bool}()
+const _MAP_A = let m = PathMaps.PathMap{Bool}()
     for w in split("alpha beta gamma delta epsilon zeta eta theta", " ")
         set_val_at!(m, Vector{UInt8}(w), true)
     end
     m
 end
 
-const _MAP_B = let m = PathMap.PathMap{Bool}()
+const _MAP_B = let m = PathMaps.PathMap{Bool}()
     for w in split("beta delta zeta theta iota kappa lambda", " ")
         set_val_at!(m, Vector{UInt8}(w), true)
     end
@@ -105,8 +110,8 @@ SUITE["algebra"]["subtract"] = @benchmarkable begin
 end
 
 SUITE["algebra"]["policy_sum"] = @benchmarkable begin
-    ma = PathMap.PathMap{Int}()
-    mb = PathMap.PathMap{Int}()
+    ma = PathMaps.PathMap{Int}()
+    mb = PathMaps.PathMap{Int}()
     for w in split("alpha beta gamma delta", " ")
         set_val_at!(ma, Vector{UInt8}(w), 1)
         set_val_at!(mb, Vector{UInt8}(w), 2)
@@ -118,7 +123,7 @@ end
 
 SUITE["morphisms"] = BenchmarkGroup()
 
-const _SHARED_MAP = let m = PathMap.PathMap{Int}()
+const _SHARED_MAP = let m = PathMaps.PathMap{Int}()
     for i in 1:500
         set_val_at!(m, Vector{UInt8}("entry:$(lpad(i,4,'0'))"), i)
     end
@@ -157,20 +162,26 @@ end
 
 SUITE["serialization"]["deserialize_500"] = @benchmarkable begin
     io = IOBuffer($_SERIALIZED)
-    m = PathMap.PathMap{Int}()
+    m = PathMaps.PathMap{Int}()
     deserialize_paths(m, io, 0)
     m
 end
 
 # ── Run ────────────────────────────────────────────────────────────────
 
-if abspath(PROGRAM_FILE) == @__FILE__
+"""
+    run_benchmarks(; tune = false)
+
+Run the suite and print each case. Callable when this file is `include`d — which is how it runs WARM
+(`MORK/tools/warm_suite.sh file …/benchmarks/benchmarks.jl` then `run_benchmarks()`), avoiding the ~30 s
+cold start that `julia benchmarks/benchmarks.jl` pays before the first measurement.
+"""
+function run_benchmarks(; tune::Bool = false)
     println("PathMap Benchmarks")
     println("==================")
     println("Julia version: ", VERSION)
     println()
 
-    tune = "--tune" in ARGS
     if tune
         println("Tuning (this may take a few minutes)...")
         tune!(SUITE)
@@ -182,10 +193,19 @@ if abspath(PROGRAM_FILE) == @__FILE__
     for (group, bgroup) in results
         println("\n[$group]")
         for (name, trial) in bgroup
-            t = median(trial)
+            # MINIMUM, not median: on a shared box the median swings 3-4x run to run while the
+            # minimum and the allocation counts stay put (perf audit 2026-09-17).
+            t = minimum(trial)
             println(
-                "  $(rpad(name, 30)) $(BenchmarkTools.prettytime(t.time))  allocs=$(t.allocs)"
+                "  $(rpad(name, 30)) $(BenchmarkTools.prettytime(t.time))",
+                "  allocs=$(lpad(t.allocs, 8))  bytes=$(lpad(t.memory, 10))"
             )
         end
     end
+    results
+end
+
+# `julia --project=. benchmarks/benchmarks.jl [--tune]`
+if abspath(PROGRAM_FILE) == @__FILE__
+    run_benchmarks(; tune = "--tune" in ARGS)
 end

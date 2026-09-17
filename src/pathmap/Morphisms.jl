@@ -260,12 +260,17 @@ Reuses cached results when the zipper reaches a previously seen node.
 `alg_f` receives `(child_mask, children, val, sub_path::Vector{UInt8}) → W`
 where `sub_path` is the "jumped" sub-path for jumping variant (else `[]`).
 """
-function _cata_cached!(z::ReadZipperCore{V, A}, alg_f::Function, jumping::Bool) where {V, A}
+# `W` is the fold's result type. It defaults to `Any` for the public API, which cannot know it — but a
+# caller that DOES know (e.g. `map_hash`, whose fold returns `UInt128`) passes it, and then the work
+# vector and the memo hold their values INLINE instead of boxing every one. CLAUDE.md bans `Vector{Any}`
+# in hot paths; `map_hash` was the heaviest op in the 2026-09-17 audit (Finding 5).
+function _cata_cached!(z::ReadZipperCore{V, A}, alg_f::Function, jumping::Bool,
+    ::Type{W} = Any) where {V, A, W}
     reset!(z)
 
     stack = _CataFrame[]
-    children = []
-    cache = Dict{UInt64, Any}()   # node objectid → cached W
+    children = W[]
+    cache = Dict{UInt64, W}()   # node objectid → cached W
 
     push!(stack, _CataFrame(z))
 
@@ -301,7 +306,7 @@ function _cata_cached!(z::ReadZipperCore{V, A}, alg_f::Function, jumping::Bool) 
                         end
                         alg_f(mask, ch, fval, collect(sub_path))
                     end
-                cur_w = _cata_ascend_to_fork!(z, inner_alg, [], jumping)
+                cur_w = _cata_ascend_to_fork!(z, inner_alg, W[], jumping)
                 if nid !== nothing
 
                     cache[nid] = cur_w
@@ -388,6 +393,11 @@ end
 Cached stepping catamorphism.  `alg_f(child_mask, children, val) → W`.
 Mirrors `PathMap::into_cata_cached`.
 """
+function cata_cached(m::PathMap{V, A}, alg_f::Function, ::Type{W}) where {V, A, W}
+    z = read_zipper(m)
+    _cata_cached!(z, (mask, ch, val, _sub) -> alg_f(mask, ch, val), false, W)
+end
+
 function cata_cached(m::PathMap{V, A}, alg_f::Function) where {V, A}
     z = read_zipper(m)
     _cata_cached!(z, (mask, ch, val, _sub) -> alg_f(mask, ch, val), false)
@@ -591,7 +601,7 @@ post-edit path looked fast (93x), and that number was measuring the wrong answer
 map_hash(m::PathMap{V, A}) where {V, A} = map_hash(m, map_hash_value)
 
 function map_hash(m::PathMap{V, A}, val_hash::Function)::UInt128 where {V, A}
-    cata_cached(
+    cata_cached(       # `UInt128` keeps the work vector and the memo unboxed (audit Finding 5)
         m,
         (mask, children, val) -> begin
             h = GxHasher(_MAP_HASH_SEED)
@@ -599,11 +609,12 @@ function map_hash(m::PathMap{V, A}, val_hash::Function)::UInt128 where {V, A}
                 gx_write!(h, gx_u64_le_bytes(w))
             end
             for c in children                        # child digests, 16 bytes each
-                gx_write!(h, gx_u128_le_bytes(c::UInt128))
+                gx_write!(h, gx_u128_le_bytes(c))
             end
             val !== nothing && gx_write_u128!(h, val_hash(val))
             gx_finish_u128(h)
-        end
+        end,
+        UInt128
     )
 end
 

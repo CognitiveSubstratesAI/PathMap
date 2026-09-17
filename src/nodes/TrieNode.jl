@@ -474,7 +474,7 @@ end
 Returns current strong reference count (read through the node). Mirrors
 `Arc::strong_count`. The empty sentinel and immutable nodes report 1.
 """
-refcount(rc::TrieNodeODRc) = rc.node === nothing ? 1 : _node_refcount(rc.node)
+refcount(rc::TrieNodeODRc) = rc.node === nothing ? 1 : _node_refcount(as_tagged(rc))
 
 """
     ptr_eq(a::TrieNodeODRc, b::TrieNodeODRc) -> Bool
@@ -541,7 +541,9 @@ clones the inner node (copy-on-write). Mirrors `TrieNodeODRc::make_unique`.
 """
 function make_unique!(rc::TrieNodeODRc{V, A}) where {V, A <: Allocator}
     @assert !is_empty_node(rc) "make_unique! on empty sentinel"
-    n = rc.node
+    # NARROWED, not `rc.node`: the field is `Union{Nothing, AbstractTrieNode}`, so the raw read makes
+    # `_has_refcnt` / `_node_refcount` / `clone_self` dynamic (perf audit 2026-09-17 Finding 4).
+    n = as_tagged(rc)
     # Immutable nodes (TinyRefNode/EmptyNode) carry no refcount: they upgrade on
     # write (the caller replaces the wrapper), so there is nothing to uniquify.
     _has_refcnt(n) || return rc

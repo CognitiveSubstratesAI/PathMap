@@ -150,18 +150,55 @@ zipper now go through it as well.
 and `val_count_below_root` are mutually recursive across six types; inference gave up on the cycle and
 returned `Any`, which propagated out through `val_count`.
 
-| metric | before | after |
-|---|---|---|
-| runtime-dispatch sites over 9 entry points | 96 | **62** |
-| `remove_val_at!` | 15 | 6 |
-| `join_map_into!` | 32 | 20 |
-| `meet_into!` | 35 | 22 |
-| public API inferring `Any` (real cases) | 4 | **0** |
+| metric | before | after `as_tagged` | after refcount (Finding 4) |
+|---|---|---|---|
+| runtime-dispatch sites over 9 entry points | 96 | 62 | **41** |
+| `set_val_at!` | 9 | 9 | **4** |
+| `remove_val_at!` | 15 | 6 | **2** |
+| `join_map_into!` | 32 | 20 | 17 |
+| `meet_into!` | 35 | 22 | 19 |
+| public API inferring `Any` (real cases) | 4 | **0** | 0 |
 
 **`next_items` returns a borrowed slice (Finding 3, partly).** Every method now returns `NodeKeySlice`
 (a view) instead of a freshly allocated `Vector` — a byte node slices the static `ALL_BYTES` table as upstream
 does. The 5 000-value walk went **83 901 → 72 898 allocations**, and AllocCheck's static site count for
 `to_next_val!` 42 → 37.
+
+**The refcount helpers get a specialised path (Finding 4).** `_has_refcnt` / `_node_refcount` /
+`_node_inc_refcnt!` / `_node_dec_refcnt!` now have methods taking `::TrieNodeVariant` (NodeVariant.jl), so
+Julia union-splits, `hasfield(typeof(n), :refcnt)` folds per concrete type, and the atomic read is a plain
+field load. The `@nospecialize` methods stay in TrieNode.jl as the fallback for genuinely abstract call
+sites. `make_unique!` and `refcount` were changed to go through `as_tagged(rc)` so they reach the specialised
+methods. This is what took the write path from 62 to 41 dispatch sites — `set_val_at!` 9 → 4 and
+`remove_val_at!` 15 → 2 are almost entirely this fix, because the COW check runs on every write.
+
+**The catamorphism caches are parameterised on the fold type (Finding 5).** `_cata_cached!` gained a trailing
+`::Type{W} = Any` parameter; `children = W[]` and `cache = Dict{UInt64, W}()` replace the `Any` containers, and
+a new public `cata_cached(m, alg_f, ::Type{W})` lets a caller state the fold type. `map_hash` passes
+`UInt128`. Measured over 5 000 keys: **234 703 → 229 146 allocations**. The default stays `Any`, so existing
+callers keep working unchanged and pay what they paid before.
+
+`_cata_ascend_to_fork!`'s own allocations (`opath = copy(origin_path(z))` 45 559, `z_children = [w]` 40 003)
+were left alone DELIBERATELY: both objects are handed to the user-supplied fold function, so reusing a buffer
+would alias whatever that function retains.
+
+**`benchmarks/benchmarks.jl` runs again (fix-order item 5).** It was dead code: `using PathMap` (pre-rename),
+`PathMap{Nothing}` (pre-UnitVal), `deserialize_paths(m, io, true)`. It now takes `PathMaps.PathMap{UnitVal}`,
+reports `minimum` time plus allocation and byte counts, and exposes `run_benchmarks(; tune=false)` so it can be
+included into a warm daemon instead of only running as a script. Baseline
+(`~/csai-work/gates/audit/bench_repaired.log`):
+
+| group | op | min | allocs |
+|---|---|---|---|
+| word_index | build / lookup_hit / iterate_all | 1.185 ms / 237 ns / 35.98 µs | 17543 / 1 / 481 |
+| construction | sparse_1k / dense_1k | 1.508 ms / 1.952 ms | 33518 / 33143 |
+| serialization | serialize_500 / deserialize_500 | 658.4 µs / 923.8 µs | 6430 / 15065 |
+| algebra | union / policy_sum / subtract | 42.56 / 35.49 / 38.40 µs | 214 / 454 / 495 |
+| morphisms | cata_count / cata_paths / map_hash | 405.6 / 324.4 / 342.7 µs | 3802 / 2031 / 2674 |
+
+**Coverage reaches Codecov (fix-order item 5).** All seven repos' `.github/workflows/CI.yml` gained
+`julia-actions/julia-processcoverage@v1` + `codecov/codecov-action@v5` (`files: lcov.info`,
+`token: secrets.CODECOV_TOKEN`, `fail_ci_if_error: false`) after the `julia-runtest` step.
 
 ## 🔴 A REGRESSION THIS AUDIT CAUSED, AND HOW IT WAS CAUGHT
 
@@ -196,8 +233,11 @@ claim above therefore rests on ALLOCATION COUNTS and STATIC DISPATCH SITES, both
    heap-allocated, and the zipper's `ancestors` stack pushes a tuple with a `Union` field per descent. Removing
    them means changing the node interface (write the item into caller-owned buffers) or splitting `ancestors`
    into parallel arrays — both bigger than this pass.
-2. Finding 4 (`@nospecialize` refcount helpers) — untouched; still ~12 dispatch sites inside
-   `make_unique!` / `_wz_ensure_write_unique!` on every write.
-3. Finding 5 (`Dict{UInt64,Any}` and `child_ws::Vector{Any}` in the catamorphism) — untouched.
-4. `benchmarks/benchmarks.jl` is still stale (pre-rename, pre-UnitVal) and cannot run.
-5. Coverage: `CI.yml` has no coverage step, so the Codecov integration receives nothing from this package yet.
+2. The 41 remaining dispatch sites are concentrated in `join_map_into!` (17) and `meet_into!` (19), where the
+   node pairs come out of `AbstractNodeRef` slots whose validity is a separate tag bit — the same
+   representation problem as Finding 6. Fixing it means a typed slot, not another assertion.
+3. `_cata_ascend_to_fork!`'s per-fork `copy(origin_path(z))` + `[w]` (85 k allocations over 5 000 keys) —
+   left deliberately, see above. Removing them needs a fold interface that states whether the callee may
+   retain its arguments.
+4. Finding 6's 140 JET type-error reports: baseline re-recorded, class unchanged.
+5. Codecov is wired but has not yet reported — the first run lands on the next push to each repo.

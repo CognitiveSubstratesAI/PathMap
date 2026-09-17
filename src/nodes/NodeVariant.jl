@@ -93,4 +93,26 @@ const NO_KEY_BYTES = UInt8[]
 @inline one_byte(k::UInt8)::NodeKeySlice = view(ALL_BYTES, (Int(k) + 1):(Int(k) + 1))
 @inline whole_key(v::Vector{UInt8})::NodeKeySlice = view(v, 1:length(v))
 
+# ── the refcount protocol, SPECIALISED ───────────────────────────────────────────────────────────────────
+# TrieNode.jl declares these with `@nospecialize`, whose comment claims "`hasfield(typeof(n), :refcnt)` is a
+# compile-time constant per type, so the branch folds away". It folds away only when the argument IS
+# specialised — which `@nospecialize` is precisely there to prevent. Measured 2026-09-17: the annotated
+# versions turned `getfield(n, :refcnt, :acquire)` into `Any`, so both the `Int(...)` and the `> 1` became
+# runtime dispatches, on every copy-on-write check, i.e. on every write (perf audit Finding 4).
+#
+# These methods take the CLOSED union, so Julia union-splits, `hasfield` folds per concrete type, and the
+# atomic read is a plain field load. The `@nospecialize` methods stay as the fallback for genuinely abstract
+# call sites (and to keep compile time bounded there).
+@inline _has_refcnt(n::TrieNodeVariant) = hasfield(typeof(n), :refcnt)
+@inline _node_refcount(n::TrieNodeVariant) =
+    _has_refcnt(n) ? Int(getfield(n, :refcnt, :acquire)) : 1
+@inline function _node_inc_refcnt!(n::TrieNodeVariant)
+    _has_refcnt(n) && modifyfield!(n, :refcnt, +, UInt32(1), :acquire_release)
+    nothing
+end
+@inline function _node_dec_refcnt!(n::TrieNodeVariant)
+    _has_refcnt(n) && modifyfield!(n, :refcnt, -, UInt32(1), :acquire_release)
+    nothing
+end
+
 export TrieNodeVariant, NodeKeySlice
