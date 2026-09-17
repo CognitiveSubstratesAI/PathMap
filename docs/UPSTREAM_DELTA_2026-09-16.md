@@ -176,3 +176,7 @@ Under 0.3 semantics the equivalent rule is: invalidate the token on every in-nod
   bytes ascended — `run_fuzz.jl` / `run_differential.jl` print that count. Result: curated **46/46**, fuzz
   **2995/3000**; the 5 left (`00175 01357 01449 01494 01539`) are UPSTREAM_BUGS.md §1, still present at HEAD, and
   the resulting TRIE equals HEAD's in every other case. `prefix/insert_prefix_at_foo` is back in the baseline.
+- **The repo's own `rust_probe` now builds on 0.4.0** (2026-09-17): `cargo update -p pathmap` + `cargo build --release
+  --bins`, no source change; `gen_expected` and `gen_fuzz 3000` reproduce the vendored files byte for byte and leave
+  `fuzz/cases.txt` unchanged; `gen_keysets` / `gen_rootval` run (the root-value answers match our port). The
+  temporary copy in `~/csai-work/rust_probe_head` is no longer needed.

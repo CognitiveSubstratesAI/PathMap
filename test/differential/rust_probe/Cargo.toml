@@ -9,6 +9,9 @@ edition = "2021"
 # Relative so this is not machine-specific. Resolves to the upstream PathMap checkout
 # alongside this workspace. If your layout differs, override without editing this file:
 #     cargo run --release --bin gen_expected --config 'patch.crates-io.pathmap.path="/abs/path"'
+# Builds against upstream pathmap 0.4.0 (f477a91) as of 2026-09-17 with NO source change: all four
+# binaries compile, and gen_expected / gen_fuzz reproduce the vendored upstream.tsv / fuzz/expected.tsv
+# byte for byte (the one 0.4.0 observable, `ascend` returning a count, is handled on the Julia side).
 # NOTE: the GATE itself never needs this crate — upstream output is vendored at
 # ../expected/upstream.tsv. Rust is only required to REGENERATE that file.
 pathmap = { path = "../../../../../../dev-zone/PathMap" }
