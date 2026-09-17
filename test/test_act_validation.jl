@@ -107,15 +107,15 @@ end
     end
 end
 
-@testset "act_to_next_val! reaches a value on a branch UNDER A LINE NODE (regression)" begin
-    # WAS AN OPEN DEFECT, pinned here with @test_broken until 2026-08-05. `act_descend_until!`
+@testset "to_next_val! reaches a value on a branch UNDER A LINE NODE (regression)" begin
+    # WAS AN OPEN DEFECT, pinned here with @test_broken until 2026-08-05. `descend_until!`
     # violated upstream's contract — "descend until a branch OR A VALUE is encountered"
     # (zipper.rs:299-316, which tests `is_val()` after every single-byte step). Our line arm stepped
     # onto the child node and re-entered the `child_count == 1` loop WITHOUT testing it, so a valued
     # branch sitting under a line node was walked straight past:
     #
     #     {"band"=>1, "bandana"=>2}   walk went  "b" -> "banda"   (measured, by trace)
-    #     act_to_next_val! yielded only "bandana"; "band" was invisible to every enumeration
+    #     to_next_val! yielded only "bandana"; "band" was invisible to every enumeration
     #
     # The bytes on disk were CORRECT throughout — `act_get_val_at` returned both values — so this was
     # purely an iterator defect. That is exactly why no round-trip test caught it: round-trips assert
@@ -142,10 +142,10 @@ end
         end
         t = act_from_zipper(m, v -> v)
 
-        z = act_read_zipper(t)
+        z = read_zipper(t)
         seen = String[]
-        while act_to_next_val!(z)
-            push!(seen, String(copy(act_path(z))))
+        while to_next_val!(z)
+            push!(seen, String(copy(path(z))))
         end
         @test sort(seen) == sort(collect(ks))          # every key REACHABLE by enumeration
         @test length(seen) == length(ks)               # ...exactly once, no duplicates

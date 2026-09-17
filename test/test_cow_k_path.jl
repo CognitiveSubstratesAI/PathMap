@@ -1,13 +1,13 @@
-# test_cow_k_path.jl — `wz_join_k_path_into!` must not write through a SHARED ANCESTOR.
+# test_cow_k_path.jl — `join_k_path_into!` must not write through a SHARED ANCESTOR.
 #
 # THE DEFECT (pre-existing; found 2026-08-01 by a randomized source/destination sweep, 204-206 of
 # 800 cases). Every mutating write-zipper op calls `_wz_ensure_write_unique!` to copy-on-write the
 # ancestor chain on `focus_stack` — set_val, remove_val, take_focus, remove_branches,
-# remove_unmasked_branches. `wz_join_k_path_into!` did not, so a write reached a map SHARING those
+# remove_unmasked_branches. `join_k_path_into!` did not, so a write reached a map SHARING those
 # ancestors:
 #
 #     a = {":b"=>101, ":a"=>102};  ac = share(a)        # copy(root) -> refcount 2
-#     z = write_zipper(a); descend ":"; wz_join_k_path_into!(z, 1, prune)
+#     z = write_zipper(a); descend ":"; join_k_path_into!(z, 1, prune)
 #       a  -> []    intended
 #       ac -> []    *** THE SHARED CLONE WAS EMPTIED ***
 #
@@ -47,8 +47,8 @@ _share(m) = PathMaps.PathMap{Int, PathMaps.GlobalAlloc}(
 function _entries(m)
     z = PathMaps.read_zipper(m)
     out = Tuple{String, Int}[]
-    while PathMaps.zipper_to_next_val!(z)
-        push!(out, (String(copy(PathMaps.zipper_path(z))), PathMaps.zipper_val(z)))
+    while PathMaps.to_next_val!(z)
+        push!(out, (String(copy(PathMaps.path(z))), PathMaps.val(z)))
     end
     sort(out)
 end
@@ -61,8 +61,8 @@ end
             ac = _share(a)
             before = _entries(ac)
             z = PathMaps.write_zipper(a)
-            PathMaps.wz_descend_to!(z, _b(":"))
-            PathMaps.wz_join_k_path_into!(z, k, prune)
+            PathMaps.descend_to!(z, _b(":"))
+            PathMaps.join_k_path_into!(z, k, prune)
             @test (k, prune, _entries(ac)) == (k, prune, before)   # the clone is untouched
         end
     end
@@ -71,8 +71,8 @@ end
         # Guards against a "fix" that makes the op a no-op, which would also leave the clone intact.
         a = _mk([":b" => 101, ":a" => 102])
         z = PathMaps.write_zipper(a)
-        PathMaps.wz_descend_to!(z, _b(":"))
-        PathMaps.wz_join_k_path_into!(z, 1, true)
+        PathMaps.descend_to!(z, _b(":"))
+        PathMaps.join_k_path_into!(z, 1, true)
         @test _entries(a) == Tuple{String, Int}[]        # dropping 1 byte leaves nothing under ":"
     end
 
@@ -82,7 +82,7 @@ end
         a = _mk([":b" => 101, ":a" => 102])
         ac = _share(a)
         before = _entries(ac)
-        PathMaps.wz_join_k_path_into!(PathMaps.write_zipper(a), 1, true)
+        PathMaps.join_k_path_into!(PathMaps.write_zipper(a), 1, true)
         @test _entries(ac) == before
     end
 
@@ -91,8 +91,8 @@ end
         ac = _share(a)
         before = _entries(ac)
         z = PathMaps.write_zipper(a)
-        PathMaps.wz_descend_to!(z, _b("x:"))
-        PathMaps.wz_join_k_path_into!(z, 1, true)
+        PathMaps.descend_to!(z, _b("x:"))
+        PathMaps.join_k_path_into!(z, 1, true)
         @test _entries(ac) == before
         @test PathMaps.get_val_at(a, _b("y:q")) == 3      # the untouched branch survives in the target
     end
@@ -102,8 +102,8 @@ end
         ac = _share(a)
         before = _entries(ac)
         z = PathMaps.write_zipper(a)
-        PathMaps.wz_descend_to!(z, _b(":"))
-        PathMaps.wz_meet_k_path_into!(z, 1, true)
+        PathMaps.descend_to!(z, _b(":"))
+        PathMaps.meet_k_path_into!(z, 1, true)
         @test _entries(ac) == before
     end
 end

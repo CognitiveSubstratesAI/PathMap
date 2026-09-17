@@ -12,14 +12,14 @@
 #
 # The first three are port omissions. The last two upstream gets free from trait defaults and its
 # forwarding macro passes straight through (zipper.rs:849) — we have no trait system, so they were
-# simply absent. `_zpg_val` was missing from the dispatch table entirely, which is why `pzg_val`
+# simply absent. `_zpg_val` was missing from the dispatch table entirely, which is why `val`
 # could not exist.
 #
 # This is what the battery bought: the gap was invisible because nothing exercised these ops on a
 # product zipper. Same shape as the corrupt fixtures and the COW class — no probe, no defect.
 #
 # ⚠️ These assertions cover the ops in ISOLATION. Running the FULL battery against ProductZipperG
-# (as upstream does) is the next step and is what would answer the open pzg_factor_count /
+# (as upstream does) is the next step and is what would answer the open factor_count /
 # last-factor-guard question in test/differential/ADAPTATIONS.md entry 2.
 using Test, PathMaps
 const PM = PathMaps.PathMap
@@ -33,30 +33,30 @@ const P = PathMaps   # the MODULE; the TYPE is PathMaps.PathMap
         set_val_at!(m, Vector{UInt8}(k), UNIT_VAL)
     end
     mk() = P.ProductZipperG(read_zipper(m), P.ReadZipperCore{UnitVal, P.GlobalAlloc}[])
-    pstr(z) = String(copy(collect(P.pzg_path(z))))
+    pstr(z) = String(copy(collect(P.path(z))))
 
     z = mk()
-    P.pzg_descend_to!(z, b"rom")
-    @test P.pzg_descend_indexed_byte!(z, 0)
+    P.descend_to!(z, b"rom")
+    @test P.descend_indexed_byte!(z, 0) !== nothing
     @test pstr(z) == "rom'"
-    @test P.pzg_ascend!(z, 1)
-    @test P.pzg_descend_indexed_byte!(z, 1)
+    @test P.ascend!(z, 1) == 1
+    @test P.descend_indexed_byte!(z, 1) !== nothing
     @test pstr(z) == "roma"
-    @test !P.pzg_descend_indexed_byte!(mk(), 99)
+    @test P.descend_indexed_byte!(mk(), 99) === nothing
 
     z2 = mk()
-    P.pzg_descend_to!(z2, b"roma")
-    @test P.pzg_to_prev_sibling_byte!(z2)
+    P.descend_to!(z2, b"roma")
+    @test P.to_prev_sibling_byte!(z2) !== nothing
     @test pstr(z2) == "rom'"
 
     z3 = mk()
-    P.pzg_descend_to!(z3, b"romane")
-    @test P.pzg_val(z3) === UNIT_VAL
+    P.descend_to!(z3, b"romane")
+    @test P.val(z3) === UNIT_VAL
     z3b = mk()
-    P.pzg_descend_to!(z3b, b"roman")
-    @test P.pzg_val(z3b) === nothing
+    P.descend_to!(z3b, b"roman")
+    @test P.val(z3b) === nothing
 
-    @test P.pzg_to_next_step!(mk())
-    @test P.pzg_descend_until_max_bytes!(mk(), 2) isa Bool
-    @test !P.pzg_descend_until_max_bytes!(mk(), 0)
+    @test P.to_next_step!(mk())
+    @test P.descend_until_max_bytes!(mk(), 2) isa Bool
+    @test !P.descend_until_max_bytes!(mk(), 0)
 end

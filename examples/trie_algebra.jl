@@ -18,7 +18,7 @@ function map_union(a::PathMap.PathMap{V, A}, b::PathMap.PathMap{V, A}) where {V,
     result = deepcopy(a)
     b.root === nothing && return result
     wz = write_zipper(result)
-    wz_join_map_into!(wz, b)
+    join_map_into!(wz, b)
     result
 end
 
@@ -27,7 +27,7 @@ function map_subtract(a::PathMap.PathMap{V, A}, b::PathMap.PathMap{V, A}) where 
     a.root === nothing && return PathMap.PathMap{V, A}(a.alloc)
     result = deepcopy(a)
     wz = write_zipper(result)
-    wz_subtract_into!(wz, ANRBorrowedRc(b.root))
+    subtract_into!(wz, ANRBorrowedRc(b.root))
     result
 end
 
@@ -63,34 +63,34 @@ println("\nUnion (all known): ", val_count(all_known), " entries")
 land_or_air = map_subtract(animals, swimmers)
 println("Non-swimmers (animals − swimmers): ", val_count(land_or_air))
 rz = read_zipper(land_or_air)
-while zipper_to_next_val!(rz)
-    println("  ", String(copy(zipper_path(rz))))
+while to_next_val!(rz)
+    println("  ", String(copy(path(rz))))
 end
 
 # ── Intersection ──────────────────────────────────────────────────────
 swimming_animals = map_intersect(animals, swimmers)
 println("\nIntersection (swimming animals): ", val_count(swimming_animals))
 rz2 = read_zipper(swimming_animals)
-while zipper_to_next_val!(rz2)
-    println("  ", String(copy(zipper_path(rz2))))
+while to_next_val!(rz2)
+    println("  ", String(copy(path(rz2))))
 end
 
 # ── Prefix filter ─────────────────────────────────────────────────────
 println("\nMammals only (prefix navigation):")
 rz3 = read_zipper_at_path(animals, b"mammal:")
-while zipper_to_next_val!(rz3)
-    println("  mammal:", String(copy(zipper_path(rz3))))
+while to_next_val!(rz3)
+    println("  mammal:", String(copy(path(rz3))))
 end
 
 # ── Namespace remapping with insert_prefix! ───────────────────────────
 println("\n=== Namespace Remapping ===")
 catalog = make_set([b"eagle", b"penguin"])
 wz = write_zipper(catalog)
-wz_insert_prefix!(wz, b"bird:")
+insert_prefix!(wz, b"bird:")
 println("After insert_prefix 'bird:': ", val_count(catalog), " entries")
 rz4 = read_zipper(catalog)
-while zipper_to_next_val!(rz4)
-    println("  ", String(copy(zipper_path(rz4))))
+while to_next_val!(rz4)
+    println("  ", String(copy(path(rz4))))
 end
 
 # ── Policy API — SumPolicy for vote tallying ──────────────────────────

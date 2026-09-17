@@ -38,9 +38,9 @@ println("Unique words: ", val_count(freq))
 # ── Iterate top words via read zipper ─────────────────────────────────
 println("\nAll words (alphabetical, DFS order):")
 rz = read_zipper(freq)
-while zipper_to_next_val!(rz)
-    word = String(copy(zipper_path(rz)))
-    count = zipper_val(rz)
+while to_next_val!(rz)
+    word = String(copy(path(rz)))
+    count = val(rz)
     count > 1 && println("  $word => $count")
 end
 

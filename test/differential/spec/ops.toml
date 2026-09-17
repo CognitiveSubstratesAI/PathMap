@@ -110,7 +110,7 @@ target = "rw"
 wz_gap = "no write-zipper method"
 operands = []
 lean = "let (r, z) := z.descendLastByte; (showByteOpt r, z)"
-julia = "show_byte_opt(sp_moved_byte(z, zipper_descend_last_byte!))"
+julia = "show_byte_opt(sp_moved_byte(z, descend_last_byte!))"
 
 [[op]]
 name = "descend_indexed_byte"
@@ -125,7 +125,7 @@ target = "rw"
 wz_gap = "no write-zipper method"
 operands = []
 lean = "let (r, z) := z.descendUntil; (showBool r, z)"
-julia = "show_bool(zipper_descend_until!(z))"
+julia = "show_bool(descend_until!(z))"
 
 [[op]]
 name = "ascend_until"
@@ -133,7 +133,7 @@ target = "rw"
 wz_gap = "no write-zipper method"
 operands = []
 lean = "let (r, z) := z.ascendUntil; (toString r, z)"
-julia = "string(sp_ascended(z, zipper_ascend_until!))"
+julia = "string(sp_ascended(z, ascend_until!))"
 
 [[op]]
 name = "ascend_until_branch"
@@ -141,7 +141,7 @@ target = "rw"
 wz_gap = "no write-zipper method"
 operands = []
 lean = "let (r, z) := z.ascendUntilBranch; (toString r, z)"
-julia = "string(sp_ascended(z, zipper_ascend_until_branch!))"
+julia = "string(sp_ascended(z, ascend_until_branch!))"
 
 # Upstream's harness skips the two sibling moves at the zipper root because the Rust read zipper escapes
 # its root there. Our port guards the root (Zipper.jl:914), so our spec COMPARES it: the model answers none.
@@ -165,14 +165,14 @@ target = "rw"
 wz_gap = "no write-zipper method"
 operands = []
 lean = "let (r, z) := z.toNextStep; (showBool r, z)"
-julia = "show_bool(zipper_to_next_step!(z))"
+julia = "show_bool(to_next_step!(z))"
 
 [[op]]
 name = "to_next_val"
 target = "r"
 operands = []
 lean = "let (r, z) := z.toNextVal; (showBool r, z)"
-julia = "show_bool(zipper_to_next_val!(z))"
+julia = "show_bool(to_next_val!(z))"
 
 # k = 0 is degenerate (upstream skips it too). The childless-focus skip (P0 #1, the trait-default
 # k-path loop never returned) was removed when the read zipper got upstream's token walk.
@@ -184,7 +184,7 @@ skip = [
   { lean = "a1 == 0", julia = "a1 == 0", token = "skip:k0" },
 ]
 lean = "let (r, z) := z.descendFirstKPath a1; (showBool r, z)"
-julia = "show_bool(zipper_descend_first_k_path!(z, a1))"
+julia = "show_bool(descend_first_k_path!(z, a1))"
 
 [[op]]
 name = "k_path_walk"
@@ -201,7 +201,7 @@ name = "descend_last_path"
 target = "r"
 operands = []
 lean = "let (r, z) := z.descendLastPath; (showBool r, z)"
-julia = "show_bool(zipper_descend_last_path!(z))"
+julia = "show_bool(descend_last_path!(z))"
 
 [[op]]
 name = "move_to_path"
@@ -209,7 +209,7 @@ target = "rw"
 wz_gap = "no write-zipper method"
 operands = ["path"]
 lean = "let (r, z) := z.moveToPath a1; (toString r, z)"
-julia = "string(zipper_move_to_path!(z, a1))"
+julia = "string(move_to_path!(z, a1))"
 
 [[op]]
 name = "descend_to_existing"
@@ -217,7 +217,7 @@ target = "rw"
 wz_gap = "no write-zipper method"
 operands = ["path"]
 lean = "let (r, z) := z.descendToExisting a1; (toString r, z)"
-julia = "string(zipper_descend_to_existing!(z, a1))"
+julia = "string(descend_to_existing!(z, a1))"
 
 [[op]]
 name = "descend_to_val"
@@ -225,7 +225,7 @@ target = "rw"
 wz_gap = "no write-zipper method"
 operands = ["path"]
 lean = "let (r, z) := z.descendToVal a1; (toString r, z)"
-julia = "string(zipper_descend_to_val!(z, a1))"
+julia = "string(descend_to_val!(z, a1))"
 
 [[op]]
 name = "descend_to_existing_byte"
@@ -233,7 +233,7 @@ target = "rw"
 wz_gap = "no write-zipper method"
 operands = ["byte"]
 lean = "let (r, z) := z.descendToExistingByte a1; (showBool r, z)"
-julia = "show_bool(zipper_descend_to_existing_byte!(z, a1))"
+julia = "show_bool(descend_to_existing_byte!(z, a1))"
 
 [[op]]
 name = "descend_until_max_bytes"
@@ -241,7 +241,7 @@ target = "rw"
 wz_gap = "no write-zipper method"
 operands = ["n8"]
 lean = "let (r, z) := z.descendUntilMaxBytes a1; (showBool r, z)"
-julia = "show_bool(zipper_descend_until_max_bytes!(z, a1))"
+julia = "show_bool(descend_until_max_bytes!(z, a1))"
 
 [[op]]
 name = "descend_to_check"
@@ -249,7 +249,7 @@ target = "rw"
 wz_gap = "no write-zipper method"
 operands = ["path"]
 lean = "let (r, z) := z.descendToCheck a1; (showBool r, z)"
-julia = "show_bool(zipper_descend_to_check!(z, a1))"
+julia = "show_bool(descend_to_check!(z, a1))"
 
 [[op]]
 name = "val_at"
@@ -257,7 +257,7 @@ target = "rw"
 wz_gap = "no write-zipper method"
 operands = ["path"]
 lean = "(showVal (z.valAt a1), z)"
-julia = "show_val(zipper_val_at(z, a1))"
+julia = "show_val(val_at(z, a1))"
 
 # ── observations on either zipper ────────────────────────────────────────────────────────────────
 # The subtrie at the focus as a map (TrieRef -> make_map) and as a fork (TrieRef -> fork_read_zipper).
@@ -266,7 +266,7 @@ name = "make_map_val_count"
 target = "rw"
 operands = []
 lean = "(toString (z.makeMap.valCount []), z)"
-julia = "string(val_count(tr_make_map(sp_focus_ref(st, z))))"
+julia = "string(val_count(make_map(sp_focus_ref(st, z))))"
 
 [[op]]
 name = "dump"
@@ -281,7 +281,7 @@ name = "set_val"
 target = "w"
 operands = ["u8"]
 lean = "let (o, z) := z.setVal (UInt64.ofNat a1.toNat); (showVal o, z)"
-julia = "show_val(wz_set_val!(z, UInt64(a1)))"
+julia = "show_val(set_val!(z, UInt64(a1)))"
 
 # `prune` is always false: its effect depends on node layout (upstream lean/FINDINGS.md #7).
 [[op]]
@@ -289,14 +289,14 @@ name = "remove_val"
 target = "w"
 operands = []
 lean = "let (o, z) := z.removeVal false; (showVal o, z)"
-julia = "show_val(wz_remove_val!(z, false))"
+julia = "show_val(remove_val!(z, false))"
 
 [[op]]
 name = "create_path"
 target = "w"
 operands = []
 lean = "let (b, z) := z.createPath; (showBool b, z)"
-julia = "show_bool(wz_create_path!(z))"
+julia = "show_bool(create_path!(z))"
 
 # Explicit pruning is only layout-independent for a zipper rooted at the map root.
 [[op]]
@@ -305,14 +305,14 @@ target = "w"
 operands = []
 skip = [{ lean = "!z.root.isEmpty", julia = "!isempty(st.root0)", token = "skip:off-root-prune" }]
 lean = "let (n, z) := z.prunePath; (toString n, z)"
-julia = "string(wz_prune_path!(z))"
+julia = "string(prune_path!(z))"
 
 [[op]]
 name = "get_val_or_set_mut"
 target = "w"
 operands = ["u8"]
 lean = "let (v, z) := z.getValOrSetMut (UInt64.ofNat a1.toNat); (showVal (some v), z)"
-julia = "show_val(wz_get_or_set_val!(z, UInt64(a1)))"
+julia = "show_val(get_val_or_set_mut!(z, UInt64(a1)))"
 
 # ── write zipper: subtries ───────────────────────────────────────────────────────────────────────
 # "?" when nothing was below the focus: the bool then depends on node materialisation (FINDINGS #8).
@@ -321,21 +321,21 @@ name = "remove_branches"
 target = "w"
 operands = []
 lean = "let e := z.focusNodeIsEmpty; let (b, z) := z.removeBranches false; (if e then \"?\" else showBool b, z)"
-julia = "(e = sp_child_count(z) == 0; b = wz_remove_branches!(z, false); e ? \"?\" : show_bool(b))"
+julia = "(e = sp_child_count(z) == 0; b = remove_branches!(z, false); e ? \"?\" : show_bool(b))"
 
 [[op]]
 name = "remove_unmasked_branches"
 target = "w"
 operands = ["mask"]
 lean = "(hexPath a1, z.removeUnmaskedBranches a1 false)"
-julia = "(wz_remove_unmasked_branches!(z, byte_mask(a1), false); hex_path(a1))"
+julia = "(remove_unmasked_branches!(z, byte_mask(a1), false); hex_path(a1))"
 
 [[op]]
 name = "take_map_restore"
 target = "w"
 operands = []
 lean = "let e := z.focusNodeIsEmpty && z.val.isNone; let (m, z) := z.takeMap false; match m with | some mm => (if e then \"?\" else \"1\", z.graftMap mm) | none => (if e then \"?\" else \"0\", z)"
-julia = "(e = sp_child_count(z) == 0 && wz_get_val(z) === nothing; m = wz_take_map!(z, false); m === nothing || wz_graft_map!(z, m); e ? \"?\" : (m === nothing ? \"0\" : \"1\"))"
+julia = "(e = sp_child_count(z) == 0 && val(z) === nothing; m = take_map!(z, false); m === nothing || graft_map!(z, m); e ? \"?\" : (m === nothing ? \"0\" : \"1\"))"
 
 # `insert_prefix("")` is P1 #5 in docs/UPSTREAM_DELTA_2026-09-16.md (asserts in our port).
 [[op]]
@@ -344,14 +344,14 @@ target = "w"
 operands = ["path"]
 skip = [{ lean = "a1.isEmpty", julia = "isempty(a1)", token = "skip:empty-path" }]
 lean = "let (b, z) := z.insertPrefix a1; (showBool b, z)"
-julia = "show_bool(wz_insert_prefix!(z, a1))"
+julia = "show_bool(insert_prefix!(z, a1))"
 
 [[op]]
 name = "remove_prefix"
 target = "w"
 operands = ["i6"]
 lean = "let (b, z) := z.removePrefix a1; (showBool b, z)"
-julia = "show_bool(wz_remove_prefix!(z, a1))"
+julia = "show_bool(remove_prefix!(z, a1))"
 
 # ── write zipper: grafting from rz ───────────────────────────────────────────────────────────────
 # `graft` adopts the source's focus value (graft_root_vals, on by default upstream).
@@ -360,21 +360,21 @@ name = "graft"
 target = "w"
 operands = []
 lean = "(\"-\", z.graft r)"
-julia = "(wz_graft!(z, src_anr(st), src_val(st)); \"-\")"
+julia = "(graft!(z, src_anr(st), src_val(st)); \"-\")"
 
 [[op]]
 name = "graft_map"
 target = "w"
 operands = []
 lean = "(\"-\", z.graftMap r.makeMap)"
-julia = "(wz_graft_map!(z, src_map(st)); \"-\")"
+julia = "(graft_map!(z, src_map(st)); \"-\")"
 
 [[op]]
 name = "graft_masked_branches"
 target = "w"
 operands = ["mask", "bool"]
 lean = "(hexPath a1 ++ \":\" ++ showBool a2, z.graftMaskedBranches r a1 a2)"
-julia = "(wz_graft_masked_branches!(z, src_anr(st), byte_mask(a1), a2); hex_path(a1) * \":\" * show_bool(a2))"
+julia = "(graft_masked_branches!(z, src_anr(st), byte_mask(a1), a2); hex_path(a1) * \":\" * show_bool(a2))"
 
 # ── write zipper: algebra with rz as the source ──────────────────────────────────────────────────
 [[op]]
@@ -382,35 +382,35 @@ name = "join_into"
 target = "w"
 operands = []
 lean = "let (st, z) := z.joinInto ourOps r; (toString st, z)"
-julia = "show_status(wz_join_into!(z, src_anr(st)))"
+julia = "show_status(join_into!(z, src_anr(st)))"
 
 [[op]]
 name = "join_map_into"
 target = "w"
 operands = []
 lean = "let e := z.focusNodeIsEmpty; let (st, z) := z.joinMapInto ourOps r.makeMap; (if e then \"?\" else toString st, z)"
-julia = "(e = sp_child_count(z) == 0; s = wz_join_map_into!(z, src_map(st)); e ? \"?\" : show_status(s))"
+julia = "(e = sp_child_count(z) == 0; s = join_map_into!(z, src_map(st)); e ? \"?\" : show_status(s))"
 
 [[op]]
 name = "meet_into"
 target = "w"
 operands = []
 lean = "let (st, z) := z.meetInto ourOps r false; (toString st, z)"
-julia = "show_status(wz_meet_into!(z, src_anr(st), false, src_val(st)))"
+julia = "show_status(meet_into!(z, src_anr(st), false, src_val(st)))"
 
 [[op]]
 name = "subtract_into"
 target = "w"
 operands = []
 lean = "let (st, z) := z.subtractInto ourOps r false; (toString st, z)"
-julia = "show_status(wz_subtract_into!(z, src_anr(st), false, src_val(st)))"
+julia = "show_status(subtract_into!(z, src_anr(st), false, src_val(st)))"
 
 [[op]]
 name = "restrict"
 target = "w"
 operands = []
 lean = "let e := z.focusNodeIsEmpty; let (st, z) := z.restrict ourOps r; (if e then \"?\" else toString st, z)"
-julia = "(e = sp_child_count(z) == 0; s = wz_restrict!(z, src_anr(st)); e ? \"?\" : show_status(s))"
+julia = "(e = sp_child_count(z) == 0; s = restrict!(z, src_anr(st)); e ? \"?\" : show_status(s))"
 
 # Skipped when either side has nothing below its focus (FINDINGS #8: the effect depends on whether
 # an empty node was materialised).
@@ -420,14 +420,14 @@ target = "w"
 operands = []
 skip = [{ lean = "z.focusNodeIsEmpty || r.focusNodeIsEmpty", julia = "sp_child_count(z) == 0 || sp_child_count(st.rz) == 0", token = "skip:empty-focus" }]
 lean = "let (b, z) := z.restricting r; (showBool b, z)"
-julia = "show_bool(wz_restricting!(z, src_anr(st)))"
+julia = "show_bool(restricting!(z, src_anr(st)))"
 
 [[op]]
 name = "meet_2"
 target = "w"
 operands = ["path"]
 lean = "let (st, z) := z.meet2 ourOps r { r with path := r.path ++ a1 }; (toString st, z)"
-julia = "show_status(wz_meet_2!(z, src_anr(st), src_anr(st, a1)))"
+julia = "show_status(meet_2!(z, src_anr(st), src_anr(st, a1)))"
 
 # `k = 0` is the identity (upstream e0f47f7, ported 2026-09-17; it used to be skipped as P1 #4).
 [[op]]
@@ -435,7 +435,7 @@ name = "join_k_path_into"
 target = "w"
 operands = ["k4"]
 lean = "let (b, z) := z.joinKPathInto ourOps a1 false; (if z.focusNodeIsEmpty then \"?\" else showBool b, z)"
-julia = "(b = wz_join_k_path_into!(z, a1, false); sp_child_count(z) == 0 ? \"?\" : show_bool(b))"
+julia = "(b = join_k_path_into!(z, a1, false); sp_child_count(z) == 0 ? \"?\" : show_bool(b))"
 
 # Unspecified for k = 0 or a childless focus (the model's `meetKPathUnspecified`).
 [[op]]
@@ -447,4 +447,4 @@ skip = [
   { lean = "z.focusNodeIsEmpty", julia = "sp_child_count(z) == 0", token = "skip:empty-focus" },
 ]
 lean = "let (b, z) := z.meetKPathInto ourOps a1 false; (showBool b, z)"
-julia = "show_bool(wz_meet_k_path_into!(z, a1, false))"
+julia = "show_bool(meet_k_path_into!(z, a1, false))"

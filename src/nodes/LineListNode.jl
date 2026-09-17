@@ -234,7 +234,7 @@ violated indirectly, through a stdlib call, which is why grepping never found it
 
 🔴 THIS WAS SHIPPED ONCE AND REVERTED (`8c3f9b0` -> `0c81445`), and the reason it is safe NOW is not
 that the change improved — it is that a DIFFERENT defect was fixed underneath it. Sharing here made
-`wz_join_map_into!` hand the target nodes it did not own; a later write through
+`join_map_into!` hand the target nodes it did not own; a later write through
 `write_zipper_at_path` then mutated them in place and CORRUPTED THE SOURCE MAP. That write path was
 missing its copy-on-write entirely (regression `6d3fd84`, fixed in `38dcfbd` by porting
 `node_along_path_mut!`). So the corruption was never caused by cloning shallowly; shallow cloning
@@ -695,7 +695,7 @@ function _lln_set_recursive(child_rc::TrieNodeODRc{V, A}, sub_key::AbstractVecto
             # `node_set_branch!` under-report, `_wz_graft_internal!` then skipped its
             # `mend_root!` + `descend_to_internal!`, and the zipper kept pointing at the parent
             # while the split had moved the value down into the new child — so the follow-up
-            # `wz_remove_val!` could not FIND a value the read zipper still enumerated.
+            # `remove_val!` could not FIND a value the read zipper still enumerated.
             # Symptom: graft_map at a focus that holds a value left it behind
             # (`[:ab,:abaaa]` vs upstream `[:abaaa]`). Fuzz 00106/00111/00234/00281.
             SetPayloadOk{V, A}(nothing, true)
@@ -857,7 +857,7 @@ end
 function node_get_child(n::LineListNode{V, A}, key::AbstractVector{UInt8}) where {V, A}
     # Mirrors upstream node_get_child: returns child even if empty (dangling).
     # Empty (dangling) children represent structural path bookmarks created by
-    # wz_create_path! — they must be traversable for path_exists_at to work.
+    # create_path! — they must be traversable for path_exists_at to work.
     if is_child_0(n)
         klen = key_len_0(n)
         if length(key) >= klen && key[1:klen] == n.key0
@@ -1329,7 +1329,7 @@ function nth_child_from_key(
             # for the child in slot 1 only, so a child sitting in slot 0 was reported as "no child"
             # — where `node_get_child` checks both slots and finds it.
             #
-            # The damage is not local: `wz_descend_indexed_byte!`/`ez_descend_indexed_byte!` descend
+            # The damage is not local: `descend_indexed_byte!`/`ez_descend_indexed_byte!` descend
             # BY INDEX through here, so the zipper's focus stayed in the PARENT node. The position
             # then reports child_count 0 and an empty child mask, which silently TRUNCATES anything
             # walking the trie that way — path enumeration, and upstream notes the cached
@@ -1919,7 +1919,7 @@ function join_into_dyn!(self::LineListNode{V, A}, other::TrieNodeODRc{V, A}) whe
         #
         # ⚠️ `other` is the RIGHT-HAND operand: this is `self.join_into(other)`, so only `self` is
         # the mutable target. Writing into `other`'s node is visible to every OTHER trie sharing
-        # it, and that is exactly how `wz_join_map_into!` leaked into a third party (fuzz 00324):
+        # it, and that is exactly how `join_map_into!` leaked into a third party (fuzz 00324):
         #   pjoin_dyn(dest_byte, src_list) → merge_from_list_node!(dest_clone, src_list)
         #     → _bn_join_payload_into!(dest_clone, 'a', SRC's payload)
         #       → join_into_dyn!(dest_child_rc, SRC's child rc) → here, with `other` = the SOURCE's

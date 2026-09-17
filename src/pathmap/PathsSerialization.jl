@@ -235,12 +235,12 @@ function serialize_paths_with_auxdata(
 ) where {V, A}
     k = Ref(0)
     z = read_zipper(m)
-    # Use structural DFS (zipper_is_val) instead of _to_next_get_val!
+    # Use structural DFS (is_val) instead of _to_next_get_val!
     # so that PathMap{UnitVal} works correctly (nothing val ≠ no val).
     serialize_paths_from_funcs(
         target, () -> _paths_ser_to_next_val!(z), () -> begin
-            p = collect(zipper_path(z))
-            v = zipper_val(z)
+            p = collect(path(z))
+            v = val(z)
             fv(k[], p, v)
             k[] += 1
             p
@@ -249,27 +249,27 @@ function serialize_paths_with_auxdata(
 end
 
 """
-DFS to_next_val using structural zipper_is_val (works for PathMap{UnitVal}).
+DFS to_next_val using structural is_val (works for PathMap{UnitVal}).
 """
 function _paths_ser_to_next_val!(z::ReadZipperCore)
     while true
-        if zipper_descend_first_byte!(z)
-            zipper_is_val(z) && return true
-            if zipper_descend_until!(z)
+        if descend_first_byte!(z) !== nothing
+            is_val(z) && return true
+            if descend_until!(z)
 
-                zipper_is_val(z) && return true
+                is_val(z) && return true
             end
         else
             advanced = false
             while !advanced
-                if zipper_to_next_sibling_byte!(z)
+                if to_next_sibling_byte!(z) !== nothing
                     advanced = true
                 else
-                    zipper_ascend_byte!(z) || return false
-                    zipper_at_root(z) && return false
+                    ascend_byte!(z) || return false
+                    at_root(z) && return false
                 end
             end
-            zipper_is_val(z) && return true
+            is_val(z) && return true
         end
     end
 end

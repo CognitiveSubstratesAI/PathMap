@@ -41,8 +41,8 @@ function ip_rewrite_ok(keys, focus, prefix)
     expected = sort([(length(k) > length(focus) && k[1:length(focus)] == focus) ?
                      vcat(focus, prefix, k[(length(focus) + 1):end]) : k for k in keys])
     wz = write_zipper(m)
-    wz_descend_to!(wz, focus)
-    wz_insert_prefix!(wz, prefix)
+    descend_to!(wz, focus)
+    insert_prefix!(wz, prefix)
     ip_keys(m) == expected && ip_assert_valid_nodes(m)
 end
 
@@ -51,20 +51,20 @@ end
         m = PMI{UnitVal}()
         set_val_at!(m, ipb("aaa"), UNIT_VAL)
         wz = write_zipper(m)
-        wz_descend_to!(wz, ipb("a"))
-        @test wz_insert_prefix!(wz, ipb("b"))
+        descend_to!(wz, ipb("a"))
+        @test insert_prefix!(wz, ipb("b"))
         @test ip_keys(m) == [ipb("abaa")]
         @test get_val_at(m, ipb("aaa")) === nothing
-        rz = read_zipper(m); zipper_descend_to!(rz, ipb("aa"))
-        @test !zipper_path_exists(rz)                     # stale key run must be gone
+        rz = read_zipper(m); descend_to!(rz, ipb("aa"))
+        @test !path_exists(rz)                     # stale key run must be gone
         @test ip_assert_valid_nodes(m)
 
         m = PMI{UnitVal}()
         set_val_at!(m, ipb("abcd"), UNIT_VAL)
         set_val_at!(m, ipb("abce"), UNIT_VAL)
         wz = write_zipper(m)
-        wz_descend_to!(wz, ipb("ab"))
-        @test wz_insert_prefix!(wz, ipb("X"))
+        descend_to!(wz, ipb("ab"))
+        @test insert_prefix!(wz, ipb("X"))
         @test ip_keys(m) == [ipb("abXcd"), ipb("abXce")]
         @test ip_assert_valid_nodes(m)
     end
@@ -73,8 +73,8 @@ end
         m = PMI{UnitVal}()
         for k in ("a", "ab", "ac"); set_val_at!(m, ipb(k), UNIT_VAL); end
         wz = write_zipper(m)
-        wz_descend_to!(wz, ipb("a"))
-        @test wz_insert_prefix!(wz, ipb("Z"))
+        descend_to!(wz, ipb("a"))
+        @test insert_prefix!(wz, ipb("Z"))
         @test ip_keys(m) == [ipb("a"), ipb("aZb"), ipb("aZc")]
         @test ip_assert_valid_nodes(m)
     end
@@ -83,11 +83,11 @@ end
         m = PMI{UInt64}()
         set_val_at!(m, ipb("ab"), UInt64(1))
         set_val_at!(m, ipb("ac"), UInt64(2))
-        @test wz_insert_prefix!(write_zipper(m), UInt8[])
+        @test insert_prefix!(write_zipper(m), UInt8[])
         @test ip_keys(m) == [ipb("ab"), ipb("ac")]
         wz = write_zipper(m)
-        wz_descend_to!(wz, ipb("a"))
-        @test wz_insert_prefix!(wz, UInt8[])
+        descend_to!(wz, ipb("a"))
+        @test insert_prefix!(wz, UInt8[])
         @test get_val_at(m, ipb("ab")) == 1
         @test get_val_at(m, ipb("ac")) == 2
         @test ip_assert_valid_nodes(m)
@@ -101,7 +101,7 @@ end
             set_val_at!(src, src_key, UInt64(8))
             wz = write_zipper_at_path(dst, UInt8[0])
             t = trie_ref_at_path(src, UInt8[0])            # the source read zipper's focus
-            wz_graft!(wz, tr_get_focus_anr(t), tr_get_val(t))
+            graft!(wz, get_focus(t), get_val(t))
             @test ip_keys(dst) == [UInt8[0, src_key[2]]]
             @test get_val_at(dst, UInt8[0, src_key[2]]) == 8
             @test ip_assert_valid_nodes(dst)

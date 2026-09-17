@@ -91,9 +91,9 @@ function _fdump(m)
     z = PathMaps.read_zipper(m)
     paths = String[]
     vals = String[]
-    while PathMaps.zipper_to_next_val!(z)
-        push!(paths, String(copy(PathMaps.zipper_path(z))))
-        v = PathMaps.zipper_val(z)
+    while PathMaps.to_next_val!(z)
+        push!(paths, String(copy(PathMaps.path(z))))
+        v = PathMaps.val(z)
         push!(vals, v === nothing ? "" : _frender(v))
     end
     # ⚠️ SORT BY PATH, THEN RENDER. A rendered entry is `path=hex` under VT bits, and `=` (0x3d)
@@ -124,7 +124,7 @@ function _fmk(::Type{V}, keys::Vector{String}, rootval::Bool,
 end
 
 # Our algebra ops take an AbstractNodeRef where upstream's take a read zipper; the source's ROOT
-# VALUE therefore has to be threaded separately (see wz_meet_into!). Mirrors `_anr` in
+# VALUE therefore has to be threaded separately (see meet_into!). Mirrors `_anr` in
 # run_differential.jl.
 _fanr(m::FPMT{V}) where {V} =
     if m.root === nothing
@@ -239,44 +239,44 @@ function _fuzz_run(::Type{V}, c) where {V}
         name = bits[1]
         arg = length(bits) > 1 ? bits[2] : ""
         out = if name == "DESCEND"
-            PathMaps.wz_descend_to!(wz, _fb(arg))
+            PathMaps.descend_to!(wz, _fb(arg))
             "-"
         elseif name == "ASCEND"
             # upstream 0.4.0 prints the bytes ascended (`ascend -> usize`, zipper.rs:391)
-            before = length(PathMaps.wz_path(wz))
-            PathMaps.wz_ascend!(wz, parse(Int, arg))
-            string(before - length(PathMaps.wz_path(wz)))
+            before = length(PathMaps.path(wz))
+            PathMaps.ascend!(wz, parse(Int, arg))
+            string(before - length(PathMaps.path(wz)))
         elseif name == "SETVAL"
-            string(PathMaps.wz_set_val!(wz, _fparse_val(V, arg)) !== nothing)
+            string(PathMaps.set_val!(wz, _fparse_val(V, arg)) !== nothing)
         elseif name == "REMOVEVAL"
-            string(PathMaps.wz_remove_val!(wz, arg == "1") !== nothing)
+            string(PathMaps.remove_val!(wz, arg == "1") !== nothing)
         elseif name == "GRAFTMAP"
-            PathMaps.wz_graft_map!(wz, _smk())
+            PathMaps.graft_map!(wz, _smk())
             "-"
         elseif name == "JOINMAP"
-            _fstatus(PathMaps.wz_join_map_into!(wz, _smk()))
+            _fstatus(PathMaps.join_map_into!(wz, _smk()))
         elseif name == "MEET"
             s = _smk()
-            _fstatus(PathMaps.wz_meet_into!(wz, _fanr(s), arg == "1", s.root_val))
+            _fstatus(PathMaps.meet_into!(wz, _fanr(s), arg == "1", s.root_val))
         elseif name == "SUB"
             s = _smk()
-            _fstatus(PathMaps.wz_subtract_into!(wz, _fanr(s), arg == "1", s.root_val))
+            _fstatus(PathMaps.subtract_into!(wz, _fanr(s), arg == "1", s.root_val))
         elseif name == "RESTRICT"
             # NOT emitted by the generator — `--exec` only, for hand-written scripts. `restrict` was
             # the one full algebra op with no differential coverage at all. Note it takes no `prune`
             # and no root value: upstream's `restrict(&read_zipper)` (write_zipper.rs:253) has
             # neither, so this deliberately does not thread `s.root_val` the way MEET/SUB do.
             s = _smk()
-            _fstatus(PathMaps.wz_restrict!(wz, _fanr(s)))
+            _fstatus(PathMaps.restrict!(wz, _fanr(s)))
         elseif name == "TAKEMAP"
-            t = PathMaps.wz_take_map!(wz, arg == "1")
+            t = PathMaps.take_map!(wz, arg == "1")
             t === nothing ? "None" : _fdump(t)
         elseif name == "INSPREFIX"
-            string(PathMaps.wz_insert_prefix!(wz, _fb(arg)))
+            string(PathMaps.insert_prefix!(wz, _fb(arg)))
         elseif name == "REMPREFIX"
-            string(PathMaps.wz_remove_prefix!(wz, parse(Int, arg)))
+            string(PathMaps.remove_prefix!(wz, parse(Int, arg)))
         elseif name == "RESET"
-            PathMaps.wz_reset!(wz)
+            PathMaps.reset!(wz)
             "-"
         else
             "?"
@@ -298,7 +298,7 @@ end
     fuzz_compare() -> (n_cases, mismatches::Vector{(name, ours, upstream)}, errors::Vector{(name, msg)})
 
 An EXCEPTION is a divergence too — upstream returned a value where we threw — so it is reported,
-never swallowed. (`wz_take_map!` threw a MethodError on its primary path for months; a harness
+never swallowed. (`take_map!` threw a MethodError on its primary path for months; a harness
 that treated a throw as "skip" would have hidden exactly that.)
 """
 function fuzz_compare(; limit::Int=typemax(Int))

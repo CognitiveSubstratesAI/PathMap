@@ -140,12 +140,12 @@ end
 # =====================================================================
 
 """
-    tr_path_exists(t) → Bool
+    path_exists(t) → Bool
 
 Returns `true` if the path the TrieRef points to exists in the trie.
 Ports `Zipper::path_exists`.
 """
-function tr_path_exists(t::TrieRefBorrowed{V, A}) where {V, A}
+function path_exists(t::TrieRefBorrowed{V, A}) where {V, A}
     _tr_is_valid(t) || return false
     key = _tr_node_key(t)
     if !isempty(key)
@@ -156,12 +156,12 @@ function tr_path_exists(t::TrieRefBorrowed{V, A}) where {V, A}
 end
 
 """
-    tr_get_val(t) → Union{Nothing, V}
+    get_val(t) → Union{Nothing, V}
 
 Returns the value at the TrieRef's position, or `nothing`.
 Ports `ZipperReadOnlyValues::get_val`.
 """
-function tr_get_val(t::TrieRefBorrowed{V, A}) where {V, A}
+function get_val(t::TrieRefBorrowed{V, A}) where {V, A}
     _tr_is_valid(t) || return nothing
     key = _tr_node_key(t)
     if !isempty(key)
@@ -172,31 +172,32 @@ function tr_get_val(t::TrieRefBorrowed{V, A}) where {V, A}
 end
 
 """
-    tr_is_val(t) → Bool
+    is_val(t) → Bool
 
 Returns `true` if the TrieRef position holds a value.
 Ports `Zipper::is_val`.
 """
-tr_is_val(t::TrieRefBorrowed) = tr_get_val(t) !== nothing
+is_val(t::TrieRefBorrowed) = get_val(t) !== nothing
+val(t::TrieRefBorrowed) = get_val(t)   # ZipperValues
 
 """
-    tr_child_count(t) → Int
+    child_count(t) → Int
 
 Returns the number of distinct byte-branches at the TrieRef's position.
 Ports `Zipper::child_count`.
 """
-function tr_child_count(t::TrieRefBorrowed{V, A}) where {V, A}
+function child_count(t::TrieRefBorrowed{V, A}) where {V, A}
     _tr_is_valid(t) || return 0
     count_branches(as_tagged(t.focus_node), _tr_node_key(t))
 end
 
 """
-    tr_child_mask(t) → ByteMask
+    child_mask(t) → ByteMask
 
 Returns a ByteMask of which byte-branches exist at the TrieRef's position.
 Ports `Zipper::child_mask`.
 """
-function tr_child_mask(t::TrieRefBorrowed{V, A}) where {V, A}
+function child_mask(t::TrieRefBorrowed{V, A}) where {V, A}
     _tr_is_valid(t) || return ByteMask(UInt256(0))
     node_branches_mask(as_tagged(t.focus_node), _tr_node_key(t))
 end
@@ -206,37 +207,37 @@ end
 # =====================================================================
 
 """
-    tr_trie_ref_at_path(t, path) → TrieRefBorrowed
+    trie_ref_at_path(t, path) → TrieRefBorrowed
 
 Returns a new TrieRef at `path` relative to `t`.
 Ports `ZipperReadOnlySubtries::trie_ref_at_path`.
 """
-function tr_trie_ref_at_path(t::TrieRefBorrowed{V, A}, path) where {V, A}
+function trie_ref_at_path(t::TrieRefBorrowed{V, A}, path) where {V, A}
     _tr_is_valid(t) || return _tr_new_invalid(V, t.alloc)
     key = _tr_node_key(t)
     if !isempty(key)
         _tr_new_from_key(t.focus_node, nothing, key, collect(UInt8, path), t.alloc)
     else
         _tr_new_from_key(
-            t.focus_node, tr_get_val(t), UInt8[], collect(UInt8, path), t.alloc
+            t.focus_node, get_val(t), UInt8[], collect(UInt8, path), t.alloc
         )
     end
 end
 
 """
-    tr_make_map(t) → PathMap
+    make_map(t) → PathMap
 
 Creates a PathMap snapshot rooted at the TrieRef's position.
 Ports `ZipperInfallibleSubtries::make_map`.
 """
-function tr_make_map(t::TrieRefBorrowed{V, A}) where {V, A}
-    focus_rc = tr_get_focus_rc(t)
+function make_map(t::TrieRefBorrowed{V, A}) where {V, A}
+    focus_rc = _tr_get_focus_rc(t)
     m = PathMap{V, A}(t.alloc)
     # 🔴 THE `copy` IS LOAD-BEARING — it bumps the node's refcount (Base.copy(::TrieNodeODRc) ->
     # _node_inc_refcnt!, "mirrors Arc::clone"). Assigning `focus_rc` RAW aliases the node while
     # leaving refcnt at 1, so `_cow_in_place!` — which forks only ABOVE 1 — mutates it IN PLACE and
     # the write lands in BOTH maps. MEASURED 2026-08-05, before the fix:
-    #     src = {"ab"=>1,"ac"=>2,"ad"=>3};  m = tr_make_map(trie_ref_at_path(src, []))
+    #     src = {"ab"=>1,"ac"=>2,"ad"=>3};  m = make_map(trie_ref_at_path(src, []))
     #     refcount(m.root.node) == 1                      # two maps, one node, refcnt says one
     #     set_val_at!(m, b"az", 99)
     #     get_val_at(src, b"az") == 99                    # (!!) the SOURCE was mutated
@@ -249,22 +250,22 @@ function tr_make_map(t::TrieRefBorrowed{V, A}) where {V, A}
     # share that never raises it is invisible to the mechanism meant to protect it.
     #
     # Upstream trie_ref.rs:327-335, both halves: the root node is `get_focus().into_option()`, which
-    # drops an EMPTY node (our key-empty branch of `tr_get_focus_rc` returns it as is), and under
+    # drops an EMPTY node (our key-empty branch of `_tr_get_focus_rc` returns it as is), and under
     # `graft_root_vals` (default) the focus VALUE becomes the map's root value. Ours kept neither
     # (docs/UPSTREAM_DELTA_2026-09-16.md #17a).
     (focus_rc === nothing || node_is_empty(as_tagged(focus_rc))) || (m.root = copy(focus_rc))
-    m.root_val = tr_get_val(t)
+    m.root_val = get_val(t)
     m
 end
 
 """
-    tr_get_focus_rc(t) → Union{Nothing, TrieNodeODRc}
+    _tr_get_focus_rc(t) → Union{Nothing, TrieNodeODRc}
 
 Returns the `TrieNodeODRc` at the cursor's actual focus position (one level
 below `focus_node` when `node_key` is non-empty).
 Ports the `get_focus` → `into_option` logic.
 """
-function tr_get_focus_rc(t::TrieRefBorrowed{V, A}) where {V, A}
+function _tr_get_focus_rc(t::TrieRefBorrowed{V, A}) where {V, A}
     _tr_is_valid(t) || return nothing
     key = _tr_node_key(t)
     if isempty(key)
@@ -275,12 +276,12 @@ function tr_get_focus_rc(t::TrieRefBorrowed{V, A}) where {V, A}
         #     self.focus_node.unwrap().as_tagged().get_node_at_key(self.node_key())
         # `get_node_at_key` resolves a node at a key that may land PART-WAY THROUGH a compressed line
         # node; `node_get_child` only returns a child at an edge BOUNDARY. So any focus sitting
-        # mid-line returned `nothing`, and `tr_make_map` then produced an EMPTY map — silently, with
+        # mid-line returned `nothing`, and `make_map` then produced an EMPTY map — silently, with
         # no error.
         #
         # MEASURED, on a trie holding pre:aa / pre:ab / pre:ac / other:zz —
-        #     trie_ref_at_path(btm, "pre:")   -> tr_make_map == []          (!!)  mid-line
-        #     trie_ref_at_path(btm, "pre:a")  -> tr_make_map == [a, b, c]         at a boundary
+        #     trie_ref_at_path(btm, "pre:")   -> make_map == []          (!!)  mid-line
+        #     trie_ref_at_path(btm, "pre:a")  -> make_map == [a, b, c]         at a boundary
         # It only surfaced because ShardZipper's graft reattach compared its output against the
         # per-path writer and an UNPATCHED entry (`pre:ac`) had vanished: the empty region was
         # grafted over the real one. An empty-instead-of-error return is invisible to every caller
@@ -295,14 +296,14 @@ function tr_get_focus_rc(t::TrieRefBorrowed{V, A}) where {V, A}
 end
 
 """
-    tr_fork_read_zipper(t) → ReadZipperCore
+    fork_read_zipper(t) → ReadZipperCore
 
 Forks a `ReadZipperCore` from the TrieRef's position.
 Ports `ZipperForking::fork_read_zipper`.
 """
-function tr_fork_read_zipper(t::TrieRefBorrowed{V, A}) where {V, A}
-    @assert _tr_is_valid(t) "tr_fork_read_zipper called on invalid TrieRef"
-    ReadZipperCore(t.focus_node, _tr_node_key(t), 0, tr_get_val(t), t.alloc)
+function fork_read_zipper(t::TrieRefBorrowed{V, A}) where {V, A}
+    @assert _tr_is_valid(t) "fork_read_zipper called on invalid TrieRef"
+    ReadZipperCore(t.focus_node, _tr_node_key(t), 0, get_val(t), t.alloc)
 end
 
 # =====================================================================
@@ -310,14 +311,14 @@ end
 # =====================================================================
 
 export TrieRefBorrowed, TrieRefOwned, TrieRef
-export trie_ref_at_path, tr_trie_ref_at_path, tr_make_map
+export trie_ref_at_path, make_map, get_focus
 """
-    tr_get_focus_anr(t::TrieRefBorrowed) → AbstractNodeRef
+    get_focus(t::TrieRefBorrowed) → AbstractNodeRef
 
 Returns the `AbstractNodeRef` at the TrieRef's cursor position.
 Mirrors `ZipperInfallibleSubtries::get_focus` for TrieRef.
 """
-function tr_get_focus_anr(t::TrieRefBorrowed{V, A}) where {V, A}
+function get_focus(t::TrieRefBorrowed{V, A}) where {V, A}
     _tr_is_valid(t) || return ANRNone{V, A}()
     key = _tr_node_key(t)
     if !isempty(key)
@@ -327,6 +328,5 @@ function tr_get_focus_anr(t::TrieRefBorrowed{V, A}) where {V, A}
     end
 end
 
-export tr_path_exists, tr_is_val, tr_get_val, tr_child_count, tr_child_mask
-export tr_fork_read_zipper, tr_get_focus_rc, tr_get_focus_anr
+export _tr_get_focus_rc
 export _tr_is_valid, _tr_node_key, _tr_at_boundary, _tr_new_invalid

@@ -21,11 +21,11 @@ const _PMv = PathMaps.PathMap
     PathMaps.set_val_at!(m1, b"hello", 42)
     m2 = _PMv{Int}()
     wz = PathMaps.write_zipper(m2)
-    PathMaps.wz_descend_to!(wz, b"prefix:")
-    PathMaps.wz_graft_map!(wz, m1)
+    PathMaps.descend_to!(wz, b"prefix:")
+    PathMaps.graft_map!(wz, m1)
     @test PathMaps.refcount(m1.root) == 2                                    # sharing is real
     shared_id = PathMaps.shared_node_id(m1.root)
-    node_in_m2 = PathMaps.tr_get_focus_rc(PathMaps.trie_ref_at_path(m2, b"prefix:"))
+    node_in_m2 = PathMaps._tr_get_focus_rc(PathMaps.trie_ref_at_path(m2, b"prefix:"))
     @test PathMaps.shared_node_id(node_in_m2) == shared_id                   # same object
     mmd = PathMaps.viz_maps([m1, m2])
     @test count("g$(shared_id)@{ shape: rect", mmd) == 1                    # emitted once
@@ -35,11 +35,11 @@ const _PMv = PathMaps.PathMap
     mw = _PMv{Int}()
     PathMaps.set_val_at!(mw, b"Sab", 1)
     PathMaps.set_val_at!(mw, b"Scd", 2)
-    src_anr = PathMaps.tr_get_focus_anr(PathMaps.trie_ref_at_path(mw, b"S"))
+    src_anr = PathMaps.get_focus(PathMaps.trie_ref_at_path(mw, b"S"))
     wzg = PathMaps.write_zipper(mw)
-    PathMaps.wz_descend_to!(wzg, b"D")
-    PathMaps.wz_graft!(wzg, src_anr)
-    shared_rc = PathMaps.tr_get_focus_rc(PathMaps.trie_ref_at_path(mw, b"S"))
+    PathMaps.descend_to!(wzg, b"D")
+    PathMaps.graft!(wzg, src_anr)
+    shared_rc = PathMaps._tr_get_focus_rc(PathMaps.trie_ref_at_path(mw, b"S"))
     @test PathMaps.refcount(shared_rc) >= 2
     id_S = PathMaps.shared_node_id(shared_rc)
     mmd2 = PathMaps.viz_maps([mw])

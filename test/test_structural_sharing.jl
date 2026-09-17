@@ -29,9 +29,9 @@ using Test, PathMaps
         m = PathMaps.PathMap{PathMaps.UnitVal}()
         z = PathMaps.write_zipper(m)
         for b in bytes
-            PathMaps.wz_reset!(z)
-            PathMaps.wz_descend_to!(z, UInt8[b])
-            PathMaps.wz_graft_map!(z, PathMaps._pm_clone(src))   # upstream's `l3_map.clone()`
+            PathMaps.reset!(z)
+            PathMaps.descend_to!(z, UInt8[b])
+            PathMaps.graft_map!(z, PathMaps._pm_clone(src))   # upstream's `l3_map.clone()`
         end
         m
     end
@@ -68,5 +68,5 @@ using Test, PathMaps
     # ⚠️ A DROP HERE IS THE REGRESSION, and the numbers above are deliberately loose around the
     # measured values so an ordinary refactor does not trip them while a COLLAPSE of sharing does.
     # If this fails, something started COPYING where it used to ALIAS — check `_pm_clone`,
-    # `Base.copy(::TrieNodeODRc)`'s refcount bump, and `wz_graft_map!`.
+    # `Base.copy(::TrieNodeODRc)`'s refcount bump, and `graft_map!`.
 end

@@ -23,32 +23,32 @@ using PrecompileTools
 
     # ── Read zipper ───────────────────────────────────────────────────
     rz = read_zipper(m)
-    zipper_descend_to!(rz, b"alpha")
-    zipper_val(rz)
-    zipper_is_val(rz)
-    zipper_path(rz)
-    zipper_child_mask(rz)
-    zipper_child_count(rz)
-    zipper_ascend!(rz, 5)
+    descend_to!(rz, b"alpha")
+    val(rz)
+    is_val(rz)
+    path(rz)
+    child_mask(rz)
+    child_count(rz)
+    ascend!(rz, 5)
 
     rz2 = read_zipper_at_path(m, b"alpha:")
-    zipper_to_next_val!(rz2)
-    zipper_val(rz2)
+    to_next_val!(rz2)
+    val(rz2)
 
     # ── Write zipper ──────────────────────────────────────────────────
     m2 = PathMap{Int32}()
     wz = write_zipper(m2)
-    wz_descend_to!(wz, b"x:a")
-    wz_set_val!(wz, Int32(10))
-    wz_descend_to!(wz, b"x:b")
-    wz_set_val!(wz, Int32(20))
-    wz_reset!(wz)
-    wz_get_val(wz)
-    wz_child_mask(wz)
+    descend_to!(wz, b"x:a")
+    set_val!(wz, Int32(10))
+    descend_to!(wz, b"x:b")
+    set_val!(wz, Int32(20))
+    reset!(wz)
+    val(wz)
+    child_mask(wz)
 
     wz2 = write_zipper_at_path(m2, b"x:")
-    wz_is_val(wz2)
-    wz_path_exists(wz2)
+    is_val(wz2)
+    path_exists(wz2)
 
     # ── Algebraic ops ─────────────────────────────────────────────────
     a = PathMap{Nothing}()
@@ -65,22 +65,22 @@ using PrecompileTools
 
     # ── Write zipper algebraic ops ────────────────────────────────────
     wz3 = write_zipper(a)
-    wz_join_map_into!(wz3, b)
+    join_map_into!(wz3, b)
 
     # ── Graft / take ─────────────────────────────────────────────────
     m3 = PathMap{Int32}()
     set_val_at!(m3, b"sub:x", Int32(99))
     wz4 = write_zipper(m2)
-    wz_descend_to!(wz4, b"grafted:")
-    wz_graft_map!(wz4, m3)
+    descend_to!(wz4, b"grafted:")
+    graft_map!(wz4, m3)
 
     # ── Prefix ops ────────────────────────────────────────────────────
     m4 = PathMap{Int32}()
     set_val_at!(m4, b"foo:bar", Int32(1))
     wz5 = write_zipper_at_path(m4, b"foo:")
-    wz_insert_prefix!(wz5, b"ns:")
+    insert_prefix!(wz5, b"ns:")
     wz6 = write_zipper_at_path(m4, b"ns:foo:")
-    wz_remove_prefix!(wz6, 3)
+    remove_prefix!(wz6, 3)
 
     # ── Morphisms ─────────────────────────────────────────────────────
     cata_cached(

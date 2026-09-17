@@ -760,7 +760,7 @@ Return a stable pointer identity for the trie node referenced by `r`, or
 
 Mirrors `ZipperConcrete::shared_node_id()` (upstream PathMap, commit ade1e1b).
 Used by `_check_anr_sharing` to enable the shared-node short-circuit in
-`wz_meet_into!` and `wz_subtract_into!`.
+`meet_into!` and `subtract_into!`.
 """
 anr_shared_id(::ANRNone) = nothing
 anr_shared_id(::ANRBorrowedDyn) = nothing
@@ -782,8 +782,8 @@ trie node (identical `objectid`).
 
 This is the guard for the shared-node short-circuit:
 
-  - `wz_meet_into!`    : A ∩ A = A  → returns `ALG_STATUS_IDENTITY` immediately
-  - `wz_subtract_into!`: A − A = ∅  → grafts nothing, returns `ALG_STATUS_NONE`
+  - `meet_into!`    : A ∩ A = A  → returns `ALG_STATUS_IDENTITY` immediately
+  - `subtract_into!`: A − A = ∅  → grafts nothing, returns `ALG_STATUS_NONE`
 
 Mirrors `check_sharing` in upstream PathMap `experimental/zipper_algebra.rs`
 (commit ade1e1b: "short-circuit on shared subtries (entry + post-descend)").

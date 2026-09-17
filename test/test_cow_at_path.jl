@@ -24,11 +24,11 @@
 # WHY NOTHING CAUGHT IT FOR TWO DAYS:
 #   * the 3000-case differential only ever dumps the TARGET map; it never checks that a SOURCE
 #     survived, and its `s` map is discarded after each case;
-#   * the suite's COW tests all use `write_zipper` + `wz_descend_to!`, the shape that is safe;
+#   * the suite's COW tests all use `write_zipper` + `descend_to!`, the shape that is safe;
 #   * MORK's 2959 tests and the full PathMap suite were green throughout.
 #
 # ⚠️ USE DISTINGUISHABLE VALUES. An earlier probe of mine reported `write_zipper_at_path` +
-# `wz_set_val!` as SAFE because it overwrote an existing `UnitVal` with another `UnitVal` — an
+# `set_val!` as SAFE because it overwrote an existing `UnitVal` with another `UnitVal` — an
 # unobservable write. Same class of mistake as an equivalent mutant. Every case below either uses
 # `Int` payloads or changes `val_count`.
 using PathMaps, Test
@@ -43,8 +43,8 @@ function _shared_pair()
     PathMaps.set_val_at!(s, _b("x:3"), 3)
     t = PathMaps.PathMap{Int}()
     z = PathMaps.write_zipper(t)
-    PathMaps.wz_descend_to!(z, _b("g:"))
-    PathMaps.wz_graft_map!(z, s)
+    PathMaps.descend_to!(z, _b("g:"))
+    PathMaps.graft_map!(z, s)
     (s, t)
 end
 
@@ -63,51 +63,51 @@ _snapshot(m) = (PathMaps.val_count(m),
         @test _snapshot(s) == before                            # and the source did not
     end
 
-    @testset "wz_set_val! OVERWRITING an existing value" begin
+    @testset "set_val! OVERWRITING an existing value" begin
         # Int payloads, so overwriting is observable. With UnitVal it is not, and this case reads
         # as passing on the broken code.
         (s, t) = _shared_pair()
         before = _snapshot(s)
         z = PathMaps.write_zipper_at_path(t, _b("g:x:1"))
-        PathMaps.wz_set_val!(z, 999)
+        PathMaps.set_val!(z, 999)
         @test PathMaps.get_val_at(t, _b("g:x:1")) == 999
         @test _snapshot(s) == before
     end
 
-    @testset "wz_set_val! creating a NEW sibling" begin
+    @testset "set_val! creating a NEW sibling" begin
         (s, t) = _shared_pair()
         before = _snapshot(s)
         z = PathMaps.write_zipper_at_path(t, _b("g:x:4"))
-        PathMaps.wz_set_val!(z, 444)
+        PathMaps.set_val!(z, 444)
         @test PathMaps.get_val_at(t, _b("g:x:4")) == 444
         @test _snapshot(s) == before
         @test PathMaps.get_val_at(s, _b("x:4")) === nothing
     end
 
-    @testset "wz_remove_val! with prune" begin
+    @testset "remove_val! with prune" begin
         (s, t) = _shared_pair()
         before = _snapshot(s)
         z = PathMaps.write_zipper_at_path(t, _b("g:x:1"))
-        PathMaps.wz_remove_val!(z, true)
+        PathMaps.remove_val!(z, true)
         @test PathMaps.get_val_at(t, _b("g:x:1")) === nothing
         @test _snapshot(s) == before
     end
 
-    @testset "wz_take_map! removes the subtrie from the target only" begin
+    @testset "take_map! removes the subtrie from the target only" begin
         (s, t) = _shared_pair()
         before = _snapshot(s)
         z = PathMaps.write_zipper_at_path(t, _b("g:x:1"))
-        PathMaps.wz_take_map!(z, false)
+        PathMaps.take_map!(z, false)
         @test _snapshot(s) == before
     end
 
-    @testset "wz_graft_map! over a shared position" begin
+    @testset "graft_map! over a shared position" begin
         (s, t) = _shared_pair()
         before = _snapshot(s)
         other = PathMaps.PathMap{Int}()
         PathMaps.set_val_at!(other, _b("q"), 7)
         z = PathMaps.write_zipper_at_path(t, _b("g:x:1"))
-        PathMaps.wz_graft_map!(z, other)
+        PathMaps.graft_map!(z, other)
         @test PathMaps.get_val_at(t, _b("g:x:1q")) == 7
         @test _snapshot(s) == before
     end

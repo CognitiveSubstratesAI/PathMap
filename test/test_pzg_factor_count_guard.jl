@@ -5,11 +5,11 @@
 # then a MOVING DEPTH, not a count — its documented contract ("the number of factors … minimum 1")
 # cannot hold. We RETAINED ours, because `ProductZipperG.jl` consumes it:
 #
-#     pzg_factor_count(prz) = length(prz.secondary) + 1 + _pzg_inner_factor_count(prz.primary)
-#     _pzg_inner_factor_count(::PrefixZipper over DependentZipper) = dpz_factor_count(src) - 1
+#     factor_count(prz) = length(prz.secondary) + 1 + _pzg_inner_factor_count(prz.primary)
+#     _pzg_inner_factor_count(::PrefixZipper over DependentZipper) = factor_count(src) - 1
 #                                                                 = length(src.secondary)   <-- LIVE
 #
-# and MORK guards on `pzg_focus_factor(prz) != pzg_factor_count(prz) - 1` (Space.jl:836) — a focus
+# and MORK guards on `focus_factor(prz) != factor_count(prz) - 1` (Space.jl:836) — a focus
 # index compared against a total that MOVES. The path is live: CmpSource (the ==/!= source) builds
 # exactly `PrefixZipper(prefix, DependentZipper(...))` at MORK Sources.jl:243-246.
 #
@@ -31,7 +31,7 @@
 using Test, PathMaps
 const PMG = PathMaps.PathMap
 
-@testset "pzg_factor_count moves, and focus_factor moves WITH it (ADAPTATIONS entry 2)" begin
+@testset "factor_count moves, and focus_factor moves WITH it (ADAPTATIONS entry 2)" begin
     m = PMG{UnitVal}()
     for k in ("ax", "ay", "bx", "by")
         set_val_at!(m, Vector{UInt8}(k), UNIT_VAL)
@@ -57,11 +57,11 @@ const PMG = PathMaps.PathMap
 
     counts = Set{Int}()
     steps = 0
-    while PathMaps.pzg_to_next_val!(prz)
+    while PathMaps.to_next_val!(prz)
         steps += 1
         steps > 200 && break                            # cycle guard: the assertions below fail, not hang
-        fc = PathMaps.pzg_factor_count(prz)
-        ff = PathMaps.pzg_focus_factor(prz)
+        fc = PathMaps.factor_count(prz)
+        ff = PathMaps.focus_factor(prz)
         push!(counts, fc)
 
         # THE GUARD'S PRECONDITION. MORK compares `ff != fc - 1` to mean "focus is in the last

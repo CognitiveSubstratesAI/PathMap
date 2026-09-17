@@ -179,7 +179,7 @@ end
     set_val_at!(src, UInt8[0], UInt64(5))
     set_val_at!(src, UInt8[2, 1], UInt64(6))
     @test src.root.node isa PathMaps.LineListNode        # -> _bn_prestrict_abstract, the defective path
-    st = wz_restrict!(write_zipper(self), tr_get_focus_anr(trie_ref_at_path(src, UInt8[])))
+    st = restrict!(write_zipper(self), get_focus(trie_ref_at_path(src, UInt8[])))
     @test st == ALG_STATUS_ELEMENT
     @test sort([collect(UInt8, k) for (k, _) in self]) == [UInt8[0]]
 end

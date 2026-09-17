@@ -34,8 +34,8 @@ end
 function _dump(m)
     z = PathMaps.read_zipper(m)
     v = String[]
-    while PathMaps.zipper_to_next_val!(z)
-        push!(v, String(copy(PathMaps.zipper_path(z))))
+    while PathMaps.to_next_val!(z)
+        push!(v, String(copy(PathMaps.path(z))))
     end
     sort!(v)
     "[" * join(v, ",") * "] vc=" * string(PathMaps.val_count(m))
@@ -103,14 +103,14 @@ function differential_results()
     a = _mk(["p", "px", "q"])
     src = _mk(["y"])
     let wz = PathMaps.write_zipper_at_path(a, _b("p"))
-        PathMaps.wz_graft_map!(wz, src)
+        PathMaps.graft_map!(wz, src)
     end
     out["graft/graft_map_at_p"] = _dump(a)
 
     a = _mk(["p", "px", "q"])
     src = _mk(["x"])
     let wz = PathMaps.write_zipper_at_path(a, _b("p"))
-        PathMaps.wz_meet_into!(wz, _anr(src), false, src.root_val)
+        PathMaps.meet_into!(wz, _anr(src), false, src.root_val)
     end
     out["graft/meet_into_at_p"] = _dump(a)
 
@@ -118,14 +118,14 @@ function differential_results()
     src = PMT{PathMaps.UnitVal}()
     PathMaps.set_val_at!(src, UInt8[], PathMaps.UnitVal())
     let wz = PathMaps.write_zipper_at_path(a, _b("p"))
-        PathMaps.wz_subtract_into!(wz, _anr(src), false, src.root_val)
+        PathMaps.subtract_into!(wz, _anr(src), false, src.root_val)
     end
     out["graft/subtract_into_rootval_at_p"] = _dump(a)
 
     a = _mk(["px", "py", "q"])
     src = _mk(["y"])
     let wz = PathMaps.write_zipper_at_path(a, _b("p"))
-        PathMaps.wz_join_into!(wz, _anr(src))
+        PathMaps.join_into!(wz, _anr(src))
     end
     out["graft/join_into_at_p"] = _dump(a)
 
@@ -138,7 +138,7 @@ function differential_results()
     PathMaps.set_val_at!(src, UInt8[], PathMaps.UnitVal())
     PathMaps.set_val_at!(src, _b("y"), PathMaps.UnitVal())
     let wz = PathMaps.write_zipper_at_path(a, _b("p"))
-        PathMaps.wz_graft_map!(wz, src)
+        PathMaps.graft_map!(wz, src)
     end
     out["graft/graft_map_rootval_sets_focus"] = _dump(a)
 
@@ -148,7 +148,7 @@ function differential_results()
     src = PMT{PathMaps.UnitVal}()
     PathMaps.set_val_at!(src, UInt8[], PathMaps.UnitVal())
     let wz = PathMaps.write_zipper_at_path(a, _b("p"))
-        PathMaps.wz_join_map_into!(wz, src)
+        PathMaps.join_map_into!(wz, src)
     end
     out["graft/join_map_into_rootval_at_p"] = _dump(a)
 
@@ -156,7 +156,7 @@ function differential_results()
     a = _mk(["p", "px", "q"])
     src = _mk(["y"])
     let wz = PathMaps.write_zipper_at_path(a, _b("p"))
-        PathMaps.wz_join_map_into!(wz, src)
+        PathMaps.join_map_into!(wz, src)
     end
     out["graft/join_map_into_keeps_focus_val"] = _dump(a)
 
@@ -164,7 +164,7 @@ function differential_results()
     # root_val and returns a map even with no root node.
     a = _mk(["p", "q"])
     taken = let wz = PathMaps.write_zipper_at_path(a, _b("p"))
-        PathMaps.wz_take_map!(wz, false)
+        PathMaps.take_map!(wz, false)
     end
     out["graft/take_map_valonly_taken"] = taken === nothing ? "None" : _dump(taken)
     out["graft/take_map_valonly_residue"] = _dump(a)
@@ -173,21 +173,21 @@ function differential_results()
     a = _mk(["a", "b"])
     b = _mk(["b", "c"])
     let wz = PathMaps.write_zipper(a)
-        PathMaps.wz_join_into!(wz, _anr(b))
+        PathMaps.join_into!(wz, _anr(b))
     end
     out["algebra/join_root"] = _dump(a)
 
     a = _mk(["a", "b", "c"])
     b = _mk(["b", "c", "d"])
     let wz = PathMaps.write_zipper(a)
-        PathMaps.wz_meet_into!(wz, _anr(b), false)
+        PathMaps.meet_into!(wz, _anr(b), false)
     end
     out["algebra/meet_root"] = _dump(a)
 
     a = _mk(["a", "b", "c"])
     b = _mk(["b"])
     let wz = PathMaps.write_zipper(a)
-        PathMaps.wz_subtract_into!(wz, _anr(b), false)
+        PathMaps.subtract_into!(wz, _anr(b), false)
     end
     out["algebra/subtract_root"] = _dump(a)
 
@@ -199,14 +199,14 @@ function differential_results()
     a = _mk(["ab"])
     b = _mk(["a"])
     let wz = PathMaps.write_zipper(a)
-        PathMaps.wz_subtract_into!(wz, _anr(b), false)
+        PathMaps.subtract_into!(wz, _anr(b), false)
     end
     out["algebra/subtract_val_absent"] = _dump(a)
 
     a = _mk(["ab"])
     b = _mk(["a"])
     let wz = PathMaps.write_zipper(a)
-        PathMaps.wz_meet_into!(wz, _anr(b), false)
+        PathMaps.meet_into!(wz, _anr(b), false)
     end
     out["algebra/meet_val_absent"] = _dump(a)
 
@@ -220,27 +220,27 @@ function differential_results()
     a = _mk(_dense)
     b = _mk(["a"])
     let wz = PathMaps.write_zipper(a)
-        PathMaps.wz_subtract_into!(wz, _anr(b), false)
+        PathMaps.subtract_into!(wz, _anr(b), false)
     end
     out["algebra/subtract_dense_val_absent"] = _dump(a)
 
     a = _mk(_dense)
     b = _mk(["a"])
     let wz = PathMaps.write_zipper(a)
-        PathMaps.wz_meet_into!(wz, _anr(b), false)
+        PathMaps.meet_into!(wz, _anr(b), false)
     end
     out["algebra/meet_dense_val_absent"] = _dump(a)
 
     # ---- prefix ops -------------------------------------------------------
     m = _mk(["foo:bar"])
     let wz = PathMaps.write_zipper_at_path(m, _b("foo:"))
-        PathMaps.wz_insert_prefix!(wz, _b("ns:"))
+        PathMaps.insert_prefix!(wz, _b("ns:"))
     end
     out["prefix/insert_prefix_at_foo"] = _dump(m)
 
     m = _mk(["foo:bar", "foo:baz"])
     let wz = PathMaps.write_zipper_at_path(m, _b("foo:"))
-        PathMaps.wz_remove_prefix!(wz, 1)
+        PathMaps.remove_prefix!(wz, 1)
     end
     out["prefix/remove_prefix_at_foo"] = _dump(m)
 
@@ -250,7 +250,7 @@ function differential_results()
     # the direct observable of that clamp.
     m = _mk(["foo:bar", "foo:baz"])
     ret_at_origin = let wz = PathMaps.write_zipper_at_path(m, _b("foo:"))
-        PathMaps.wz_remove_prefix!(wz, 1)
+        PathMaps.remove_prefix!(wz, 1)
     end
     out["prefix/remove_prefix_ret_at_origin"] = string(ret_at_origin)
 
@@ -259,8 +259,8 @@ function differential_results()
     # over-correcting into "ascend never moves".
     m = _mk(["foo:bar", "foo:baz"])
     ret_below_origin = let wz = PathMaps.write_zipper(m)
-        PathMaps.wz_descend_to!(wz, _b("foo:"))
-        PathMaps.wz_remove_prefix!(wz, 1)
+        PathMaps.descend_to!(wz, _b("foo:"))
+        PathMaps.remove_prefix!(wz, 1)
     end
     out["prefix/remove_prefix_below_origin"] = _dump(m)
     out["prefix/remove_prefix_below_origin_ret"] = string(ret_below_origin)
@@ -269,7 +269,7 @@ function differential_results()
     # asserts this returns true and strips `pre:`. Same at-origin case, n == origin length.
     m = _mk(["pre:alpha", "pre:beta"])
     ret_full_ascent = let wz = PathMaps.write_zipper_at_path(m, _b("pre:"))
-        PathMaps.wz_remove_prefix!(wz, 4)
+        PathMaps.remove_prefix!(wz, 4)
     end
     out["prefix/remove_prefix_full_ascent_at_origin"] = _dump(m)
     out["prefix/remove_prefix_full_ascent_at_origin_ret"] = string(ret_full_ascent)
@@ -279,13 +279,13 @@ function differential_results()
     # `node_key` length (root_key_start-relative) lets one jump cross the origin.
     m = _mk(["foo:bar"])
     ret_over = let wz = PathMaps.write_zipper_at_path(m, _b("foo:"))
-        PathMaps.wz_descend_to!(wz, _b("bar"))
+        PathMaps.descend_to!(wz, _b("bar"))
         # upstream 0.4.0: `ascend` returns the number of bytes ascended (zipper.rs:391), not a Bool;
         # ours returns Bool, so the probe's value is the path-length difference.
-        before = length(PathMaps.wz_path(wz))
-        PathMaps.wz_ascend!(wz, 5)
-        r = before - length(PathMaps.wz_path(wz))
-        PathMaps.wz_set_val!(wz, PathMaps.UnitVal())
+        before = length(PathMaps.path(wz))
+        PathMaps.ascend!(wz, 5)
+        r = before - length(PathMaps.path(wz))
+        PathMaps.set_val!(wz, PathMaps.UnitVal())
         r
     end
     out["ascend/over_ascend_ret"] = string(ret_over)

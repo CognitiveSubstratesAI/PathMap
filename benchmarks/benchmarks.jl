@@ -65,7 +65,7 @@ SUITE["word_index"]["lookup_miss"] = @benchmarkable get_val_at($_WORD_MAP, b"zzz
 SUITE["word_index"]["iterate_all"] = @benchmarkable begin
     rz = read_zipper($_WORD_MAP)
     n = 0
-    while zipper_to_next_val!(rz)
+    while to_next_val!(rz)
 
         n += 1
     end
@@ -93,14 +93,14 @@ end
 SUITE["algebra"]["union"] = @benchmarkable begin
     r = deepcopy($_MAP_A)
     wz = write_zipper(r)
-    wz_join_map_into!(wz, $_MAP_B)
+    join_map_into!(wz, $_MAP_B)
     r
 end
 
 SUITE["algebra"]["subtract"] = @benchmarkable begin
     r = deepcopy($_MAP_A)
     wz = write_zipper(r)
-    wz_subtract_into!(wz, ANRBorrowedRc($_MAP_B.root))
+    subtract_into!(wz, ANRBorrowedRc($_MAP_B.root))
     r
 end
 

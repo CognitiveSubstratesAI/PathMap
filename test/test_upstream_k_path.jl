@@ -1,7 +1,7 @@
 # test_upstream_k_path.jl — upstream's k-path iteration tests (`zipper_iteration_tests::k_path_test1..a`,
 # ~/dev-zone/PathMap src/zipper.rs:4720-5125 @ f477a91), ported for the read zipper.
 #
-# WHY. None of them had been ported, and our `zipper_descend_first_k_path!` was the trait default loop,
+# WHY. None of them had been ported, and our `descend_first_k_path!` was the trait default loop,
 # which hangs on a childless focus (docs/UPSTREAM_DELTA_2026-09-16.md P0 #1). The fix ports upstream's
 # `ReadZipperCore::k_path_internal`; these are upstream's own checks of it.
 #
@@ -20,7 +20,7 @@ kp_map(keys) = begin
     m
 end
 kp_zipper(keys, root) = (m = kp_map(keys); isempty(root) ? read_zipper(m) : read_zipper_at_path(m, collect(UInt8, root)))
-kp_path(z) = collect(UInt8, zipper_path(z))
+kp_path(z) = collect(UInt8, path(z))
 kpb(s::String) = Vector{UInt8}(s)
 
 @testset "upstream k_path iteration tests (zipper.rs:4720-5125)" begin
@@ -29,33 +29,33 @@ kpb(s::String) = Vector{UInt8}(s)
         keys = [":5:above:3:the:4:fray:", ":5:err:", ":5:erronious:6:potato:", ":5:error:2:is:2:my:4:name:",
             ":5:hello:5:world:", ":5:mucky:4:muck:", ":5:roger:6:rabbit:", ":5:zebra:", ":9:muckymuck:5:raker:"]
         z = kp_zipper(keys, ":")
-        @test zipper_descend_indexed_byte!(z, 0)
+        @test descend_indexed_byte!(z, 0) !== nothing
         sym_len = parse(Int, Char(kp_path(z)[1]))
         @test sym_len == 5
-        @test zipper_descend_indexed_byte!(z, 0)   # step over ':'
-        @test zipper_child_count(z) == 6
-        @test zipper_descend_first_k_path!(z, sym_len + 1) == true
+        @test descend_indexed_byte!(z, 0) !== nothing   # step over ':'
+        @test child_count(z) == 6
+        @test descend_first_k_path!(z, sym_len + 1) == true
         @test kp_path(z) == kpb("5:above:")
         # blows past "err" (shorter than k) and stops in the middle of "erronious"
-        @test zipper_to_next_k_path!(z, sym_len + 1) == true
+        @test to_next_k_path!(z, sym_len + 1) == true
         @test kp_path(z) == kpb("5:erroni")
         @test last(kp_path(z)) != UInt8(':')
         for expected in ["5:error:", "5:hello:", "5:mucky:", "5:roger:", "5:zebra:"]
-            @test zipper_to_next_k_path!(z, sym_len + 1) == true
+            @test to_next_k_path!(z, sym_len + 1) == true
             @test kp_path(z) == kpb(expected)
         end
-        @test zipper_to_next_k_path!(z, sym_len + 1) == false
+        @test to_next_k_path!(z, sym_len + 1) == false
         @test kp_path(z) == kpb("5:")
-        @test zipper_child_count(z) == 6
+        @test child_count(z) == 6
     end
 
     @testset "k_path_test2" begin
         K_PATH_TEST2_COUNT = 50
         paths = [UInt8[((j + i) % 255) for j in 0:((i % 15) + 4)] for i in 0:(K_PATH_TEST2_COUNT - 1)]
         z = kp_zipper(paths, UInt8[])
-        zipper_descend_first_k_path!(z, 5)
+        descend_first_k_path!(z, 5)
         count = 1
-        while zipper_to_next_k_path!(z, 5)
+        while to_next_k_path!(z, 5)
             count += 1
             count > K_PATH_TEST2_COUNT && break   # over-yield fails below instead of spinning
         end
@@ -66,71 +66,71 @@ kpb(s::String) = Vector{UInt8}(s)
         keys = [":1a1A", ":1a1B", ":1a1C", ":1b1A", ":1b1B", ":1b1C", ":1c1A"]
         z = kp_zipper(keys, ":")
         # first symbols (lower case)
-        zipper_descend_to!(z, kpb("1"))
-        @test zipper_path_exists(z)
-        @test zipper_descend_first_k_path!(z, 1) == true
+        descend_to!(z, kpb("1"))
+        @test path_exists(z)
+        @test descend_first_k_path!(z, 1) == true
         @test kp_path(z) == kpb("1a")
-        @test zipper_to_next_k_path!(z, 1) == true
+        @test to_next_k_path!(z, 1) == true
         @test kp_path(z) == kpb("1b")
-        @test zipper_to_next_k_path!(z, 1) == true
+        @test to_next_k_path!(z, 1) == true
         @test kp_path(z) == kpb("1c")
-        @test zipper_to_next_k_path!(z, 1) == false
+        @test to_next_k_path!(z, 1) == false
         @test kp_path(z) == kpb("1")
         # nested second symbols (upper case)
-        zipper_reset!(z)
-        zipper_descend_to!(z, kpb("1a1"))
-        @test zipper_path_exists(z)
-        @test zipper_descend_first_k_path!(z, 1) == true
+        reset!(z)
+        descend_to!(z, kpb("1a1"))
+        @test path_exists(z)
+        @test descend_first_k_path!(z, 1) == true
         @test kp_path(z) == kpb("1a1A")
-        @test zipper_to_next_k_path!(z, 1) == true
+        @test to_next_k_path!(z, 1) == true
         @test kp_path(z) == kpb("1a1B")
-        @test zipper_to_next_k_path!(z, 1) == true
+        @test to_next_k_path!(z, 1) == true
         @test kp_path(z) == kpb("1a1C")
-        @test zipper_to_next_k_path!(z, 1) == false
+        @test to_next_k_path!(z, 1) == false
         @test kp_path(z) == kpb("1a1")
         # recursive scan
-        zipper_reset!(z)
-        zipper_descend_to!(z, kpb("1"))
-        @test zipper_path_exists(z)
-        @test zipper_descend_first_k_path!(z, 1) == true
+        reset!(z)
+        descend_to!(z, kpb("1"))
+        @test path_exists(z)
+        @test descend_first_k_path!(z, 1) == true
         @test kp_path(z) == kpb("1a")
-        @test zipper_descend_first_k_path!(z, 2) == true
+        @test descend_first_k_path!(z, 2) == true
         @test kp_path(z) == kpb("1a1A")
-        @test zipper_to_next_k_path!(z, 2) == true
+        @test to_next_k_path!(z, 2) == true
         @test kp_path(z) == kpb("1a1B")
-        @test zipper_to_next_k_path!(z, 2) == true
+        @test to_next_k_path!(z, 2) == true
         @test kp_path(z) == kpb("1a1C")
-        @test zipper_to_next_k_path!(z, 2) == false
+        @test to_next_k_path!(z, 2) == false
         @test kp_path(z) == kpb("1a")
-        @test zipper_to_next_k_path!(z, 1) == true
+        @test to_next_k_path!(z, 1) == true
         @test kp_path(z) == kpb("1b")
-        @test zipper_to_next_k_path!(z, 1) == true
+        @test to_next_k_path!(z, 1) == true
         @test kp_path(z) == kpb("1c")
-        @test zipper_to_next_k_path!(z, 1) == false
+        @test to_next_k_path!(z, 1) == false
         @test kp_path(z) == kpb("1")
         # inter-operating with descend_indexed_byte
-        zipper_reset!(z)
-        zipper_descend_to!(z, kpb("1"))
-        @test zipper_path_exists(z)
-        @test zipper_descend_first_k_path!(z, 1) == true
+        reset!(z)
+        descend_to!(z, kpb("1"))
+        @test path_exists(z)
+        @test descend_first_k_path!(z, 1) == true
         @test kp_path(z) == kpb("1a")
-        @test zipper_descend_indexed_byte!(z, 0)
+        @test descend_indexed_byte!(z, 0) !== nothing
         @test kp_path(z) == kpb("1a1")
-        @test zipper_descend_first_k_path!(z, 1) == true
+        @test descend_first_k_path!(z, 1) == true
         @test kp_path(z) == kpb("1a1A")
-        @test zipper_to_next_k_path!(z, 1) == true
+        @test to_next_k_path!(z, 1) == true
         @test kp_path(z) == kpb("1a1B")
-        @test zipper_to_next_k_path!(z, 1) == true
+        @test to_next_k_path!(z, 1) == true
         @test kp_path(z) == kpb("1a1C")
-        @test zipper_to_next_k_path!(z, 1) == false
+        @test to_next_k_path!(z, 1) == false
         @test kp_path(z) == kpb("1a1")
-        @test zipper_ascend!(z, 1)
+        @test ascend!(z, 1) == 1
         @test kp_path(z) == kpb("1a")
-        @test zipper_to_next_k_path!(z, 1) == true
+        @test to_next_k_path!(z, 1) == true
         @test kp_path(z) == kpb("1b")
-        @test zipper_to_next_k_path!(z, 1) == true
+        @test to_next_k_path!(z, 1) == true
         @test kp_path(z) == kpb("1c")
-        @test zipper_to_next_k_path!(z, 1) == false
+        @test to_next_k_path!(z, 1) == false
         @test kp_path(z) == kpb("1")
     end
 
@@ -188,9 +188,9 @@ kpb(s::String) = Vector{UInt8}(s)
             [192, 215, 69, 171, 218, 187, 202, 120, 92, 33, 14, 77, 34, 46, 40, 93, 135, 117, 152],
         ]
         z = kp_zipper(K_PATH_TEST4_KEYS, UInt8[])
-        zipper_descend_first_k_path!(z, 5)
+        descend_first_k_path!(z, 5)
         count = 1
-        while zipper_to_next_k_path!(z, 5)
+        while to_next_k_path!(z, 5)
             count += 1
             count > length(K_PATH_TEST4_KEYS) && break
         end
@@ -201,11 +201,11 @@ kpb(s::String) = Vector{UInt8}(s)
         keys = Vector{UInt8}[[3, 193, 4, 194, 1, 43, 3, 193, 8, 194, 1, 45, 194, 1, 46],
                              [3, 193, 4, 194, 1, 43, 3, 193, 34, 193]]
         z = kp_zipper(keys, UInt8[])
-        zipper_descend_to!(z, UInt8[3, 193, 4, 194, 1, 43, 3, 193, 8, 194, 1, 45, 194])
-        @test zipper_path_exists(z)
-        @test zipper_descend_first_k_path!(z, 2) == true
+        descend_to!(z, UInt8[3, 193, 4, 194, 1, 43, 3, 193, 8, 194, 1, 45, 194])
+        @test path_exists(z)
+        @test descend_first_k_path!(z, 2) == true
         @test kp_path(z) == UInt8[3, 193, 4, 194, 1, 43, 3, 193, 8, 194, 1, 45, 194, 1, 46]
-        @test zipper_to_next_k_path!(z, 2) == false
+        @test to_next_k_path!(z, 2) == false
         @test kp_path(z) == UInt8[3, 193, 4, 194, 1, 43, 3, 193, 8, 194, 1, 45, 194]
     end
 
@@ -216,39 +216,39 @@ kpb(s::String) = Vector{UInt8}(s)
 
     @testset "k_path_test6 (recursive k_path with token invalidation)" begin
         function test_loop(z, descend_f, ascend_f)
-            zipper_reset!(z)
+            reset!(z)
             P0 = UInt8[2, 197, 97, 120, 105, 111, 109, 3, 193, 61, 4, 193, 97, 192, 192, 3, 193]
             descend_f(z, P0)                                    # L0 descent
-            @test zipper_descend_first_k_path!(z, 1)
+            @test descend_first_k_path!(z, 1)
             @test kp_path(z) == vcat(P0, 75)
             P1 = UInt8[192, 3, 193, 84, 192, 3, 193]
             descend_f(z, P1)                                    # L1 descent
-            @test zipper_descend_first_k_path!(z, 1)
+            @test descend_first_k_path!(z, 1)
             @test kp_path(z) == vcat(P0, 75, P1, 75)
             P2 = UInt8[128, 131, 193]
             descend_f(z, P2)                                    # L2 descent
-            @test zipper_descend_first_k_path!(z, 1)
+            @test descend_first_k_path!(z, 1)
             @test kp_path(z) == K6[1]
-            @test !zipper_to_next_k_path!(z, 1)                 # L2 next and ascent
+            @test !to_next_k_path!(z, 1)                 # L2 next and ascent
             @test kp_path(z) == vcat(P0, 75, P1, 75, P2)
             ascend_f(z, 3)
-            @test !zipper_to_next_k_path!(z, 1)                 # L1 next and ascent
+            @test !to_next_k_path!(z, 1)                 # L1 next and ascent
             @test kp_path(z) == vcat(P0, 75, P1)
             ascend_f(z, 7)
-            @test zipper_to_next_k_path!(z, 1)                  # L0 next
+            @test to_next_k_path!(z, 1)                  # L0 next
             @test kp_path(z) == vcat(P0, 84)
             ascend_f(z, 17)
         end
         z = kp_zipper(K6, UInt8[])
         # descend_to & ascend
-        test_loop(z, (z, p) -> (zipper_descend_to!(z, p); @test zipper_path_exists(z)),
-            (z, n) -> @test zipper_ascend!(z, n))
+        test_loop(z, (z, p) -> (descend_to!(z, p); @test path_exists(z)),
+            (z, n) -> @test ascend!(z, n) == n)
         # descend_to_byte & ascend_byte
-        test_loop(z, (z, p) -> for x in p; zipper_descend_to_byte!(z, x); @test zipper_path_exists(z); end,
-            (z, n) -> for _ in 1:n; @test zipper_ascend_byte!(z); end)
+        test_loop(z, (z, p) -> for x in p; descend_to_byte!(z, x); @test path_exists(z); end,
+            (z, n) -> for _ in 1:n; @test ascend_byte!(z); end)
         # descend_first_byte & ascend_byte
-        test_loop(z, (z, p) -> for _ in p; @test zipper_descend_first_byte!(z); end,
-            (z, n) -> for _ in 1:n; @test zipper_ascend_byte!(z); end)
+        test_loop(z, (z, p) -> for _ in p; @test descend_first_byte!(z) !== nothing; end,
+            (z, n) -> for _ in 1:n; @test ascend_byte!(z); end)
     end
 
     @testset "k_path_test7 (descend and re-ascend one step at a time)" begin
@@ -256,37 +256,37 @@ kpb(s::String) = Vector{UInt8}(s)
         key = K6[1]
         for i in 0:(length(key) - 1)
             @test kp_path(z) == key[1:i]
-            @test zipper_descend_first_k_path!(z, 1)
+            @test descend_first_k_path!(z, 1)
         end
         for i in (length(key) - 1):-1:0
             @test kp_path(z) == key[1:(i + 1)]
             if i != 17
-                @test !zipper_to_next_k_path!(z, 1)
+                @test !to_next_k_path!(z, 1)
             else
-                @test zipper_to_next_k_path!(z, 1)
-                @test !zipper_to_next_k_path!(z, 1)
+                @test to_next_k_path!(z, 1)
+                @test !to_next_k_path!(z, 1)
             end
         end
     end
 
     @testset "k_path_test8 (after descend_to_byte)" begin
         z = kp_zipper(["ABCDEFGHIJKLMNOPQRSTUVWXYZ", "ab"], UInt8[])
-        zipper_reset!(z)
-        zipper_descend_to_byte!(z, UInt8('A'))
-        @test zipper_path_exists(z) == true
-        @test zipper_descend_first_k_path!(z, 1) == true
+        reset!(z)
+        descend_to_byte!(z, UInt8('A'))
+        @test path_exists(z) == true
+        @test descend_first_k_path!(z, 1) == true
         @test kp_path(z) == kpb("AB")
-        @test zipper_to_next_k_path!(z, 1) == false
+        @test to_next_k_path!(z, 1) == false
         @test kp_path(z) == kpb("A")
     end
 
     @testset "k_path_test9 (subtrie without further branches; outer trie branches)" begin
         keys = Vector{UInt8}[[2, 194, 1, 1, 193, 5], [3, 194, 1, 0, 193, 6, 193, 5], [3, 193, 4, 193]]
         z = kp_zipper(keys, UInt8[2, 194])
-        zipper_reset!(z)
-        @test zipper_descend_first_k_path!(z, 1) == true
+        reset!(z)
+        @test descend_first_k_path!(z, 1) == true
         @test kp_path(z) == UInt8[1]
-        @test zipper_to_next_k_path!(z, 1) == false
+        @test to_next_k_path!(z, 1) == false
         @test kp_path(z) == UInt8[]
     end
 
@@ -294,25 +294,25 @@ kpb(s::String) = Vector{UInt8}(s)
         long0 = vcat(zeros(UInt8, 127), UInt8[1])   # 128 bytes, as upstream
         long1 = vcat(zeros(UInt8, 127), UInt8[2])
         z = kp_zipper([long0, long1], UInt8[])
-        zipper_reset!(z)
+        reset!(z)
         k = length(long0)
-        @test zipper_descend_first_k_path!(z, k) == true
+        @test descend_first_k_path!(z, k) == true
         @test kp_path(z) == long0
-        @test zipper_to_next_k_path!(z, k) == true
+        @test to_next_k_path!(z, k) == true
         @test kp_path(z) == long1
-        @test zipper_to_next_k_path!(z, k) == false
+        @test to_next_k_path!(z, k) == false
         @test kp_path(z) == UInt8[]
     end
 
     # ── the P0 #1 reproducer (not upstream's): a childless focus must return false and stay put ──
     @testset "descend_first_k_path from a childless focus returns (P0 #1)" begin
         z = kp_zipper(["a", "b"], UInt8[])
-        zipper_descend_to!(z, kpb("a"))
-        @test zipper_descend_first_k_path!(z, 1) == false
+        descend_to!(z, kpb("a"))
+        @test descend_first_k_path!(z, 1) == false
         @test kp_path(z) == kpb("a")
         z = kp_zipper(["a"], UInt8[])
-        zipper_descend_to!(z, kpb("a"))
-        @test zipper_descend_first_k_path!(z, 2) == false
+        descend_to!(z, kpb("a"))
+        @test descend_first_k_path!(z, 2) == false
         @test kp_path(z) == kpb("a")
     end
 
@@ -320,8 +320,8 @@ kpb(s::String) = Vector{UInt8}(s)
     @testset "to_next_k_path never repeats the k-path it resumes from (#526)" begin
         z = kp_zipper([UInt8[0, 2, 1, 0, 3], UInt8[1], UInt8[3, 2], UInt8[3, 2, 0, 0]], UInt8[])
         walk = Vector{UInt8}[]
-        zipper_descend_first_k_path!(z, 2) && push!(walk, kp_path(z))
-        while zipper_to_next_k_path!(z, 2) && length(walk) < 8
+        descend_first_k_path!(z, 2) && push!(walk, kp_path(z))
+        while to_next_k_path!(z, 2) && length(walk) < 8
             push!(walk, kp_path(z))
         end
         @test walk == [UInt8[0, 2], UInt8[3, 2]]
@@ -332,18 +332,18 @@ kpb(s::String) = Vector{UInt8}(s)
     # token behind — the next to_next_val from the base still sees the values below it
     @testset "to_next_val after a finished k-path walk (bdbdfdc)" begin
         z = kp_zipper(["ab", "ac", "b"], UInt8[])
-        @test zipper_descend_first_k_path!(z, 2)
-        while zipper_to_next_k_path!(z, 2) end
+        @test descend_first_k_path!(z, 2)
+        while to_next_k_path!(z, 2) end
         @test kp_path(z) == UInt8[]
-        @test zipper_to_next_val!(z)
+        @test to_next_val!(z)
         @test kp_path(z) == kpb("ab")
     end
 
     # upstream 8082317: k deeper than the focus resets the zipper and returns false
     @testset "to_next_k_path with k > depth resets (upstream 8082317)" begin
         z = kp_zipper(["abc", "abd"], UInt8[])
-        zipper_descend_to!(z, kpb("ab"))
-        @test zipper_to_next_k_path!(z, 3) == false
+        descend_to!(z, kpb("ab"))
+        @test to_next_k_path!(z, 3) == false
         @test kp_path(z) == UInt8[]
     end
 end

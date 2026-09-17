@@ -26,7 +26,7 @@ const PM = PathMaps.PathMap
     for k in ["a", "ab", "abc", "abcd", "abcdefghi", "abcdefghij", "abz", "abcx"]
         p = Vector{UInt8}(codeunits(k))
         @test PathMaps.path_exists_at(m, p) ==
-            PathMaps.zipper_path_exists(PathMaps.read_zipper_at_path(m, p))
+            PathMaps.path_exists(PathMaps.read_zipper_at_path(m, p))
     end
 
     # single long key: EVERY prefix length exists (upstream: TTTTTTTTTTTTTTTT)

@@ -6,9 +6,9 @@ PR #35 (commits ca42077…3e4a2ba, "zipper_join_n").
 
 ## Public API
 
-    wz_join_n!(out, zs)      — N-way join   (∨, least-upper-bound, union-like)
-    wz_meet_n!(out, zs)      — N-way meet   (∧, greatest-lower-bound, intersection)
-    wz_subtract_n!(out, zs)  — N-way subtract (left-associative, lhs \\ rhs1 \\ rhs2 …)
+    zipper_n_join!(out, zs)      — N-way join   (∨, least-upper-bound, union-like)
+    zipper_n_meet!(out, zs)      — N-way meet   (∧, greatest-lower-bound, intersection)
+    zipper_n_subtract!(out, zs)  — N-way subtract (left-associative, lhs \\ rhs1 \\ rhs2 …)
 
 All three accept:
   out :: WriteZipperCore{V,A}   — output zipper (written during traversal)
@@ -135,9 +135,9 @@ Both zippers are returned to their entry position after the call.
 
 Handles three cases for each child byte `b`:
 
- 1. **Value-only leaf** (`wz_is_val` = true, `_wz_get_focus_anr` = ANRNone):
-    the value is stored in the parent slot; copy it with `wz_set_val!`.
- 2. **Subtrie-only node** (`wz_is_val` = false, ANR ≠ None):
+ 1. **Value-only leaf** (`is_val` = true, `_wz_get_focus_anr` = ANRNone):
+    the value is stored in the parent slot; copy it with `set_val!`.
+ 2. **Subtrie-only node** (`is_val` = false, ANR ≠ None):
     graft the child subtrie with `_wz_graft_internal!`.
  3. **Both value and subtrie** (both true):
     set the value AND graft the subtrie (they are stored independently
@@ -153,15 +153,15 @@ Called by `_zm_on_single!` and `_zm_on_id!`.
 function _zm_graft_children_masked!(
     out::WriteZipperCore{V, A}, src::WriteZipperCore{V, A}, range::ByteMask
 ) where {V, A}
-    active_mask = range & wz_child_mask(src)
+    active_mask = range & child_mask(src)
     b = indexed_bit(active_mask, 0, true)
     while b !== nothing
-        wz_descend_to_byte!(src, b)
-        wz_descend_to_byte!(out, b)
+        descend_to_byte!(src, b)
+        descend_to_byte!(out, b)
 
         # Copy value (covers value-only leaves and nodes that have both)
-        if wz_is_val(src)
-            wz_set_val!(out, wz_get_val(src))
+        if is_val(src)
+            set_val!(out, val(src))
         end
         # Copy child subtrie (covers branch nodes and nodes that have both)
         focus_anr = _wz_get_focus_anr(src)
@@ -169,8 +169,8 @@ function _zm_graft_children_masked!(
             _wz_graft_internal!(out, into_option(focus_anr))
         end
 
-        wz_ascend_byte!(out)
-        wz_ascend_byte!(src)
+        ascend_byte!(out)
+        ascend_byte!(src)
         b = next_bit(active_mask, b)
     end
 end
@@ -399,17 +399,17 @@ function _zm_merge_n!(
 
     # ── combine root values ───────────────────────────────────────────
     let vals = (
-            wz_is_val(zs[i + 1]) ? wz_get_val(zs[i + 1]) : nothing for i in active_bits()
+            is_val(zs[i + 1]) ? val(zs[i + 1]) : nothing for i in active_bits()
         )
         combined = _zm_combine_n(policy, vals)
-        combined !== nothing && wz_set_val!(out, combined)
+        combined !== nothing && set_val!(out, combined)
     end
 
     # ── per-zipper state: current child mask + next byte ──────────────
     masks = Vector{ByteMask}(undef, N)
     bytes = Vector{Union{Nothing, UInt8}}(undef, N)
     for i in active_bits()
-        masks[i + 1] = wz_child_mask(zs[i + 1])
+        masks[i + 1] = child_mask(zs[i + 1])
         bytes[i + 1] = indexed_bit(masks[i + 1], 0, true)
     end
 
@@ -458,32 +458,32 @@ function _zm_merge_n!(
 
             if frontier == active
                 # ── Case A: full match — descend all ──────────────────
-                wz_descend_to_byte!(out, a)
-                for_each_active(i -> wz_descend_to_byte!(zs[i + 1], a))
+                descend_to_byte!(out, a)
+                for_each_active(i -> descend_to_byte!(zs[i + 1], a))
 
                 # shared-node check after descent
                 if _wm_all_share(zs, active)
                     _zm_on_id!(policy, zs[first_active_idx() + 1], out)
                     for_each_active(i -> begin
-                        wz_ascend_byte!(zs[i + 1])
+                        ascend_byte!(zs[i + 1])
                         bytes[i + 1] = next_bit(masks[i + 1], a)
                     end)
-                    wz_ascend_byte!(out)
+                    ascend_byte!(out)
                     continue  # continue 'merge_level
                 end
 
                 # combine values
                 let vals = (
-                        wz_is_val(zs[i + 1]) ? wz_get_val(zs[i + 1]) : nothing for
+                        is_val(zs[i + 1]) ? val(zs[i + 1]) : nothing for
                         i in active_bits()
                     )
                     combined = _zm_combine_n(policy, vals)
-                    combined !== nothing && wz_set_val!(out, combined)
+                    combined !== nothing && set_val!(out, combined)
                 end
 
                 # refresh masks
                 for_each_active(i -> begin
-                    masks[i + 1] = wz_child_mask(zs[i + 1])
+                    masks[i + 1] = child_mask(zs[i + 1])
                     bytes[i + 1] = indexed_bit(masks[i + 1], 0, true)
                 end)
                 k += 1
@@ -511,14 +511,14 @@ function _zm_merge_n!(
             else
                 # ── Case C: partial overlap — maybe descend subset ────
                 if _zm_descend_on_equal(policy, frontier)
-                    wz_descend_to_byte!(out, a)
-                    for_each_frontier(i -> wz_descend_to_byte!(zs[i + 1], a))
+                    descend_to_byte!(out, a)
+                    for_each_frontier(i -> descend_to_byte!(zs[i + 1], a))
 
                     # Recurse on the subset (same array, smaller mask)
                     _zm_merge_n!(policy, zs, frontier, out)
 
-                    for_each_frontier(i -> wz_ascend_byte!(zs[i + 1]))
-                    wz_ascend_byte!(out)
+                    for_each_frontier(i -> ascend_byte!(zs[i + 1]))
+                    ascend_byte!(out)
                 end
                 # advance all frontier bits
                 for_each_frontier(i -> begin
@@ -531,15 +531,15 @@ function _zm_merge_n!(
         k == 0 && break
 
         # get byte we descended on from the first active zipper's path
-        fst_path = wz_path(zs[first_active_idx() + 1])
+        fst_path = path(zs[first_active_idx() + 1])
         byte_from = fst_path[end]
 
         for_each_active(i -> begin
-            wz_ascend_byte!(zs[i + 1])
-            masks[i + 1] = wz_child_mask(zs[i + 1])
+            ascend_byte!(zs[i + 1])
+            masks[i + 1] = child_mask(zs[i + 1])
             bytes[i + 1] = next_bit(masks[i + 1], byte_from)
         end)
-        wz_ascend_byte!(out)
+        ascend_byte!(out)
         k -= 1
     end  # 'ascend
 end
@@ -549,7 +549,7 @@ end
 # =====================================================================
 
 """
-    wz_join_n!(out, zs)
+    zipper_n_join!(out, zs)
 
 N-way join (∨, least-upper-bound, union-like) of all tries in `zs`.
 Result is written to `out`.  All input zippers are navigated in place and
@@ -557,17 +557,17 @@ restored to root on return.
 
 Mirrors `zipper_n_join` in upstream PathMap `src/experimental/zipper_algebra.rs`.
 """
-function wz_join_n!(
+function zipper_n_join!(
     out::WriteZipperCore{V, A}, zs::AbstractVector{<:WriteZipperCore{V, A}}
 ) where {V, A}
     isempty(zs) && return nothing
-    length(zs) <= 64 || error("wz_join_n!: at most 64 inputs supported")
+    length(zs) <= 64 || error("zipper_n_join!: at most 64 inputs supported")
     active = (UInt64(1) << length(zs)) - UInt64(1)
     _zm_merge_n!(JoinP(), zs, active, out)
 end
 
 """
-    wz_meet_n!(out, zs)
+    zipper_n_meet!(out, zs)
 
 N-way meet (∧, greatest-lower-bound, intersection) of all tries in `zs`.
 Only paths present in ALL inputs appear in `out`.  All input zippers are
@@ -575,17 +575,17 @@ navigated in place and restored to root on return.
 
 Mirrors `zipper_n_meet` in upstream PathMap `src/experimental/zipper_algebra.rs`.
 """
-function wz_meet_n!(
+function zipper_n_meet!(
     out::WriteZipperCore{V, A}, zs::AbstractVector{<:WriteZipperCore{V, A}}
 ) where {V, A}
     isempty(zs) && return nothing
-    length(zs) <= 64 || error("wz_meet_n!: at most 64 inputs supported")
+    length(zs) <= 64 || error("zipper_n_meet!: at most 64 inputs supported")
     active = (UInt64(1) << length(zs)) - UInt64(1)
     _zm_merge_n!(MeetP(), zs, active, out)
 end
 
 """
-    wz_subtract_n!(out, zs)
+    zipper_n_subtract!(out, zs)
 
 Left-associative N-way subtract: `zs[1] \\ zs[2] \\ … \\ zs[N]`.
 `zs[1]` is the base set; subsequent inputs remove matching structure.
@@ -594,11 +594,11 @@ restored to root on return.
 
 Mirrors `zipper_n_subtract` in upstream PathMap `src/experimental/zipper_algebra.rs`.
 """
-function wz_subtract_n!(
+function zipper_n_subtract!(
     out::WriteZipperCore{V, A}, zs::AbstractVector{<:WriteZipperCore{V, A}}
 ) where {V, A}
     isempty(zs) && return nothing
-    length(zs) <= 64 || error("wz_subtract_n!: at most 64 inputs supported")
+    length(zs) <= 64 || error("zipper_n_subtract!: at most 64 inputs supported")
     active = (UInt64(1) << length(zs)) - UInt64(1)
     _zm_merge_n!(SubtractP(), zs, active, out)
 end
@@ -608,5 +608,5 @@ end
 # =====================================================================
 
 export ZipperMergePolicy, JoinP, MeetP, SubtractP
-export wz_join_n!, wz_meet_n!, wz_subtract_n!
+export zipper_n_join!, zipper_n_meet!, zipper_n_subtract!
 export _wm_shared_node_id, _zm_graft_children_masked!

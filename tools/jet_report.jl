@@ -80,51 +80,51 @@ end
 
 # Entry points chosen to cover every algebra path plus the two prune sites fixed on 2026-08-01.
 _probe(
-    "wz_restrict!",
+    "restrict!",
     () -> (m=_mk(["aa", "ab", "b"]); s=_mk(["aa", "b"]);
-        @report_call PathMaps.wz_restrict!(PathMaps.write_zipper(m),
+        @report_call PathMaps.restrict!(PathMaps.write_zipper(m),
             PathMaps.ANRBorrowedRc{UV, GA}(s.root)))
 )
 _probe(
-    "wz_meet_into!",
+    "meet_into!",
     () -> (m=_mk(["aa", "b"]); s=_mk(["a", "b"]);
-        @report_call PathMaps.wz_meet_into!(PathMaps.write_zipper(m),
+        @report_call PathMaps.meet_into!(PathMaps.write_zipper(m),
             PathMaps.ANRBorrowedRc{UV, GA}(s.root), true, s.root_val))
 )
 _probe(
-    "wz_subtract_into!",
+    "subtract_into!",
     () -> (m=_mk(["aa", "b"]); s=_mk(["a", "b"]);
-        @report_call PathMaps.wz_subtract_into!(PathMaps.write_zipper(m),
+        @report_call PathMaps.subtract_into!(PathMaps.write_zipper(m),
             PathMaps.ANRBorrowedRc{UV, GA}(s.root), true, s.root_val))
 )
 _probe(
-    "wz_join_map_into!",
+    "join_map_into!",
     () -> (m=_mk(["aa", "b"]); s=_mk(["a", "b"]);
-        @report_call PathMaps.wz_join_map_into!(PathMaps.write_zipper(m), s))
+        @report_call PathMaps.join_map_into!(PathMaps.write_zipper(m), s))
 )
 _probe(
-    "wz_graft_map!",
+    "graft_map!",
     () -> (m=_mk(["aa", "b"]); s=_mk(["a", "b"]);
-        @report_call PathMaps.wz_graft_map!(PathMaps.write_zipper(m), s))
+        @report_call PathMaps.graft_map!(PathMaps.write_zipper(m), s))
 )
 _probe(
-    "wz_join_k_path_into!",
+    "join_k_path_into!",
     () -> (m=_mk(["abc"]);
-        @report_call PathMaps.wz_join_k_path_into!(
+        @report_call PathMaps.join_k_path_into!(
             PathMaps.write_zipper_at_path(m, _b("ab")), 5, true
         ))
 )
 _probe(
-    "wz_remove_val!",
+    "remove_val!",
     () -> (m=_mk(["aa", "ab"]);
-        @report_call PathMaps.wz_remove_val!(
+        @report_call PathMaps.remove_val!(
             PathMaps.write_zipper_at_path(m, _b("aa")), true
         ))
 )
 _probe(
-    "wz_take_map!",
+    "take_map!",
     () -> (m=_mk(["aa", "ab"]);
-        @report_call PathMaps.wz_take_map!(PathMaps.write_zipper_at_path(m, _b("a")), true))
+        @report_call PathMaps.take_map!(PathMaps.write_zipper_at_path(m, _b("a")), true))
 )
 _probe(
     "prestrict_dyn",

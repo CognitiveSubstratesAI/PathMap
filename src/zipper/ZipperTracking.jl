@@ -131,12 +131,12 @@ function _check_for_write_conflict(
     for i in 0:length(path)
         prefix = view(path, 1:i)
         z = read_zipper_at_path(written_paths, prefix)
-        zipper_is_val(z) && return _write_conflict(collect(prefix))
+        is_val(z) && return _write_conflict(collect(prefix))
     end
     # Check descendant locks: any val in subtrie at/below path
     z = write_zipper(written_paths)
-    wz_descend_to!(z, path)
-    wz_val_count(z) > 0 && return _write_conflict(path)
+    descend_to!(z, path)
+    val_count(z) > 0 && return _write_conflict(path)
     nothing
 end
 
@@ -153,16 +153,16 @@ function _check_for_read_conflict(
     for i in 0:length(path)
         prefix = view(path, 1:i)
         z = read_zipper_at_path(read_paths, prefix)
-        if zipper_is_val(z)
-            v = zipper_val(z)
+        if is_val(z)
+            v = val(z)
             v !== nothing && return _read_conflict(v, collect(prefix))
         end
     end
     # Check descendant locks
     z = write_zipper(read_paths)
-    wz_descend_to!(z, path)
-    if wz_val_count(z) > 0
-        v = wz_get_val(z)
+    descend_to!(z, path)
+    if val_count(z) > 0
+        v = val(z)
         cnt = v !== nothing ? v : UInt32(1)
         return _read_conflict(cnt, path)
     end

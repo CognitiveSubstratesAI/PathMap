@@ -11,12 +11,12 @@
 #
 # We had BOTH BACKWARDS, in opposite directions, and each was invisible to a different gate:
 #
-#   * `wz_remove_val!` used the public one. Its `node_pruned > 0` gate NEVER OPENS here, because
+#   * `remove_val!` used the public one. Its `node_pruned > 0` gate NEVER OPENS here, because
 #     `node_remove_val!(focus_node, nk, prune)` has already taken the payload whole — so we never
 #     pruned ancestors at all and a `parent -> empty-child` link upstream deletes survived. The fuzz
 #     corpus can express this shape but never generated it: it needs two pruning REMOVEVALs emptying
 #     one shared node plus a repositioning op, which is deep for `n_ops <= 6` at REMOVEVAL's weight.
-#   * `wz_join_k_path_into!` used the internal one, skipping the node-level dangling removal. The
+#   * `join_k_path_into!` used the internal one, skipping the node-level dangling removal. The
 #     corpus could not reach it at all — `join_k_path_into` is not one of the 12 generated ops. That
 #     one is pinned in runtests.jl via `path_exists_at`, since a dangling path is invisible to the
 #     dump.
@@ -36,7 +36,7 @@ include(joinpath(@__DIR__, "differential", "run_fuzz.jl"))
     prefix = "A aa ab ba\nAROOTVAL 0\n"
 
     @testset "remove_val(prune) prunes ancestors — visible through TAKEMAP" begin
-        # `wz_take_map!` calls `wz_remove_val!(z, prune)`, so TAKEMAP inherited the defect.
+        # `take_map!` calls `remove_val!(z, prune)`, so TAKEMAP inherited the defect.
         # The tell is None vs an EMPTY MAP: upstream finds nothing at "a", we found a husk.
         out = fuzz_run_text(
             prefix * "S \nSROOTVAL 0\nORIGIN -\n" *

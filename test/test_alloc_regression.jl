@@ -5,7 +5,7 @@
 # these are stable regression bounds, not flaky runtime measurements. Locks the optimized read path:
 # the residual allocs (get_val_at / path_exists_at = 8) are the `node_get_child_nb` Tuple boxing +
 # `Int64` Union returns, eliminable only by the ADR-001 isbits node slab (deferred) — we assert they
-# do NOT grow. `zipper_path == 0` is a genuine zero-alloc invariant the coref de-box (MORK 1d7599b:
+# do NOT grow. `path == 0` is a genuine zero-alloc invariant the coref de-box (MORK 1d7599b:
 # S1 `_coref_path_length`, S5 `@view`) builds on. AllocCheck is NOT a PathMap dependency — it is
 # loaded OPTIONALLY from the developer's global environment (no hardcoded UUID in Project.toml); the
 # guard runs in a dev `julia --project=.` run and skips cleanly where AllocCheck is absent. (A Julia /
@@ -32,7 +32,7 @@ if _HAS_ALLOCCHECK
         nallocs(f, ts) = length(AllocCheck.check_allocs(f, ts; ignore_throw=true))
 
         # zero-alloc INVARIANT — the coref de-box S1 (_coref_path_length) + S5 (@view) rely on this
-        @test nallocs(PathMaps.zipper_path, (typeof(rz),)) == 0
+        @test nallocs(PathMaps.path, (typeof(rz),)) == 0
 
         # read-path residual — must not GROW beyond the measured optimized floor (ADR-001-gated:
         # node_get_child_nb Tuple boxing + Int64 Union returns → zero only under the isbits node slab)
@@ -48,9 +48,9 @@ if _HAS_ALLOCCHECK
         @test nallocs(PathMaps.path_exists_at, (typeof(m), Vector{UInt8})) <= 11
 
         # cheap read-cursor primitives — locked at their measured floors
-        @test nallocs(PathMaps.zipper_child_mask, (typeof(rz),)) <= 4
-        @test nallocs(PathMaps.zipper_ascend_byte!, (typeof(rz),)) <= 3
-        @test nallocs(PathMaps.zipper_val, (typeof(rz),)) <= 4
+        @test nallocs(PathMaps.child_mask, (typeof(rz),)) <= 4
+        @test nallocs(PathMaps.ascend_byte!, (typeof(rz),)) <= 3
+        @test nallocs(PathMaps.val, (typeof(rz),)) <= 4
 
         # write path: type-cascade de-box via call-site assertions (2026-07-06) took set_val_at!
         # dynamic dispatch 30 → 20 (descend `node_get_child`) → 17 (`clone_self` ×2 + the `node_set_val!`

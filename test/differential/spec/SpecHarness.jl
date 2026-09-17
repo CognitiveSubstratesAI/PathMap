@@ -85,65 +85,50 @@ byte_mask(bs::Vector{UInt8})::ByteMask = foldl((m, b) -> ByteMask(PathMaps.with_
 const RZ = ReadZipperCore
 const WZ = WriteZipperCore
 
-sp_path(z::RZ) = zipper_path(z)
-sp_path(z::WZ) = wz_path(z)
-sp_origin(z::RZ) = zipper_origin_path(z)
+sp_path(z::RZ) = path(z)
+sp_path(z::WZ) = path(z)
+sp_origin(z::RZ) = origin_path(z)
 sp_origin(z::WZ) = z.prefix_buf
-sp_exists(z::RZ) = zipper_path_exists(z)
-sp_exists(z::WZ) = wz_path_exists(z)
-sp_val(z::RZ) = zipper_val(z)
-sp_val(z::WZ) = wz_get_val(z)
-sp_child_count(z::RZ) = zipper_child_count(z)
-sp_child_count(z::WZ) = wz_child_count(z)
-sp_val_count(z::RZ) = zipper_val_count(z)
-sp_val_count(z::WZ) = wz_val_count(z)
+sp_exists(z::RZ) = path_exists(z)
+sp_exists(z::WZ) = path_exists(z)
+sp_val(z::RZ) = val(z)
+sp_val(z::WZ) = val(z)
+sp_child_count(z::RZ) = child_count(z)
+sp_child_count(z::WZ) = child_count(z)
+sp_val_count(z::RZ) = val_count(z)
+sp_val_count(z::WZ) = val_count(z)
 
-sp_descend_to!(z::RZ, p) = zipper_descend_to!(z, p)
-sp_descend_to!(z::WZ, p) = wz_descend_to!(z, p)
-sp_descend_to_byte!(z::RZ, b) = zipper_descend_to_byte!(z, b)
-sp_descend_to_byte!(z::WZ, b) = wz_descend_to_byte!(z, b)
-sp_ascend_byte!(z::RZ) = zipper_ascend_byte!(z)
-sp_ascend_byte!(z::WZ) = wz_ascend_byte!(z)
-sp_reset!(z::RZ) = zipper_reset!(z)
-sp_reset!(z::WZ) = wz_reset!(z)
-sp_descend_first_byte!(z::RZ) = zipper_descend_first_byte!(z)
-sp_descend_first_byte!(z::WZ) = wz_descend_first_byte!(z)
-sp_descend_indexed_byte!(z::RZ, i) = zipper_descend_indexed_byte!(z, i)
-sp_descend_indexed_byte!(z::WZ, i) = wz_descend_indexed_byte!(z, i)
-sp_to_next_sibling_byte!(z::RZ) = zipper_to_next_sibling_byte!(z)
-sp_to_next_sibling_byte!(z::WZ) = wz_to_next_sibling_byte!(z)
-sp_to_prev_sibling_byte!(z::RZ) = zipper_to_prev_sibling_byte!(z)
-sp_to_prev_sibling_byte!(z::WZ) = wz_to_prev_sibling_byte!(z)
-
-"Both ascend functions return Bool; the model returns the number of bytes actually ascended."
-function sp_ascend!(z, n::Int)::Int
-    before = length(sp_path(z))
-    z isa RZ ? zipper_ascend!(z, n) : wz_ascend!(z, n)
-    before - length(sp_path(z))
-end
+sp_descend_to!(z::RZ, p) = descend_to!(z, p)
+sp_descend_to!(z::WZ, p) = descend_to!(z, p)
+sp_descend_to_byte!(z::RZ, b) = descend_to_byte!(z, b)
+sp_descend_to_byte!(z::WZ, b) = descend_to_byte!(z, b)
+sp_ascend_byte!(z::RZ) = ascend_byte!(z)
+sp_ascend_byte!(z::WZ) = ascend_byte!(z)
+sp_reset!(z::RZ) = reset!(z)
+sp_reset!(z::WZ) = reset!(z)
+sp_descend_first_byte!(z::RZ) = descend_first_byte!(z)
+sp_descend_first_byte!(z::WZ) = descend_first_byte!(z)
+sp_descend_indexed_byte!(z::RZ, i) = descend_indexed_byte!(z, i)
+sp_descend_indexed_byte!(z::WZ, i) = descend_indexed_byte!(z, i)
+sp_to_next_sibling_byte!(z::RZ) = to_next_sibling_byte!(z)
+sp_to_next_sibling_byte!(z::WZ) = to_next_sibling_byte!(z)
+sp_to_prev_sibling_byte!(z::RZ) = to_prev_sibling_byte!(z)
+sp_to_prev_sibling_byte!(z::WZ) = to_prev_sibling_byte!(z)
 
 # ── adapters: our API's return conventions -> the model's ─────────────────────────────────────────────
-"Run a Bool-returning move; the model returns the byte moved to (the new last path byte), or nothing."
-function sp_moved_byte(z, move)::Union{UInt8, Nothing}
-    moved = move(z)
-    p = sp_path(z)
-    moved && !isempty(p) ? p[end] : nothing
-end
-
-"Our `ascend_until*` return Bool; the model returns the number of bytes ascended."
-function sp_ascended(z, move)::Int
-    before = length(zipper_path(z))
-    move(z)
-    before - length(zipper_path(z))
-end
+# Since the 0.4.0 zipper-API port these are IDENTITIES: `ascend*` already return the byte count and the
+# byte-moves already return `Union{Nothing,UInt8}`, exactly as the Lean model specifies.
+sp_ascend!(z, n::Int)::Int = ascend!(z, n)
+sp_moved_byte(z, move)::Union{UInt8, Nothing} = move(z)
+sp_ascended(z, move)::Int = move(z)
 
 "A whole k-path walk, capped at 32 stops (mirrors Fuzz.kWalk)."
 function sp_k_walk!(z, k::Int)::Vector{Vector{UInt8}}
     out = Vector{UInt8}[]
-    zipper_descend_first_k_path!(z, k) || return out
-    push!(out, collect(zipper_path(z)))
-    while length(out) < 32 && zipper_to_next_k_path!(z, k)
-        push!(out, collect(zipper_path(z)))
+    descend_first_k_path!(z, k) || return out
+    push!(out, collect(path(z)))
+    while length(out) < 32 && to_next_k_path!(z, k)
+        push!(out, collect(path(z)))
     end
     out
 end
@@ -185,9 +170,9 @@ focus_map(st::SpecState, z::RZ) = st.m1
 focus_map(st::SpecState, z::WZ) = st.m0
 sp_focus_ref(st::SpecState, z, extra::Vector{UInt8} = UInt8[]) =
     trie_ref_at_path(focus_map(st, z), vcat(collect(sp_origin(z)), extra))
-src_anr(st::SpecState, extra::Vector{UInt8} = UInt8[]) = tr_get_focus_anr(sp_focus_ref(st, st.rz, extra))
-src_val(st::SpecState) = tr_get_val(sp_focus_ref(st, st.rz))
-src_map(st::SpecState) = tr_make_map(sp_focus_ref(st, st.rz))
+src_anr(st::SpecState, extra::Vector{UInt8} = UInt8[]) = get_focus(sp_focus_ref(st, st.rz, extra))
+src_val(st::SpecState) = get_val(sp_focus_ref(st, st.rz))
+src_map(st::SpecState) = make_map(sp_focus_ref(st, st.rz))
 
 """
 Every existing location at and below the map root, depth-first (= lexicographic), as `hex:val`.
@@ -199,22 +184,22 @@ dump_map(m::PathMap{UInt64})::String = dump_walk(read_zipper(m))
 "The subtrie at `z`'s focus, via a forked read zipper (the model's `dumpAt trie focus`)."
 function sp_dump_focus(st::SpecState, z)::String
     t = sp_focus_ref(st, z)
-    tr_path_exists(t) || return "_:-"      # the model lists the (absent) focus itself only
-    dump_walk(tr_fork_read_zipper(t))
+    path_exists(t) || return "_:-"      # the model lists the (absent) focus itself only
+    dump_walk(fork_read_zipper(t))
 end
 
 function dump_walk(z::RZ)::String
     lines = String[]
     function walk()
         length(lines) >= DUMP_CAP && return
-        push!(lines, string(hex_path(zipper_path(z)), ":", show_val(zipper_val(z))))
-        mask = zipper_child_mask(z)
+        push!(lines, string(hex_path(path(z)), ":", show_val(val(z))))
+        mask = child_mask(z)
         for b in 0x00:0xff
             length(lines) >= DUMP_CAP && return
             PathMaps.test_bit(mask, b) || continue
-            zipper_descend_to_byte!(z, b)
+            descend_to_byte!(z, b)
             walk()
-            zipper_ascend_byte!(z)
+            ascend_byte!(z)
         end
     end
     walk()
@@ -235,7 +220,7 @@ end
 function create_root!(m::PathMap{UInt64}, r::Vector{UInt8})
     isempty(r) && return
     wz = write_zipper_at_path(m, r)
-    wz_create_path!(wz)
+    create_path!(wz)
     nothing
 end
 

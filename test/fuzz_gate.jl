@@ -18,7 +18,7 @@
 # to the ORIGINAL port commit (e34ed80, 2026-04-24) — this is a pre-existing population being
 # drained, not new breakage, and the fuzzer is what makes its SIZE visible instead of guessed.
 #
-# An EXCEPTION counts as a divergence, never a skip — `wz_take_map!` threw MethodError on its
+# An EXCEPTION counts as a divergence, never a skip — `take_map!` threw MethodError on its
 # primary path for months, and a harness that treated a throw as "not applicable" would have
 # hidden exactly that.
 #

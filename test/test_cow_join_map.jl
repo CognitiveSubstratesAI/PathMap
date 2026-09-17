@@ -1,4 +1,4 @@
-# test_cow_join_map.jl — `wz_join_map_into!` must not let later writes corrupt the SOURCE map.
+# test_cow_join_map.jl — `join_map_into!` must not let later writes corrupt the SOURCE map.
 #
 # WHY THIS FILE EXISTS. On 2026-08-01 a profiling-driven change made `clone_slot{0,1}_payload`
 # shallow (sharing a child subtrie by refcount instead of `deepcopy`-ing it). It was a large,
@@ -44,7 +44,7 @@ end
         a = _build(2_000, "a")
         b = _build(2_000, "b")
         z = PathMaps.write_zipper(deepcopy(a))
-        PathMaps.wz_join_map_into!(z, b)
+        PathMaps.join_map_into!(z, b)
         result = z.pathmap
         @test PathMaps.val_count(result) == 4_000
 
@@ -59,7 +59,7 @@ end
         a = _build(500, "a")
         b = _build(500, "b")
         z = PathMaps.write_zipper(deepcopy(a))
-        PathMaps.wz_join_map_into!(z, b)
+        PathMaps.join_map_into!(z, b)
         PathMaps.set_val_at!(z.pathmap, _b("rel:b:1:1:extra"), PathMaps.UnitVal())
         @test PathMaps.get_val_at(z.pathmap, _b("rel:b:1:1:extra")) !== nothing
         @test PathMaps.get_val_at(b, _b("rel:b:1:1:extra")) === nothing
@@ -80,7 +80,7 @@ end
         a = _build(2_000, "a")
         b = _build(2_000, "b")
         z = PathMaps.write_zipper(deepcopy(a))
-        allocs = @allocated PathMaps.wz_join_map_into!(z, b)
+        allocs = @allocated PathMaps.join_map_into!(z, b)
         @test PathMaps.val_count(z.pathmap) == 4_000
         # A deep copy of a 2000-key source runs to hundreds of thousands of allocations; sharing is
         # a handful. Two orders of magnitude of headroom, so this is a shape check, not a ratchet.
@@ -93,11 +93,11 @@ end
         a = _build(500, "a")
         b = _build(500, "b")
         z1 = PathMaps.write_zipper(deepcopy(a))
-        PathMaps.wz_join_map_into!(z1, b)
+        PathMaps.join_map_into!(z1, b)
         PathMaps.remove_val_at!(z1.pathmap, _b("rel:b:1:1"), false)
 
         z2 = PathMaps.write_zipper(deepcopy(a))
-        PathMaps.wz_join_map_into!(z2, b)
+        PathMaps.join_map_into!(z2, b)
         @test PathMaps.val_count(z2.pathmap) == 1_000
     end
 end

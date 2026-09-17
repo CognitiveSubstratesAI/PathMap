@@ -569,9 +569,20 @@ function act_open_mmap(path::AbstractString)
     ArenaCompactTree(data, UInt64(length(data)), Dict{UInt64, ACT_LineId}(), Ref(UInt64(0)))
 end
 
+
 # =====================================================================
 # ACTZipper — read-only zipper over ArenaCompactTree
 # =====================================================================
+#
+# Upstream `ACTZipper<'tree, Storage, Value>` (arena_compact.rs:2303 @ f477a91) and its trait impls:
+# `Zipper` :2429, `ZipperPath` :2505, `ZipperAbsolutePath` :2512, `ZipperValues`/`ZipperValuesAt`
+# :2800-2825, `ZipperForking` :2834, `ZipperConcrete` :2895, `ZipperMoving` :2909 and
+# `ZipperIteration` :3187. Value type is upstream's `Value = u64` instantiation.
+#
+# Everything upstream leaves as a trait default (`descend_to_check`, `descend_to_existing_byte`,
+# `descend_last_byte`, `descend_until`, `descend_until_max_bytes*`, `ascend_byte`, `to_next_step*`,
+# `move_to_path`, `descend_last_path*`, `to_next_k_path*`, `to_next_get_val*`) is a method on
+# `AbstractZipper` in src/zipper/ZipperTraits.jl and is NOT repeated here.
 
 mutable struct _ACTFrame
     node_id::ACT_NodeId
@@ -582,17 +593,22 @@ mutable struct _ACTFrame
 end
 
 function _ACTFrame(node::ACTNode, node_id::ACT_NodeId)
-    cc = act_node_child_count(node)
-    _ACTFrame(node_id, cc, 0, nothing, 0)
+    _ACTFrame(node_id, act_node_child_count(node), 0, nothing, 0)
 end
+
+# 🔴 A FRAME IS A VALUE UPSTREAM (`#[derive(Clone)] struct StackFrame`, arena_compact.rs:2283), so
+# `stack.clone()` there copies every frame. Ours is a MUTABLE struct, so `copy(z.stack)` would hand
+# the clone the very same frame objects — and `fork_read_zipper`/`val_count` both clone and then
+# move, which mutates `node_depth`/`child_index` of the ORIGINAL zipper's frames.
+Base.copy(f::_ACTFrame) = _ACTFrame(f.node_id, f.child_count, f.child_index, f.next_id, f.node_depth)
 
 """
     ACTZipper
 
-Read-only zipper over an `ArenaCompactTree`.
-Mirrors `ACTZipper<Storage, Value>`.
+Read-only zipper over an `ArenaCompactTree`. Mirrors `ACTZipper<Storage, Value>`
+(arena_compact.rs:2303); `origin_*` remember where the zipper's root sits.
 """
-mutable struct ACTZipper
+mutable struct ACTZipper <: AbstractZipper
     tree::ArenaCompactTree
     cur_node::ACTNode
     stack::Vector{_ACTFrame}
@@ -600,58 +616,78 @@ mutable struct ACTZipper
     origin_depth::Int
     origin_ndepth::Int     # origin_node_depth
     invalid::Int
+    origin_invalid::Int
 end
 
+# upstream `ACTZipper::from_tree` (arena_compact.rs:2381)
 function ACTZipper(tree::ArenaCompactTree)
     root, root_id = act_get_root(tree)
-    frame = _ACTFrame(root, root_id)
-    ACTZipper(tree, root, [frame], UInt8[], 0, 0, 0)
+    ACTZipper(tree, root, [_ACTFrame(root, root_id)], UInt8[], 0, 0, 0, 0)
 end
 
-function act_zipper_with_root_here!(z::ACTZipper)
+# upstream `ACTZipper::clone` (arena_compact.rs:2318)
+function Base.copy(z::ACTZipper)
+    ACTZipper(
+        z.tree,
+        z.cur_node,
+        [copy(f) for f in z.stack],
+        copy(z.path),
+        z.origin_depth,
+        z.origin_ndepth,
+        z.invalid,
+        z.origin_invalid
+    )
+end
+
+# upstream `ACTZipper::with_root_here` (arena_compact.rs:2396): re-root the zipper at its focus.
+# `origin_node_depth` is read AFTER the swap (ours read it before, off the OLD stack top) and
+# `origin_invalid` is captured so `reset!` restores a root that sits on a non-existent path (cab3ed7).
+function _act_with_root_here!(z::ACTZipper)
     z.origin_depth = length(z.path)
-    z.origin_ndepth = z.stack[1].node_depth
+    z.origin_invalid = z.invalid
     if length(z.stack) > 1
-        z.stack[1] = z.stack[end]
+        last_frame = z.stack[end]
+        z.stack[end] = z.stack[1]
+        z.stack[1] = last_frame
         resize!(z.stack, 1)
     end
+    z.origin_ndepth = z.stack[1].node_depth
     z
 end
 
-"""
-Create a read-only zipper over `tree`.
-"""
-act_read_zipper(tree::ArenaCompactTree) = ACTZipper(tree)
+@inline _act_bytes(p::AbstractVector{UInt8}) = p
+@inline _act_bytes(p) = collect(UInt8, p)
 
 """
-Create a zipper pre-positioned at `path`.
+    read_zipper(tree::ArenaCompactTree) → ACTZipper
+
+Read-only zipper over `tree`; upstream `ArenaCompactTree::read_zipper` (arena_compact.rs:2361).
 """
-function act_read_zipper_at_path(tree::ArenaCompactTree, path)
+read_zipper(tree::ArenaCompactTree) = ACTZipper(tree)
+
+"""
+    read_zipper_at_path(tree::ArenaCompactTree, path) → ACTZipper
+
+Zipper pre-positioned at `path`; upstream `ArenaCompactTree::read_zipper_at_path`
+(arena_compact.rs:2366) — descend, then re-root at the focus.
+
+This is the canonical constructor extended to `ArenaCompactTree`, so a caller can pass either an
+in-RAM `PathMap` or an mmap'd ACT trie and get a zipper that answers the same generic functions;
+every zipper-algebra routine becomes transparently mmap-capable.
+"""
+function read_zipper_at_path(tree::ArenaCompactTree, p)
     z = ACTZipper(tree)
-    act_descend_to!(z, path)
-    act_zipper_with_root_here!(z)
+    descend_to!(z, p)
+    _act_with_root_here!(z)
 end
 
-# Adapter: extend the canonical `read_zipper_at_path` to dispatch on
-# ArenaCompactTree, so callers can pass either an in-RAM PathMap or a mmap'd
-# ACT trie and get a polymorphic zipper back. All other `zipper_*` operations
-# (descend / to_next_val! / path / child_mask / val …) already dispatch on
-# ACTZipper via the methods below, so any zipper-algebra code becomes
-# transparently mmap-capable. Mirrors upstream's `ACTZipper: impl Zipper`.
-read_zipper_at_path(tree::ArenaCompactTree, path) = act_read_zipper_at_path(tree, path)
-
 # =====================================================================
-# ACTZipper — Zipper interface
+# Zipper (arena_compact.rs:2429)
 # =====================================================================
 
-act_at_root(z::ACTZipper) = length(z.path) <= z.origin_depth
-act_path(z::ACTZipper) = view(z.path, (z.origin_depth + 1):length(z.path))
+path_exists(z::ACTZipper) = z.invalid == 0
 
-function act_path_exists(z::ACTZipper)
-    z.invalid == 0
-end
-
-function act_is_val(z::ACTZipper)
+function is_val(z::ACTZipper)
     z.invalid > 0 && return false
     cur = z.cur_node
     if cur isa ACT_NodeBranch
@@ -664,18 +700,7 @@ function act_is_val(z::ACTZipper)
     end
 end
 
-function act_val(z::ACTZipper)
-    act_is_val(z) || return nothing
-    frame = z.stack[end]
-    data = z.tree.data
-    off = Int(frame.node_id.v) + 1
-    head = data[off]
-    head & ACT_VALUE_FLAG == 0 && return nothing
-    v, _ = act_read_varint(data, off + 1)
-    v
-end
-
-function act_child_count(z::ACTZipper)
+function child_count(z::ACTZipper)::Int
     z.invalid > 0 && return 0
     cur = z.cur_node
     if cur isa ACT_NodeBranch
@@ -683,11 +708,11 @@ function act_child_count(z::ACTZipper)
     else
         frame = z.stack[end]
         lpath = act_get_line(z.tree, cur.path)
-        frame.node_depth < length(lpath) ? 1 : 0
+        return frame.node_depth < length(lpath) ? 1 : 0
     end
 end
 
-function act_child_mask(z::ACTZipper)
+function child_mask(z::ACTZipper)
     z.invalid > 0 && return ByteMask()
     cur = z.cur_node
     if cur isa ACT_NodeBranch
@@ -701,61 +726,158 @@ function act_child_mask(z::ACTZipper)
 end
 
 # =====================================================================
-# ACTZipper — ZipperMoving
+# ZipperPath (:2505) / ZipperAbsolutePath (:2512)
 # =====================================================================
 
-function act_reset!(z::ACTZipper)
-    root_id = z.stack[1].node_id   # preserve ACT_NodeId, not the size returned by act_get_node
-    root = act_get_node(z.tree, root_id)[1]
-    z.cur_node = root
-    resize!(z.stack, 1)
-    z.stack[1] = _ACTFrame(root, root_id)
-    z.stack[1].node_depth = z.origin_ndepth
-    resize!(z.path, z.origin_depth)
-    z.invalid = 0
+path(z::ACTZipper) = view(z.path, (z.origin_depth + 1):length(z.path))
+origin_path(z::ACTZipper) = z.path
+root_prefix_path(z::ACTZipper) = view(z.path, 1:z.origin_depth)
+
+# =====================================================================
+# ZipperValues / ZipperValuesAt / ZipperReadOnlyValues (:2800-2830)
+# =====================================================================
+
+# upstream `ACTZipper::get_value` (arena_compact.rs:2561): the varint value follows the head byte.
+function _act_get_value(z::ACTZipper)::Union{Nothing, UInt64}
+    is_val(z) || return nothing
+    frame = z.stack[end]
+    data = z.tree.data
+    off = Int(frame.node_id.v) + 1
+    head = data[off]
+    head & ACT_VALUE_FLAG == 0 && return nothing
+    v, _ = act_read_varint(data, off + 1)
+    v
 end
 
-function _act_descend_cond!(z::ACTZipper, path::AbstractVector{UInt8}, on_val::Bool)
+val(z::ACTZipper) = _act_get_value(z)
+get_val(z::ACTZipper) = _act_get_value(z)
+
+# upstream `ACTZipper::with_lookup_from_focus` (:2576) + `get_value_at` (:2627): resolve a path
+# RELATIVE TO THE FOCUS without moving the zipper (so a miss cannot strand the focus).
+function _act_get_value_at(z::ACTZipper, p::AbstractVector{UInt8})::Union{Nothing, UInt64}
+    z.invalid > 0 && return nothing
+    cur = z.cur_node
+    node_depth = z.stack[end].node_depth
+    i = 1
+    while true
+        if cur isa ACT_NodeBranch
+            i > length(p) && return cur.value
+            test_bit(cur.bytemask, p[i]) || return nothing
+            cur.first_child === nothing && return nothing
+            idx = Int(index_of(cur.bytemask, p[i]))
+            cur = act_nth_node(z.tree, cur.first_child::ACT_NodeId, idx)[1]
+            node_depth = 0
+            i += 1
+        else
+            lpath = act_get_line(z.tree, cur.path)
+            rest = view(lpath, (node_depth + 1):length(lpath))
+            # upstream `starts_with(path, rest_path)`: the remaining path must cover the whole of
+            # the line's tail. Stopping INSIDE a line node is a miss either way — a line carries its
+            # value only at its end (upstream's `node_depth < line_path.len() => None`).
+            starts_with(p, i, rest) || return nothing
+            i += length(rest)
+            if i > length(p) && cur.value !== nothing
+                return cur.value
+            end
+            cur.child === nothing && return nothing
+            cur = act_get_node(z.tree, cur.child::ACT_NodeId)[1]
+            node_depth = 0
+        end
+    end
+end
+
+val_at(z::ACTZipper, p::AbstractVector{UInt8}) = _act_get_value_at(z, p)
+val_at(z::ACTZipper, p) = _act_get_value_at(z, _act_bytes(p))
+get_val_at(z::ACTZipper, p) = val_at(z, p)
+
+# =====================================================================
+# ZipperForking (:2834) / ZipperConcrete (:2895)
+# =====================================================================
+
+fork_read_zipper(z::ACTZipper) = _act_with_root_here!(copy(z))
+
+# An ACT trie is a flat arena: node sharing is invisible from a node id (upstream returns the same).
+shared_node_id(z::ACTZipper) = nothing
+is_shared(z::ACTZipper) = false
+
+# =====================================================================
+# ZipperMoving (arena_compact.rs:2909)
+# =====================================================================
+
+depth(z::ACTZipper) = max(length(z.path) - z.origin_depth, 0)
+at_root(z::ACTZipper) = length(z.path) <= z.origin_depth
+
+# arena_compact.rs:2913-2919: the LAST byte of the whole buffer — at the root that is the last byte
+# of the root prefix, which is why `at_root` (not `focus_byte`) decides whether a move is possible.
+focus_byte(z::ACTZipper) = isempty(z.path) ? nothing : @inbounds(z.path[end])
+
+# upstream `ACTZipper::reset` (arena_compact.rs:2922, cab3ed7): truncate to the ROOT FRAME — which
+# is kept, not rebuilt, so its `child_index`/`next_id` cache for that node stays valid — and restore
+# the origin's `node_depth` and `invalid`.
+function reset!(z::ACTZipper)
+    z.cur_node = act_get_node(z.tree, z.stack[1].node_id)[1]
+    resize!(z.stack, 1)
+    z.stack[1].node_depth = z.origin_ndepth
+    resize!(z.path, z.origin_depth)
+    z.invalid = z.origin_invalid
+    nothing
+end
+
+# upstream `ACTZipper::val_count` (arena_compact.rs:2938): order-N, counts the focus itself.
+function val_count(z::ACTZipper)::Int
+    z2 = copy(z)
+    reset!(z2)
+    n = is_val(z2) ? 1 : 0
+    while to_next_val!(z2)
+        n += 1
+    end
+    n
+end
+
+# upstream `ACTZipper::descend_cond` (arena_compact.rs:2718), shared by `descend_to_existing!`
+# (`on_val == false`) and `descend_to_val!` (`on_val == true`); returns the bytes descended.
+function _act_descend_cond!(z::ACTZipper, p::AbstractVector{UInt8}, on_val::Bool)
     z.invalid > 0 && return 0
     descended = 0
     i = 1
-    while i <= length(path)
+    while i <= length(p)
         cur = z.cur_node
         if cur isa ACT_NodeLine
             frame = z.stack[end]
             lpath = act_get_line(z.tree, cur.path)
             rest = view(lpath, (frame.node_depth + 1):length(lpath))
-            common = find_prefix_overlap(view(path, i:length(path)), rest)
+            common = find_prefix_overlap(view(p, i:length(p)), rest)
             descended += common
+            i += common
             into_child = length(rest) == common && cur.child !== nothing
-            hack = into_child ? 1 : 0
-            frame.node_depth += common - hack
-            append!(z.path, rest[1:common])
+            line_child_hack = into_child ? 1 : 0
+            frame.node_depth += common - line_child_hack
+            append!(z.path, view(rest, 1:common))
             on_val && descended > 0 && cur.value !== nothing && break
             common < length(rest) && break
             cur.child === nothing && break
-            i += common
-            child_node, _ = act_get_node(z.tree, cur.child)
-            push!(z.stack, _ACTFrame(child_node, cur.child))
+            line_child = cur.child::ACT_NodeId
+            child_node, _ = act_get_node(z.tree, line_child)
+            push!(z.stack, _ACTFrame(child_node, line_child))
             z.cur_node = child_node
         else  # ACT_NodeBranch
             on_val && descended > 0 && cur.value !== nothing && break
-            test_bit(cur.bytemask, path[i]) || break
-            idx = Int(index_of(cur.bytemask, path[i]))
+            test_bit(cur.bytemask, p[i]) || break
+            idx = Int(index_of(cur.bytemask, p[i]))
             frame = z.stack[end]
-            child_id, child_next =
-                if frame.next_id !== nothing && frame.child_index + 1 == idx
-                    (frame.next_id, nothing)
-                else
-                    nd = act_nth_node(z.tree, cur.first_child, idx)
-                    (nd[2], nd[3])
-                end
+            child_id = if frame.next_id !== nothing && frame.child_index + 1 == idx
+                frame.next_id::ACT_NodeId   # the node right after the last one we stepped into
+            else
+                act_nth_node(z.tree, cur.first_child::ACT_NodeId, idx)[2]
+            end
+            child_node, child_sz = act_get_node(z.tree, child_id)
             frame.child_index = idx
-            frame.next_id = child_next
-            child_node = act_get_node(z.tree, child_id)[1]
+            # upstream keeps the cache live by storing the node AFTER the one descended into
+            # (arena_compact.rs:2765); ours cleared it in the fast arm, losing the optimisation.
+            frame.next_id = ACT_NodeId(child_id.v + child_sz)
             push!(z.stack, _ACTFrame(child_node, child_id))
             z.cur_node = child_node
-            push!(z.path, path[i])
+            push!(z.path, p[i])
             i += 1
             descended += 1
         end
@@ -763,304 +885,253 @@ function _act_descend_cond!(z::ACTZipper, path::AbstractVector{UInt8}, on_val::B
     descended
 end
 
-function act_descend_to!(z::ACTZipper, path)
-    pv = collect(UInt8, path)
-    descended = _act_descend_cond!(z, pv, false)
-    if descended < length(pv)
-        append!(z.path, pv[(descended + 1):end])
-        z.invalid += length(pv) - descended
+# upstream `ACTZipper::descend_to` (arena_compact.rs:2955): the focus moves whether or not the path
+# exists; the non-existent tail is counted in `invalid`.
+function descend_to!(z::ACTZipper, k)
+    kv = _act_bytes(k)
+    n = length(kv)
+    descended = _act_descend_cond!(z, kv, false)
+    if descended != n
+        append!(z.path, view(kv, (descended + 1):n))
+        z.invalid += n - descended
     end
+    nothing
 end
 
-function act_descend_to_existing!(z::ACTZipper, path)
-    _act_descend_cond!(z, collect(UInt8, path), false)
-end
+descend_to_existing!(z::ACTZipper, k) = _act_descend_cond!(z, _act_bytes(k), false)   # :2974
+descend_to_val!(z::ACTZipper, k) = _act_descend_cond!(z, _act_bytes(k), true)         # :2985
 
-function act_descend_to_val!(z::ACTZipper, path)
-    _act_descend_cond!(z, collect(UInt8, path), true)
-end
-
-function act_descend_to_byte!(z::ACTZipper, k::UInt8)
-    act_descend_to!(z, UInt8[k])
-end
-
-function act_descend_indexed_byte!(z::ACTZipper, idx::Int)
-    z.invalid > 0 && return false
+# upstream `ACTZipper::descend_indexed_byte` (arena_compact.rs:3004): the descended byte, or
+# `nothing` — with no move — when `idx` is out of range.
+function descend_indexed_byte!(z::ACTZipper, idx::Int)::Union{Nothing, UInt8}
+    z.invalid > 0 && return nothing
+    frame = z.stack[end]
     cur = z.cur_node
-    child_id = nothing
-
+    child_id::Union{Nothing, ACT_NodeId} = nothing
+    descended_byte::Union{Nothing, UInt8} = nothing
     if cur isa ACT_NodeLine
-        frame = z.stack[end]
         lpath = act_get_line(z.tree, cur.path)
         rest = view(lpath, (frame.node_depth + 1):length(lpath))
-        (idx != 0 || isempty(rest)) && return false
+        (idx != 0 || isempty(rest)) && return nothing
+        descended_byte = rest[1]
         push!(z.path, rest[1])
         if length(rest) == 1 && cur.child !== nothing
             child_id = cur.child
         else
             frame.node_depth += 1
-            return true
+            return descended_byte
         end
-    else  # Branch
-        frame = z.stack[end]
+    else  # ACT_NodeBranch
+        idx > frame.child_count && return nothing   # upstream tests `>`, not `>=` (:3034)
         byte = indexed_bit(cur.bytemask, idx, true)
-        byte === nothing && return false
-        if frame.next_id !== nothing && frame.child_index + 1 == idx
-            child_id = frame.next_id
+        byte === nothing && return nothing
+        descended_byte = byte
+        child_id = if frame.next_id !== nothing && frame.child_index + 1 == idx
+            frame.next_id::ACT_NodeId
         else
-            child_id = act_nth_node(z.tree, cur.first_child, idx)[2]
+            act_nth_node(z.tree, cur.first_child::ACT_NodeId, idx)[2]
         end
         push!(z.path, byte)
-        frame.child_index = idx
     end
-
-    if child_id !== nothing
-        frame = z.stack[end]
-        child_node, next_sz = act_get_node(z.tree, child_id)
-        next_id = ACT_NodeId(child_id.v + next_sz)
-        frame.next_id = next_id
-        push!(z.stack, _ACTFrame(child_node, child_id))
-        z.cur_node = child_node
-    end
-    true
+    child_id === nothing && return nothing
+    child_node, child_sz = act_get_node(z.tree, child_id)
+    frame.child_index = idx
+    frame.next_id = ACT_NodeId(child_id.v + child_sz)
+    push!(z.stack, _ACTFrame(child_node, child_id))
+    z.cur_node = child_node
+    descended_byte
 end
 
-act_descend_first_byte!(z::ACTZipper) = act_descend_indexed_byte!(z, 0)
-
-function act_descend_until!(z::ACTZipper)
+# upstream `ACTZipper::descend_until_observed` (arena_compact.rs:3070): descend while the focus has
+# exactly one child, stopping ON a value or a branch. The stop test is on the node STEPPED ONTO —
+# a valued branch under a line node used to be walked straight past (measured on
+# {"band"=>1,"bandana"=>2}: the walk went "b" -> "banda" and "band" was never enumerated).
+function descend_until_observed!(z::ACTZipper, obs)
     descended = false
-    while act_child_count(z) == 1
+    while child_count(z) == 1
+        frame = z.stack[end]
         cur = z.cur_node
+        child_id::Union{Nothing, ACT_NodeId} = nothing
         if cur isa ACT_NodeLine
-            frame = z.stack[end]
             lpath = act_get_line(z.tree, cur.path)
             rest = view(lpath, (frame.node_depth + 1):length(lpath))
-            hack = cur.child !== nothing ? 1 : 0
-            frame.node_depth += length(rest) - hack
+            line_child_hack = cur.child === nothing ? 0 : 1
+            frame.node_depth += length(rest) - line_child_hack
             append!(z.path, rest)
-            cur.value !== nothing && (descended=true; break)
-            cur.child !== nothing || break
-            child_node = act_get_node(z.tree, cur.child)[1]
-            push!(z.stack, _ACTFrame(child_node, cur.child))
-            z.cur_node = child_node
-            # ⚠️ STOP AT A VALUE ON THE NODE WE JUST STEPPED ONTO.
-            # Upstream's contract is "descend until a branch OR A VALUE is encountered"
-            # (zipper.rs:299-316: `descend_first_byte(); if self.is_val() { break }`) — it tests the
-            # NEW focus after every step. This arm used to step onto the child and then re-enter the
-            # `child_count == 1` loop, so a VALUED BRANCH sitting under a line node was walked
-            # straight past. MEASURED on {"band"=>1,"bandana"=>2}: the walk went "b" -> "banda",
-            # skipping "band" entirely, and `act_to_next_val!` yielded only "bandana". The bytes on
-            # disk were correct the whole time (`act_get_val_at` returned both) — this was purely an
-            # ITERATOR defect, which is why no round-trip test caught it.
-            descended = true
-            act_is_val(z) && break
-        else  # Branch
-            byte = next_bit(cur.bytemask, UInt8(0))
+            descend_to!(obs, rest)
+            child_id = cur.child
+            if cur.value !== nothing
+                descended = true
+                break
+            end
+        else  # ACT_NodeBranch
+            byte = indexed_bit(cur.bytemask, 0, true)   # upstream `bytemask.iter().next()`
             byte === nothing && break
-            child_id = act_nth_node(z.tree, cur.first_child, 0)[2]
             push!(z.path, byte)
-            child_node = act_get_node(z.tree, child_id)[1]
-            push!(z.stack, _ACTFrame(child_node, child_id))
-            z.cur_node = child_node
-            # Same correction: this tested `cur.value` — the value of the node we just LEFT — AFTER
-            # already descending past it, so it broke one step late and at the wrong node. Upstream
-            # tests the new focus.
-            descended = true
-            act_is_val(z) && break
+            descend_to_byte!(obs, byte)
+            child_id = cur.first_child
         end
         descended = true
+        if child_id !== nothing
+            child_node, child_sz = act_get_node(z.tree, child_id)
+            frame.child_index = 0
+            frame.next_id = ACT_NodeId(child_id.v + child_sz)
+            child_frame = _ACTFrame(child_node, child_id)
+            nchildren = child_frame.child_count
+            push!(z.stack, child_frame)
+            z.cur_node = child_node
+            if child_node isa ACT_NodeBranch && (child_node.value !== nothing || nchildren > 1)
+                break
+            end
+        end
     end
     descended
 end
 
-function act_ascend!(z::ACTZipper, steps::Int=1)
-    # First clear any invalid bytes
+# upstream `ACTZipper::ascend_invalid` (arena_compact.rs:2645): drop the non-existent tail of the
+# path; returns the steps ascended. `limit === nothing` is upstream's `None` (no bound).
+function _act_ascend_invalid!(z::ACTZipper, limit::Union{Nothing, Int})::Int
+    z.invalid == 0 && return 0
+    cut = min(z.invalid, length(z.path) - z.origin_depth)
+    limit === nothing || (cut = min(cut, limit))
+    resize!(z.path, length(z.path) - cut)
+    z.invalid -= cut
+    cut
+end
+
+# upstream `ACTZipper::ascend` (arena_compact.rs:3117): returns the bytes ACTUALLY ascended, which
+# stops at the root. (Our `ascend!` alias reported `n > 0` and so could not see a short move.)
+function ascend!(z::ACTZipper, steps::Int)::Int
+    remaining = steps
+    remaining -= _act_ascend_invalid!(z, remaining)
+    z.invalid > 0 && return steps - remaining
+    while !isempty(z.stack)
+        frame = z.stack[end]
+        rest_len = length(z.path) - z.origin_depth
+        this_steps = min(remaining, frame.node_depth, rest_len)
+        frame.node_depth -= this_steps
+        remaining -= this_steps
+        if frame.node_depth == 0 && length(z.stack) > 1 && remaining > 0
+            pop!(z.stack)
+            z.cur_node = act_get_node(z.tree, z.stack[end].node_id)[1]
+            this_steps += 1
+            remaining -= 1
+        end
+        resize!(z.path, length(z.path) - this_steps)
+        (at_root(z) || remaining == 0) && return steps - remaining
+    end
+    error("ACTZipper ascend!: empty stack (upstream `unreachable!()`, arena_compact.rs:3141)")
+end
+
+# upstream `ACTZipper::ascend_to_branch` (arena_compact.rs:2683), shared by `ascend_until!`
+# (`need_value == true`) and `ascend_until_branch!`; returns the bytes ascended.
+function _act_ascend_to_branch!(z::ACTZipper, need_value::Bool)::Int
+    start_len = length(z.path)
     if z.invalid > 0
-        cut = min(z.invalid, steps, max(0, length(z.path) - z.origin_depth))
-        resize!(z.path, length(z.path) - cut)
-        z.invalid -= cut
-        steps -= cut
-        z.invalid == 0 || return steps == 0
+        _act_ascend_invalid!(z, nothing)
+        z.invalid > 0 && return start_len - length(z.path)
+        need_value && z.cur_node.value !== nothing && return start_len - length(z.path)
     end
-    for _ in 1:steps
-        length(z.path) <= z.origin_depth && return false
-        cur = z.cur_node
-        if cur isa ACT_NodeLine
-            frame = z.stack[end]
-            if frame.node_depth > 0
-                frame.node_depth -= 1
-                pop!(z.path)
-                continue
-            end
+    while !isempty(z.stack)
+        frame = z.stack[end]
+        nchildren = frame.child_count
+        remaining = length(z.path) - z.origin_depth
+        this_steps = min(frame.node_depth, remaining)
+        frame.node_depth -= this_steps
+        if length(z.stack) > 1 && remaining > this_steps
+            pop!(z.stack)
+            prev = z.stack[end]
+            z.cur_node = act_get_node(z.tree, prev.node_id)[1]
+            nchildren = prev.child_count
+            this_steps += 1
         end
-        length(z.stack) <= 1 && return false
-        pop!(z.stack)
-        z.cur_node = act_get_node(z.tree, z.stack[end].node_id)[1]
-        pop!(z.path)
-    end
-    true
-end
-
-act_ascend_byte!(z::ACTZipper) = act_ascend!(z, 1)
-
-function act_ascend_until!(z::ACTZipper)
-    act_at_root(z) && return false
-    while true
+        resize!(z.path, length(z.path) - this_steps)
         cur = z.cur_node
-        if cur isa ACT_NodeLine
-            frame = z.stack[end]
-            if frame.node_depth > 0
-                act_ascend!(z, frame.node_depth)
-                cur.value !== nothing && return true
-            end
-        end
-        length(z.stack) <= 1 && return false
-        nchildren = z.stack[end - 1].child_count
-        act_ascend!(z, 1)
-        (nchildren > 1 || act_is_val(z)) && return true
-        act_at_root(z) && return true
+        brk = cur isa ACT_NodeBranch && (nchildren > 1 || (need_value && cur.value !== nothing))
+        (brk || at_root(z)) && break
     end
+    start_len - length(z.path)
 end
 
-function act_ascend_until_branch!(z::ACTZipper)
-    act_at_root(z) && return false
-    while true
-        act_ascend!(z, 1) || return false
-        z.stack[end].child_count > 1 && return true
-        act_at_root(z) && return true
-    end
-end
+ascend_until!(z::ACTZipper) = _act_ascend_to_branch!(z, true)          # arena_compact.rs:3152
+ascend_until_branch!(z::ACTZipper) = _act_ascend_to_branch!(z, false)  # arena_compact.rs:3160
 
-function act_to_next_sibling_byte!(z::ACTZipper)
-    length(z.stack) <= 1 && return false
+# upstream `ACTZipper::to_sibling` (arena_compact.rs:2765): the sibling's byte, or `nothing` with no
+# move. Siblings exist only at a node boundary — never part-way along a line node.
+function _act_to_sibling!(z::ACTZipper, next::Bool)::Union{Nothing, UInt8}
     frame = z.stack[end]
-    frame.node_depth > 0 && return false
+    (length(z.stack) <= 1 || frame.node_depth > 0) && return nothing
     parent = z.stack[end - 1]
-    idx = parent.child_index + 1
-    idx >= parent.child_count && return false
-    act_ascend!(z, 1) && act_descend_indexed_byte!(z, idx)
+    sibling_idx = if next
+        idx = parent.child_index + 1
+        idx >= parent.child_count && return nothing
+        idx
+    else
+        parent.child_index == 0 && return nothing
+        parent.child_index - 1
+    end
+    ascend!(z, 1) == 0 && return nothing
+    descend_indexed_byte!(z, sibling_idx)
 end
 
-function act_to_prev_sibling_byte!(z::ACTZipper)
-    length(z.stack) <= 1 && return false
-    parent = z.stack[end - 1]
-    parent.child_index == 0 && return false
-    act_ascend!(z, 1) && act_descend_indexed_byte!(z, parent.child_index - 1)
+to_next_sibling_byte!(z::ACTZipper) = _act_to_sibling!(z, true)   # arena_compact.rs:3166
+to_prev_sibling_byte!(z::ACTZipper) = _act_to_sibling!(z, false)  # arena_compact.rs:3172
+
+# =====================================================================
+# ZipperIteration (arena_compact.rs:3187)
+# =====================================================================
+
+# upstream `ACTZipper::to_next_val_observed` (arena_compact.rs:3194): step over every existing path
+# until one carries a value.
+function to_next_val_observed!(z::ACTZipper, obs)
+    while to_next_step_observed!(z, obs)
+        is_val(z) && return true
+    end
+    false
 end
 
-function act_to_next_val!(z::ACTZipper)
-    loop_count = 0
+# upstream `ACTZipper::descend_first_k_path_observed` (arena_compact.rs:3214, 556c4ed): depth-first
+# search for the FIRST location exactly `k` bytes below the focus — on a dead end above `k`, back up
+# to the nearest ancestor with an unvisited sibling. `false` leaves the focus where it started.
+function descend_first_k_path_observed!(z::ACTZipper, k::Int, obs)
+    # ⚠️ UPSTREAM QUIRK, PORTED AS-IS: `k == 0` reports success without moving (:3216), where the
+    # `AbstractZipper` default (zipper.rs:1112) returns `false` for `k == 0`.
+    k == 0 && return true
+    d = 0
     while true
-        loop_count += 1
-        loop_count > 500_000 && return false
-        if act_descend_first_byte!(z)
-            act_is_val(z) && return true
-            act_descend_until!(z)
-            act_is_val(z) && return true
-        else
-            while true
-                act_to_next_sibling_byte!(z) && break
-                act_ascend_byte!(z) || return false
-                act_at_root(z) && return false
+        while d < k
+            byte = descend_first_byte!(z)
+            byte === nothing && break
+            descend_to_byte!(obs, byte)
+            d += 1
+        end
+        d == k && return true
+        while true
+            d == 0 && return false
+            sib = to_next_sibling_byte!(z)
+            if sib !== nothing
+                # a sibling step is one byte up and one byte down, as the observer sees it
+                ascend!(obs, 1)
+                descend_to_byte!(obs, sib)
+                break
             end
-            act_is_val(z) && return true
+            ascend_byte!(z)
+            ascend!(obs, 1)
+            d -= 1
         end
     end
 end
-
-function Base.copy(z::ACTZipper)
-    ACTZipper(
-        z.tree,
-        z.cur_node,
-        copy(z.stack),
-        copy(z.path),
-        z.origin_depth,
-        z.origin_ndepth,
-        z.invalid
-    )
-end
-
-act_fork!(z::ACTZipper) = act_zipper_with_root_here!(copy(z))
-
-act_val_count(z::ACTZipper) = begin
-    z2 = copy(z)
-    act_reset!(z2)
-    n = act_is_val(z2) ? 1 : 0
-    while act_to_next_val!(z2)
-
-        n += 1
-    end
-    n
-end
-
-# =====================================================================
-# zipper_* dispatch aliases so ACTZipper satisfies the generic zipper interface.
-# Required for PrefixZipper{ACTZipper} and ProductZipperG factor dispatch.
-# =====================================================================
-
-zipper_reset!(z::ACTZipper) = act_reset!(z)
-zipper_path(z::ACTZipper) = act_path(z)
-zipper_path_exists(z::ACTZipper) = act_path_exists(z)
-zipper_is_val(z::ACTZipper) = act_is_val(z)
-zipper_child_count(z::ACTZipper) = act_child_count(z)
-zipper_child_mask(z::ACTZipper) = act_child_mask(z)
-zipper_val_count(z::ACTZipper) = act_val_count(z)
-zipper_at_root(z::ACTZipper) = act_at_root(z)
-zipper_descend_to!(z::ACTZipper, p) = act_descend_to!(z, p)
-zipper_descend_to_existing!(z::ACTZipper, p) = act_descend_to_existing!(z, p)
-zipper_descend_to_byte!(z::ACTZipper, b::UInt8) = act_descend_to_byte!(z, b)
-zipper_descend_first_byte!(z::ACTZipper) = act_descend_first_byte!(z)
-zipper_descend_until!(z::ACTZipper) = act_descend_until!(z)
-zipper_ascend!(z::ACTZipper, n::Int=1) = (act_ascend!(z, n); n > 0)
-zipper_ascend_byte!(z::ACTZipper) = act_ascend_byte!(z)
-zipper_ascend_until!(z::ACTZipper) = act_ascend_until!(z)
-zipper_ascend_until_branch!(z::ACTZipper) = act_ascend_until_branch!(z)
-zipper_to_next_sibling_byte!(z::ACTZipper) = act_to_next_sibling_byte!(z)
-zipper_to_prev_sibling_byte!(z::ACTZipper) = act_to_prev_sibling_byte!(z)
-zipper_to_next_val!(z::ACTZipper) = act_to_next_val!(z)
-
-# =====================================================================
-# _zpg_* dispatch so ACTZipper works as a ProductZipperG factor.
-# Defined here (after ACTZipper) so they resolve; _zpg_* functions
-# themselves are defined earlier in zipper/ProductZipperG.jl.
-# =====================================================================
-
-_zpg_path_exists(z::ACTZipper) = act_path_exists(z)
-_zpg_is_val(z::ACTZipper) = act_is_val(z)
-_zpg_child_count(z::ACTZipper) = act_child_count(z)
-_zpg_child_mask(z::ACTZipper) = act_child_mask(z)
-_zpg_path(z::ACTZipper) = act_path(z)
-_zpg_origin_path(z::ACTZipper) = z.path
-_zpg_root_prefix_len(z::ACTZipper) = z.origin_depth
-_zpg_at_root(z::ACTZipper) = act_at_root(z)
-_zpg_reset!(z::ACTZipper) = act_reset!(z)
-_zpg_descend_to_existing!(z::ACTZipper, p) = act_descend_to_existing!(z, p)
-_zpg_descend_to!(z::ACTZipper, p) = act_descend_to!(z, p)
-_zpg_descend_to_byte!(z::ACTZipper, b) = act_descend_to_byte!(z, b)
-_zpg_descend_first_byte!(z::ACTZipper) = act_descend_first_byte!(z)
-_zpg_descend_until!(z::ACTZipper) = act_descend_until!(z)
-_zpg_ascend_byte!(z::ACTZipper) = act_ascend_byte!(z)
-_zpg_ascend!(z::ACTZipper, n) = (act_ascend!(z, n); true)
-_zpg_ascend_until!(z::ACTZipper) = act_ascend_until!(z)
-_zpg_ascend_until_branch!(z::ACTZipper) = act_ascend_until_branch!(z)
-_zpg_to_next_sibling_byte!(z::ACTZipper) = act_to_next_sibling_byte!(z)
-_zpg_to_next_val!(z::ACTZipper) = act_to_next_val!(z)
 
 # =====================================================================
 # Exports
 # =====================================================================
+#
+# The zipper surface is the generic functions of src/zipper/ZipperTraits.jl (exported there), so no
+# `act_*` zipper name is exported any more — `read_zipper`/`read_zipper_at_path` construct, and
+# `path_exists`/`is_val`/`val`/`child_count`/`descend_to!`/`ascend!`/`to_next_val!`/… dispatch.
 
 export ArenaCompactTree, ACTZipper, ACT_NodeId, ACT_LineId
 export ACT_NodeBranch, ACT_NodeLine, ACT_MAGIC
 export act_read_varint, act_push_varint!
 export act_from_zipper, act_save, act_open, act_open_mmap
-export act_read_zipper, act_read_zipper_at_path
 export act_get_val_at
-export act_at_root, act_path, act_path_exists, act_is_val, act_val
-export act_child_count, act_child_mask, act_val_count
-export act_reset!, act_descend_to!, act_descend_to_byte!
-export act_descend_to_existing!, act_descend_to_val!
-export act_descend_indexed_byte!, act_descend_first_byte!, act_descend_until!
-export act_ascend!, act_ascend_byte!, act_ascend_until!, act_ascend_until_branch!
-export act_to_next_sibling_byte!, act_to_prev_sibling_byte!, act_to_next_val!
-export act_fork!

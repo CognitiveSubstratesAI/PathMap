@@ -88,7 +88,23 @@ Node token contract (trie_node.rs:195-256, constants :408-478): `IterToken = u64
    Lean seeds 1–6: the same 7 FINDINGS-#8 programs. Originally planned: `reascend_iter_token` in ascend / ascend_within_node; `descend_first_byte`
    (2179-2233); token `to_next_sibling_byte` (2359-2424); `to_next_get_val` `< TOKEN_LAST`; `k_path_internal`
    3132-3222 verbatim (drops our `resume_from` and resync loop).
-3. **Generic API + return shapes** — abstract types, upstream-named generics, `depth`, `focus_byte`, Option/count
+3. **Generic API + return shapes** — DONE 2026-09-17. `src/zipper/ZipperTraits.jl` is the trait surface:
+   `abstract type AbstractZipper` (every zipper subtypes it), one generic function per upstream trait method
+   with upstream's name + `!` when it moves, upstream's default bodies as `AbstractZipper` methods, and the
+   `PathObserver` protocol (`nothing` = the no-op `()`, `Vector{UInt8}`, `Base.RefValue{Int}`, tuples,
+   `MirrorPathObserver`, `HashObserver`, `TruncatingObserver`). Every zipper type converted: Read, Write,
+   tracked, ZipperHead, TrieRef, Product, ProductG, Dependent, Prefix, Overlay, Empty, ACT — old prefixed
+   names (`zipper_*`, `wz_*`, `tr_*`, `pz_*`, `pzg_*`, `dpz_*`, `oz_*`, `ez_*`, `act_*` zipper, `rz_*`,
+   `rzt_*`, `wzt_*`, `zh_*`, `zho_*`) REMOVED, per-type duplicates of a default deleted, and
+   ProductZipperG's private `_zpg_*` dispatch table deleted in favour of the generics. The write zipper
+   inherits the movement it lacked (closes the harness's `skip:wz-gap`); `PathMap` gained `val` / `val_at` /
+   `is_shared` (trie_map.rs:593-623); the spec harness's Bool→byte/count adapters are identities now.
+   Callers migrated across PathMap, MORK, Core, MorkServer, MorkSupercompiler, MORKTensorNetworks and
+   WorldModel. A parser-based scanner (`~/csai-work/gates/probes/shadow_scan.jl`) found every place a local
+   named `path`/`val`/`depth`/`child_mask` would shadow the new generic — 8 in PathMap, 6 elsewhere.
+   Behaviour changes to know: `descend_to_check!` never restores on failure (upstream zipper.rs:210-213;
+   MORK's coref helpers normalise), `remove_prefix!` returns Bool from a now-counting `ascend!`, and
+   `ez_reset!` is MORK's own ExprZipper function again. Originally planned:  abstract types, upstream-named generics, `depth`, `focus_byte`, Option/count
    returns, `ZipperPath`, `ZipperValuesAt`, for every zipper type (Read, Write, Tracked, TrieRef, Product,
    ProductG, Dependent, Prefix, Overlay, Empty, ACT). Fill the write-zipper movement gaps. Lean harness: the
    `sp_ascend!`/`sp_moved_byte` adapters become identities; drop `skip:wz-gap` where filled.

@@ -49,6 +49,7 @@ include("pathmap/SlabTrie.jl")
 # ── Zipper / cursor layer ─────────────────────────────────────────────────────
 
 # Read zipper. Ports pathmap/src/zipper.rs.
+include("zipper/ZipperTraits.jl")   # upstream 0.4.0 zipper traits as generic functions
 include("zipper/Zipper.jl")
 
 # PathMap — byte-slice-keyed trie map container + lattice ops.

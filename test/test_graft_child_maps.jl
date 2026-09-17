@@ -25,7 +25,7 @@ _mask(bytes...) = foldl((a, b) -> P.ByteMask(a.bits .| P.ByteMask(UInt8(b)).bits
         m = _m("root:a:x" => 1, "root:a:y" => 2, "root:b:x" => 3, "root:b:y" => 4,
             "root:c:x" => 5, "root:c:y" => 6, "root:d:x" => 7)
         wz = P.write_zipper_at_path(m, Vector{UInt8}("root:"))
-        P.wz_graft_child_maps!(
+        P.graft_child_maps!(
             wz, _mask('a', 'c'), [_m(":new_a" => 10), _m(":new_c" => 30)], true
         )
 
@@ -39,7 +39,7 @@ _mask(bytes...) = foldl((a, b) -> P.ByteMask(a.bits .| P.ByteMask(UInt8(b)).bits
     @testset "upstream test2 — remove_unset=false keeps 'a','c' and replaces only 'b'" begin
         m = _m("root:a:old" => 100, "root:b:old" => 200, "root:c:old" => 300)
         wz = P.write_zipper_at_path(m, Vector{UInt8}("root:"))
-        P.wz_graft_child_maps!(wz, _mask('b'), [_m(":new_b" => 222)], false)
+        P.graft_child_maps!(wz, _mask('b'), [_m(":new_b" => 222)], false)
 
         @test P.get_val_at(m, Vector{UInt8}("root:a:old")) == 100
         @test P.get_val_at(m, Vector{UInt8}("root:b:old")) === nothing
@@ -50,7 +50,7 @@ _mask(bytes...) = foldl((a, b) -> P.ByteMask(a.bits .| P.ByteMask(UInt8(b)).bits
     @testset "upstream test3 — three maps at the root takes the DenseByteNode fast path" begin
         m = P.PathMap{Int}()
         wz = P.write_zipper(m)
-        P.wz_graft_child_maps!(wz, _mask('x', 'y', 'z'),
+        P.graft_child_maps!(wz, _mask('x', 'y', 'z'),
             [_m(":data" => 111), _m(":info" => 222), _m(":stuff" => 333)], true)
 
         @test P.get_val_at(m, Vector{UInt8}("x:data")) == 111
@@ -62,7 +62,7 @@ _mask(bytes...) = foldl((a, b) -> P.ByteMask(a.bits .| P.ByteMask(UInt8(b)).bits
     @testset "upstream test4 — an EMPTY mask with remove_unset=true clears everything" begin
         m = _m("root:a" => 1, "root:b" => 2)
         wz = P.write_zipper_at_path(m, Vector{UInt8}("root:"))
-        P.wz_graft_child_maps!(wz, P.ByteMask(), P.PathMap{Int}[], true)
+        P.graft_child_maps!(wz, P.ByteMask(), P.PathMap{Int}[], true)
 
         @test P.get_val_at(m, Vector{UInt8}("root:a")) === nothing
         @test P.get_val_at(m, Vector{UInt8}("root:b")) === nothing
@@ -75,8 +75,8 @@ _mask(bytes...) = foldl((a, b) -> P.ByteMask(a.bits .| P.ByteMask(UInt8(b)).bits
             P.ANRBorrowedRc{Int, P.GlobalAlloc}(m.root)
         end
     _paths(m) = (z=P.read_zipper(m); v=String[];
-        while P.zipper_to_next_val!(z)
-            push!(v, String(copy(P.zipper_path(z))))
+        while P.to_next_val!(z)
+            push!(v, String(copy(P.path(z))))
         end; sort!(v))
 
     @testset "meet_2 — meets TWO sources into the focus, ignoring what is there" begin
@@ -84,27 +84,27 @@ _mask(bytes...) = foldl((a, b) -> P.ByteMask(a.bits .| P.ByteMask(UInt8(b)).bits
         b = _m("y" => 1, "z" => 1)
 
         # the destination's existing content is OVERWRITTEN, never consulted — that is the whole
-        # difference from wz_meet_into!, and why upstream notes meet_2 cannot return Identity
+        # difference from meet_into!, and why upstream notes meet_2 cannot return Identity
         dst = _m("zzz" => 9)
-        st = P.wz_meet_2!(P.write_zipper(dst), _anr(a), _anr(b))
+        st = P.meet_2!(P.write_zipper(dst), _anr(a), _anr(b))
         @test _paths(dst) == ["y"]
         @test st === P.ALG_STATUS_ELEMENT
 
         # a disjoint meet empties the destination
         dst2 = _m("zzz" => 9)
-        @test P.wz_meet_2!(P.write_zipper(dst2), _anr(_m("p" => 1)), _anr(_m("q" => 1))) ===
+        @test P.meet_2!(P.write_zipper(dst2), _anr(_m("p" => 1)), _anr(_m("q" => 1))) ===
             P.ALG_STATUS_NONE
         @test isempty(_paths(dst2))
 
         # either source absent -> None, destination cleared
         dst3 = _m("zzz" => 9)
-        @test P.wz_meet_2!(P.write_zipper(dst3), _anr(P.PathMap{Int}()), _anr(a)) ===
+        @test P.meet_2!(P.write_zipper(dst3), _anr(P.PathMap{Int}()), _anr(a)) ===
             P.ALG_STATUS_NONE
         @test isempty(_paths(dst3))
 
         # identical sources: A ∩ A = A, reported as Element (NOT Identity — see above)
         dst4 = P.PathMap{Int}()
-        @test P.wz_meet_2!(P.write_zipper(dst4), _anr(a), _anr(a)) === P.ALG_STATUS_ELEMENT
+        @test P.meet_2!(P.write_zipper(dst4), _anr(a), _anr(a)) === P.ALG_STATUS_ELEMENT
         @test _paths(dst4) == ["x", "y"]
     end
 
@@ -158,8 +158,8 @@ _mask(bytes...) = foldl((a, b) -> P.ByteMask(a.bits .| P.ByteMask(UInt8(b)).bits
             "root:c:old_c" => 3,
             "root:d:old_d" => 4, "root:z:old_z" => 26)
         wz1 = P.write_zipper_at_path(dst1, Vector{UInt8}("root:"))
-        P.wz_graft_masked_branches!(wz1, _at(_src(), "root:"), mask, false)
-        @test P.wz_get_val(wz1) == 900                       # focus value untouched
+        P.graft_masked_branches!(wz1, _at(_src(), "root:"), mask, false)
+        @test P.val(wz1) == 900                       # focus value untouched
         g(m, k) = P.get_val_at(m, Vector{UInt8}(k))
         @test g(dst1, "root:") == 900
         @test g(dst1, "root:a:old_a") === nothing
@@ -176,8 +176,8 @@ _mask(bytes...) = foldl((a, b) -> P.ByteMask(a.bits .| P.ByteMask(UInt8(b)).bits
         dst2 = _m("root:" => 901, "root:a:old_a" => 101, "root:b:old_b" => 102,
             "root:c:old_c" => 103, "root:d:old_d" => 104, "root:z:old_z" => 126)
         wz2 = P.write_zipper_at_path(dst2, Vector{UInt8}("root:"))
-        P.wz_graft_masked_branches!(wz2, _at(_src(), "root:"), mask, true)
-        @test P.wz_get_val(wz2) == 901
+        P.graft_masked_branches!(wz2, _at(_src(), "root:"), mask, true)
+        @test P.val(wz2) == 901
         @test g(dst2, "root:") == 901
         @test g(dst2, "root:a:new_a") == 10
         @test g(dst2, "root:a:nested:deep") == 11
@@ -191,9 +191,9 @@ _mask(bytes...) = foldl((a, b) -> P.ByteMask(a.bits .| P.ByteMask(UInt8(b)).bits
         # Case 3: a masked byte missing from BOTH sides must not leave a dangling branch
         dst3 = _m("root:" => 902)
         wz3 = P.write_zipper_at_path(dst3, Vector{UInt8}("root:"))
-        P.wz_graft_masked_branches!(wz3, _at(_src(), "root:"), mask, false)
-        @test P.wz_get_val(wz3) == 902
-        @test sort(collect(P.iter(P.wz_child_mask(wz3)))) == UInt8[UInt8('a'), UInt8('c')]
+        P.graft_masked_branches!(wz3, _at(_src(), "root:"), mask, false)
+        @test P.val(wz3) == 902
+        @test sort(collect(P.iter(P.child_mask(wz3)))) == UInt8[UInt8('a'), UInt8('c')]
         @test g(dst3, "root:") == 902
         @test g(dst3, "root:a:new_a") == 10
         @test g(dst3, "root:a:nested:deep") == 11
@@ -211,7 +211,7 @@ _mask(bytes...) = foldl((a, b) -> P.ByteMask(a.bits .| P.ByteMask(UInt8(b)).bits
             P.set_val_at!(m, Vector{UInt8}(k), 1)
         end
         wz = P.write_zipper_at_path(m, Vector{UInt8}("123:"))
-        @test P.wz_meet_k_path_into!(wz, 4, true)
+        @test P.meet_k_path_into!(wz, 4, true)
         @test P.val_count(m) == 2
         @test P.get_val_at(m, Vector{UInt8}("123:Bob")) == 1
         @test P.get_val_at(m, Vector{UInt8}("123:Sue")) == 1
@@ -222,7 +222,7 @@ _mask(bytes...) = foldl((a, b) -> P.ByteMask(a.bits .| P.ByteMask(UInt8(b)).bits
             P.set_val_at!(m2, Vector{UInt8}(k), 1)
         end
         wz2 = P.write_zipper_at_path(m2, Vector{UInt8}("123:"))
-        @test !P.wz_meet_k_path_into!(wz2, 4, true)
+        @test !P.meet_k_path_into!(wz2, 4, true)
         @test P.val_count(m2) == 0
     end
 
@@ -233,17 +233,17 @@ _mask(bytes...) = foldl((a, b) -> P.ByteMask(a.bits .| P.ByteMask(UInt8(b)).bits
         end
         z = P.write_zipper(m)
         seen = String[]
-        if P.wz_descend_first_k_path!(z, 2)
-            push!(seen, String(copy(P.wz_path(z))))
-            while P.wz_to_next_k_path!(z, 2)
-                push!(seen, String(copy(P.wz_path(z))))
+        if P.descend_first_k_path!(z, 2)
+            push!(seen, String(copy(P.path(z))))
+            while P.to_next_k_path!(z, 2)
+                push!(seen, String(copy(P.path(z))))
             end
         end
         @test sort(seen) == ["ab", "ac", "bd"]
         # exhausted -> back at the common root
-        @test isempty(P.wz_path(z))
+        @test isempty(P.path(z))
         # a path shorter than k has no common root k steps up
-        @test !P.wz_to_next_k_path!(P.write_zipper(m), 5)
+        @test !P.to_next_k_path!(P.write_zipper(m), 5)
     end
 end
 
@@ -255,7 +255,7 @@ end
         set_val_at!(m, Vector{UInt8}(k), UNIT_VAL)
     end
     wz = write_zipper_at_path(m, Vector{UInt8}("a:x"))
-    @test (wz_remove_unmasked_branches!(wz, ByteMask(), false); true)
+    @test (remove_unmasked_branches!(wz, ByteMask(), false); true)
     @test sort([String(copy(k)) for (k, _) in m]) == ["a", "b", "c"]
 end
 

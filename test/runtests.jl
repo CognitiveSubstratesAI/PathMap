@@ -61,7 +61,7 @@ const _PM_TS = @testset "PathMap" begin
         end
         rz = read_zipper(m)
         count = 0
-        while zipper_to_next_val!(rz)
+        while to_next_val!(rz)
             count += 1
         end
         @test count == 3
@@ -70,11 +70,11 @@ const _PM_TS = @testset "PathMap" begin
     @testset "write zipper" begin
         m = PM{Int}()
         wz = write_zipper(m)
-        wz_descend_to!(wz, b"prefix:key")
-        wz_set_val!(wz, 42)
+        descend_to!(wz, b"prefix:key")
+        set_val!(wz, 42)
         @test get_val_at(m, b"prefix:key") == 42
 
-        wz_remove_val!(wz)
+        remove_val!(wz)
         @test get_val_at(m, b"prefix:key") === nothing
     end
 
@@ -89,7 +89,7 @@ const _PM_TS = @testset "PathMap" begin
         # Subtract: a - b = {x}
         result = deepcopy(a)
         wz = write_zipper(result)
-        wz_subtract_into!(wz, ANRBorrowedRc(b.root))
+        subtract_into!(wz, ANRBorrowedRc(b.root))
         @test get_val_at(result, b"x") == true
         @test get_val_at(result, b"y") === nothing
         @test val_count(result) == 1
@@ -140,7 +140,7 @@ const _PM_TS = @testset "PathMap" begin
         # Cursor at "foo:" — insert_prefix prepends "ns:" within that subtrie
         # "bar" → 99 becomes "ns:bar" → 99, full path: "foo:ns:bar"
         wz = write_zipper_at_path(m, b"foo:")
-        @test wz_insert_prefix!(wz, b"ns:") == true
+        @test insert_prefix!(wz, b"ns:") == true
         @test get_val_at(m, b"foo:ns:bar") == 99
         @test get_val_at(m, b"foo:bar") === nothing
 
@@ -149,7 +149,7 @@ const _PM_TS = @testset "PathMap" begin
         set_val_at!(m2, b"eagle", 1)
         set_val_at!(m2, b"penguin", 2)
         wz2 = write_zipper(m2)
-        @test wz_insert_prefix!(wz2, b"bird:") == true
+        @test insert_prefix!(wz2, b"bird:") == true
         @test get_val_at(m2, b"bird:eagle") == 1
         @test get_val_at(m2, b"bird:penguin") == 2
         @test get_val_at(m2, b"eagle") === nothing
@@ -161,12 +161,12 @@ const _PM_TS = @testset "PathMap" begin
 
         m2 = PM{Int}()
         wz = write_zipper(m2)
-        wz_descend_to!(wz, b"prefix:")
-        wz_graft_map!(wz, m1)
+        descend_to!(wz, b"prefix:")
+        graft_map!(wz, m1)
 
         wz2 = write_zipper(m2)
-        wz_descend_to!(wz2, b"prefix:hello")
-        wz_set_val!(wz2, 99)
+        descend_to!(wz2, b"prefix:hello")
+        set_val!(wz2, 99)
 
         @test get_val_at(m2, b"prefix:hello") == 99
         @test get_val_at(m1, b"hello") == 42   # unchanged
@@ -212,8 +212,8 @@ const _PM_TS = @testset "PathMap" begin
             @test act_get_val_at(tree_mmap, key) === act_get_val_at(tree_copy, key)
         end
 
-        z = act_read_zipper(tree_mmap)
-        @test act_val_count(z) == 3
+        z = read_zipper(tree_mmap)
+        @test val_count(z) == 3
 
         rm(tmpfile; force=true)
     end
@@ -231,21 +231,21 @@ const _PM_TS = @testset "PathMap" begin
         @test get_val_at(m, b"xyz") === 3
     end
 
-    @testset "wz_remove_branches! with prune" begin
+    @testset "remove_branches! with prune" begin
         m = PM{Int}()
         set_val_at!(m, b"foo:a", 10)
         set_val_at!(m, b"foo:b", 20)
         set_val_at!(m, b"bar", 30)
 
         wz = write_zipper_at_path(m, b"foo:")
-        wz_remove_branches!(wz, true)
+        remove_branches!(wz, true)
 
         @test get_val_at(m, b"foo:a") === nothing
         @test get_val_at(m, b"foo:b") === nothing
         @test get_val_at(m, b"bar") === 30
     end
 
-    @testset "wz_subtract_into! with prune=true removes dangling paths" begin
+    @testset "subtract_into! with prune=true removes dangling paths" begin
         # a = {abc→1, abd→2, xyz→3}; b = {abc→1, abd→2}
         # subtract with prune: a-b = {xyz→3}, "ab" prefix branch pruned
         a = PM{Int}()
@@ -264,7 +264,7 @@ const _PM_TS = @testset "PathMap" begin
         else
             ANRBorrowedRc{Int, GlobalAlloc}(b.root)
         end
-        status = wz_subtract_into!(wz, src_anr, true)
+        status = subtract_into!(wz, src_anr, true)
 
         @test status == ALG_STATUS_ELEMENT || status == ALG_STATUS_NONE
         @test get_val_at(result, b"abc") === nothing
@@ -273,7 +273,7 @@ const _PM_TS = @testset "PathMap" begin
         @test val_count(result) == 1
     end
 
-    @testset "wz_meet_into! with prune=true removes dangling paths" begin
+    @testset "meet_into! with prune=true removes dangling paths" begin
         # a = {abc→true, xyz→true}; b = {xyz→true}
         # meet: intersection = {xyz→true}, "abc" branch pruned
         a = PM{Bool}()
@@ -290,7 +290,7 @@ const _PM_TS = @testset "PathMap" begin
         else
             ANRBorrowedRc{Bool, GlobalAlloc}(b.root)
         end
-        status = wz_meet_into!(wz, src_anr, true)
+        status = meet_into!(wz, src_anr, true)
 
         @test status == ALG_STATUS_ELEMENT || status == ALG_STATUS_IDENTITY
         @test get_val_at(result, b"abc") === nothing
@@ -298,7 +298,7 @@ const _PM_TS = @testset "PathMap" begin
         @test val_count(result) == 1
     end
 
-    @testset "wz_meet_into! prune=true on empty src clears entire subtrie" begin
+    @testset "meet_into! prune=true on empty src clears entire subtrie" begin
         # meeting with empty src → result is empty, prune removes branch
         a = PM{Bool}()
         set_val_at!(a, b"prefix:foo", true)
@@ -308,7 +308,7 @@ const _PM_TS = @testset "PathMap" begin
         result = deepcopy(a)
         wz = write_zipper_at_path(result, b"prefix:")
         empty_anr = ANRNone{Bool, GlobalAlloc}()
-        wz_meet_into!(wz, empty_anr, true)
+        meet_into!(wz, empty_anr, true)
 
         @test get_val_at(result, b"prefix:foo") === nothing
         @test get_val_at(result, b"prefix:bar") === nothing
@@ -321,11 +321,11 @@ const _PM_TS = @testset "PathMap" begin
         # The anchored constructor must produce IDENTICAL Cartesian-product
         # iteration to a root ProductZipper over the same leaves — for BOTH
         # branching prefixes (node boundary) and single-path prefixes
-        # (mid-compressed-edge, which the naive tr_get_focus_rc path dropped).
+        # (mid-compressed-edge, which the naive _tr_get_focus_rc path dropped).
         drive(prz) = begin
             out = String[]
-            while pz_to_next_val!(prz)
-                push!(out, String(copy(collect(pz_path(prz)))))
+            while to_next_val!(prz)
+                push!(out, String(copy(collect(path(prz)))))
             end
             sort!(out)
         end
@@ -359,7 +359,7 @@ const _PM_TS = @testset "PathMap" begin
         @test isempty(drive(anchored_pz(preAB, "zzz/", 2)))
     end
 
-    @testset "wz_take_focus! honors prune=true" begin
+    @testset "take_focus! honors prune=true" begin
         # Build a map with two leaves sharing a common deep prefix.
         m = PM{Int}()
         set_val_at!(m, b"path:a:k1", 7)
@@ -368,7 +368,7 @@ const _PM_TS = @testset "PathMap" begin
 
         # Position cursor at the "path:a:" subtree (no val, two children).
         wz = write_zipper_at_path(m, b"path:a:")
-        rc = wz_take_focus!(wz, true)
+        rc = take_focus!(wz, true)
         @test rc !== nothing
 
         # Both keys under the taken subtree are gone in m.
@@ -377,11 +377,11 @@ const _PM_TS = @testset "PathMap" begin
         # Unrelated key is untouched.
         @test get_val_at(m, b"other") === 9
         # And the now-empty "path:" spine is pruned (prune=true).
-        @test wz_val_count(write_zipper_at_path(m, b"path:")) == 0
+        @test val_count(write_zipper_at_path(m, b"path:")) == 0
     end
 
-    @testset "wz_remove_branches! preserves structural sharing (lazy COW)" begin
-        # If the public wz_remove_branches! mutated a shared inner node
+    @testset "remove_branches! preserves structural sharing (lazy COW)" begin
+        # If the public remove_branches! mutated a shared inner node
         # without first making it unique, m_src would also lose the keys.
         m_src = PM{Int}()
         set_val_at!(m_src, b"shared:k1", 1)
@@ -389,12 +389,12 @@ const _PM_TS = @testset "PathMap" begin
 
         m_view = PM{Int}()
         wz = write_zipper(m_view)
-        wz_descend_to!(wz, b"copy:")
-        wz_graft_map!(wz, m_src)
+        descend_to!(wz, b"copy:")
+        graft_map!(wz, m_src)
 
         # Now drop branches from the grafted region in m_view.
         wz2 = write_zipper_at_path(m_view, b"copy:shared:")
-        wz_remove_branches!(wz2, true)
+        remove_branches!(wz2, true)
 
         # m_view loses the branches; m_src must not.
         @test get_val_at(m_view, b"copy:shared:k1") === nothing
@@ -403,7 +403,7 @@ const _PM_TS = @testset "PathMap" begin
         @test get_val_at(m_src, b"shared:k2") === 2
     end
 
-    @testset "PrefixZipper pz_descend_to_existing! is byte-correct on String input" begin
+    @testset "PrefixZipper descend_to_existing! is byte-correct on String input" begin
         # The old code did `append!(pz.path, path[1:descended])` on the
         # possibly-already-sliced caller arg, which is codepoint-indexed
         # for String. With a String prefix in source data this would
@@ -414,13 +414,13 @@ const _PM_TS = @testset "PathMap" begin
 
         pz = PathMaps.PrefixZipper(b"X/", read_zipper(m))
         # Descend with a String of pure ASCII first (the common case)
-        n1 = PathMaps.pz_descend_to_existing!(pz, "X/abc")
+        n1 = PathMaps.descend_to_existing!(pz, "X/abc")
         @test n1 == 5
         @test pz.path == b"X/abc"
     end
 
     @testset "ZipperHead — read + write zippers at disjoint paths" begin
-        # Previously: zh_read_zipper_at_path called ReadZipperCore_at_path
+        # Previously: read_zipper_at_path called ReadZipperCore_at_path
         # with 4 args; the only signature requires 6 → MethodError on every
         # call. Whole layer was dead-on-arrival with zero test coverage.
         m = PM{Int}()
@@ -431,20 +431,20 @@ const _PM_TS = @testset "PathMap" begin
         zh = zipper_head(m)
 
         # Two non-overlapping read zippers should coexist.
-        rzt_a = zh_read_zipper_at_path(zh, b"app:a:")
-        rzt_b = zh_read_zipper_at_path(zh, b"app:b:")
-        @test rzt_val_count(rzt_a) == 1
-        @test rzt_val_count(rzt_b) == 1
+        rzt_a = read_zipper_at_path(zh, b"app:a:")
+        rzt_b = read_zipper_at_path(zh, b"app:b:")
+        @test val_count(rzt_a) == 1
+        @test val_count(rzt_b) == 1
 
         # A write zipper at a disjoint path coexists with both reads.
-        wzt = zh_write_zipper_at_exclusive_path(zh, b"common:")
-        @test wzt_path_exists(wzt)
-        wzt_descend_to!(wzt, b"k2")
-        wzt_set_val!(wzt, 100)
+        wzt = write_zipper_at_exclusive_path(zh, b"common:")
+        @test path_exists(wzt)
+        descend_to!(wzt, b"k2")
+        set_val!(wzt, 100)
 
-        rzt_release!(rzt_a)
-        rzt_release!(rzt_b)
-        wzt_release!(wzt)
+        release!(rzt_a)
+        release!(rzt_b)
+        release!(wzt)
 
         @test get_val_at(m, b"common:k2") === 100
     end
@@ -454,14 +454,14 @@ const _PM_TS = @testset "PathMap" begin
         set_val_at!(m, b"region:a", 1)
 
         zh = zipper_head(m)
-        wzt1 = zh_write_zipper_at_exclusive_path(zh, b"region:")
+        wzt1 = write_zipper_at_exclusive_path(zh, b"region:")
         # Opening a second writer under the same prefix must raise Conflict.
-        @test_throws PathMaps.Conflict zh_write_zipper_at_exclusive_path(zh, b"region:")
+        @test_throws PathMaps.Conflict write_zipper_at_exclusive_path(zh, b"region:")
         # Releasing the first must let a second writer open cleanly.
-        wzt_release!(wzt1)
-        wzt2 = zh_write_zipper_at_exclusive_path(zh, b"region:")
-        @test wzt_path_exists(wzt2)
-        wzt_release!(wzt2)
+        release!(wzt1)
+        wzt2 = write_zipper_at_exclusive_path(zh, b"region:")
+        @test path_exists(wzt2)
+        release!(wzt2)
     end
 
     # ZT-1 (audit 2026-06-04): tracked-zipper locks release via `finalizer` = GC time,
@@ -481,14 +481,14 @@ const _PM_TS = @testset "PathMap" begin
         # Same deterministic release for the tracked-zipper wrappers.
         m = PM{Int}()
         zh = zipper_head(m)
-        wzt = zh_write_zipper_at_exclusive_path(zh, b"y:")
+        wzt = write_zipper_at_exclusive_path(zh, b"y:")
         with_write_zipper_tracked(wzt) do z
-            @test wzt_path_exists(z) isa Bool
+            @test path_exists(z) isa Bool
         end
         # Lock released at scope exit → a second writer at the same prefix opens cleanly.
-        wzt2 = zh_write_zipper_at_exclusive_path(zh, b"y:")
-        @test wzt_path_exists(wzt2) isa Bool
-        wzt_release!(wzt2)
+        wzt2 = write_zipper_at_exclusive_path(zh, b"y:")
+        @test path_exists(wzt2) isa Bool
+        release!(wzt2)
     end
 
     @testset "ProductZipperG — direct, heterogeneous factor types" begin
@@ -509,10 +509,10 @@ const _PM_TS = @testset "PathMap" begin
         rz1 = read_zipper(m1)
         rz2 = read_zipper(m2)
         pzg = PathMaps.ProductZipperG(rz1, [rz2])
-        @test pzg_factor_count(pzg) == 2
+        @test factor_count(pzg) == 2
 
         n = 0
-        while pzg_to_next_val!(pzg)
+        while to_next_val!(pzg)
             n += 1
             n > 100 && break   # safety
         end
@@ -538,7 +538,7 @@ const _PM_TS = @testset "PathMap" begin
 
         dpz = PathMaps.DependentZipper(rz, nothing, enroll_cb)
         n = 0
-        while PathMaps.dpz_to_next_val!(dpz)
+        while PathMaps.to_next_val!(dpz)
             n += 1
             n > 100 && break
         end
@@ -555,7 +555,7 @@ const _PM_TS = @testset "PathMap" begin
         # "factor_paths and secondary must stay in step")` to pin it.
         #
         # WE ALREADY HAD THE FIX: both pop sites in DependentZipper.jl pop `secondary` in step, and
-        # `dpz_reset!` empties it. So this pins an invariant we satisfy rather than fixing anything.
+        # `reset!` empties it. So this pins an invariant we satisfy rather than fixing anything.
         #
         # It is a TEST and NOT an `@assert`, deliberately. `debug_assert!` is compiled out in
         # release, so upstream PROCEEDS on violation; throwing here would be a new divergence. That
@@ -566,7 +566,7 @@ const _PM_TS = @testset "PathMap" begin
         # ⚠️ Upstream also DELETED the inherent `factor_count()` on DependentProductZipperG. That is
         # NOT adopted: it is a refactor of their trait layout (`factor_count` survives on the
         # ProductZipper trait, product_zipper.rs:806), while ours is live — `ProductZipperG.jl:227`
-        # computes `dpz_factor_count(src) - 1`. Removing it would break working code to mirror a
+        # computes `factor_count(src) - 1`. Removing it would break working code to mirror a
         # change that does not apply here.
         m_primary = PM{UnitVal}()
         for k in (b"X", b"Y", b"Z")
@@ -584,7 +584,7 @@ const _PM_TS = @testset "PathMap" begin
         dpz = PathMaps.DependentZipper(rz, nothing, enroll_cb)
         in_step = true
         steps = 0
-        while PathMaps.dpz_to_next_val!(dpz)
+        while PathMaps.to_next_val!(dpz)
             in_step &= (length(dpz.factor_paths) == length(dpz.secondary))
             steps += 1
             steps > 100 && break
@@ -593,13 +593,13 @@ const _PM_TS = @testset "PathMap" begin
         @test in_step
 
         # reset must clear BOTH, not just factor_paths (upstream's `secondary.clear()`).
-        PathMaps.dpz_reset!(dpz)
+        PathMaps.reset!(dpz)
         @test isempty(dpz.factor_paths)
         @test isempty(dpz.secondary)
     end
 
     @testset "ZipperHead — cleanup_write_zipper prunes the right spine" begin
-        # Previously: cleanup used wz_path (relative) where it should have
+        # Previously: cleanup used path (relative) where it should have
         # used the absolute origin path. So pruning operated on the wrong
         # subtree (or no-op'd entirely).
         m = PM{Int}()
@@ -607,19 +607,19 @@ const _PM_TS = @testset "PathMap" begin
 
         zh = zipper_head(m)
         # Open a zipper rooted DEEP, create a dangling sub-path, take it.
-        wzt = zh_write_zipper_at_exclusive_path(zh, b"deep:spine:")
-        wzt_descend_to!(wzt, b"leaf")
-        wzt_set_val!(wzt, 42)
-        wzt_remove_val!(wzt)  # removes the val, leaves the spine dangling
+        wzt = write_zipper_at_exclusive_path(zh, b"deep:spine:")
+        descend_to!(wzt, b"leaf")
+        set_val!(wzt, 42)
+        remove_val!(wzt)  # removes the val, leaves the spine dangling
 
-        zh_cleanup_write_zipper!(zh, wzt)
+        cleanup_write_zipper!(zh, wzt)
 
         # The dangling "deep:spine:leaf" path must be pruned.
         @test get_val_at(m, b"deep:spine:leaf") === nothing
         # Unrelated keys must survive.
         @test get_val_at(m, b"unrelated") === 7
         # And the spine itself is gone (val_count under "deep:" == 0).
-        @test wz_val_count(write_zipper_at_path(m, b"deep:")) == 0
+        @test val_count(write_zipper_at_path(m, b"deep:")) == 0
     end
 
     # ── COW refcount primitive — pins the exact contract that the node-keyed
@@ -698,12 +698,12 @@ const _PM_TS = @testset "PathMap" begin
 
         m2 = PM{Int}()
         wz = write_zipper(m2)
-        wz_descend_to!(wz, b"P:")
-        wz_graft_map!(wz, m1)                 # shares m1's nodes under "P:" (refcount>1)
+        descend_to!(wz, b"P:")
+        graft_map!(wz, m1)                 # shares m1's nodes under "P:" (refcount>1)
 
         wz2 = write_zipper(m2)
-        wz_descend_to!(wz2, b"P:")
-        @test wz_join_k_path_into!(wz2, 1)    # drop first byte below "P:": Xab→ab, Xcd→cd
+        descend_to!(wz2, b"P:")
+        @test join_k_path_into!(wz2, 1)    # drop first byte below "P:": Xab→ab, Xcd→cd
 
         @test get_val_at(m2, b"P:ab") == 1    # m2 reflects the drop
         @test get_val_at(m2, b"P:cd") == 2
@@ -738,7 +738,7 @@ const _PM_TS = @testset "PathMap" begin
                 set_val_at!(m, key, 1)
             end
             wz = PathMaps.write_zipper_at_path(m, origin)
-            @test wz_join_k_path_into!(wz, k, true) == false      # the drop yields nothing
+            @test join_k_path_into!(wz, k, true) == false      # the drop yields nothing
             @test PathMaps.path_exists_at(m, origin) == false      # ← the dangling path is GONE
             @test val_count(m) == 0
         end
@@ -747,7 +747,7 @@ const _PM_TS = @testset "PathMap" begin
         m = PM{Int}()
         set_val_at!(m, b"abcd", 1)
         wz = PathMaps.write_zipper_at_path(m, b"ab")
-        @test wz_join_k_path_into!(wz, 1, true) == true
+        @test join_k_path_into!(wz, 1, true) == true
         @test get_val_at(m, b"abd") == 1
     end
 
@@ -799,10 +799,10 @@ const _PM_TS = @testset "PathMap" begin
         m = PM{Int}()
         set_val_at!(m, b"Sab", 1)
         set_val_at!(m, b"Scd", 2)
-        src_anr = PathMaps.tr_get_focus_anr(PathMaps.trie_ref_at_path(m, b"S"))
+        src_anr = PathMaps.get_focus(PathMaps.trie_ref_at_path(m, b"S"))
         wz = write_zipper(m)
-        wz_descend_to!(wz, b"D")
-        PathMaps.wz_graft!(wz, src_anr)
+        descend_to!(wz, b"D")
+        PathMaps.graft!(wz, src_anr)
         @test get_val_at(m, b"Dab") == 1 && get_val_at(m, b"Dcd") == 2   # graft copied
         set_val_at!(m, b"Dab", 99)                                       # mutate shared graft
         set_val_at!(m, b"Def", 7)
@@ -823,12 +823,12 @@ const _PM_TS = @testset "PathMap" begin
 
         m2 = PM{Int}()
         wz = write_zipper(m2)
-        wz_descend_to!(wz, b"P:")
-        wz_graft_map!(wz, m1)                 # shares m1's nodes (incl. the {XX,YY} child)
+        descend_to!(wz, b"P:")
+        graft_map!(wz, m1)                 # shares m1's nodes (incl. the {XX,YY} child)
 
         wz2 = write_zipper(m2)
-        wz_descend_to!(wz2, b"P:")
-        wz_join_k_path_into!(wz2, 4)          # consume "abc" + recurse 1 into shared child
+        descend_to!(wz2, b"P:")
+        join_k_path_into!(wz2, 4)          # consume "abc" + recurse 1 into shared child
 
         @test get_val_at(m2, b"P:X") == 1     # m2 reflects the drop
         @test get_val_at(m2, b"P:Y") == 2
@@ -970,7 +970,7 @@ include("test_upstream_zipper_battery.jl")
 # against the composition type at all. Upstream applies the battery to ProductZipperG; we could not.
 include("test_pzg_battery_ops.jl")
 
-# The ONE oracle for ADAPTATIONS.md entry 2 — the pzg_factor_count / last-factor-guard risk.
+# The ONE oracle for ADAPTATIONS.md entry 2 — the factor_count / last-factor-guard risk.
 # Kept OUT of the battery deliberately: the battery asserts exact paths, and an enrolling
 # callback changes them, so the battery can never reach the moving-depth case.
 include("test_pzg_factor_count_guard.jl")
@@ -983,7 +983,7 @@ include("test_pzg_factor_count_guard.jl")
 # during which a full green suite said nothing about it.
 include("test_act_validation.jl")
 
-# tr_make_map must SHARE a subtrie without letting writes leak between maps. It aliased the node
+# make_map must SHARE a subtrie without letting writes leak between maps. It aliased the node
 # without bumping its refcount, so `_cow_in_place!` (which forks only above 1) mutated in place and
 # a write to the derived map landed in the SOURCE. Latent — the function had no callers — and found
 # only because ShardZipper's O(1) reattach would have been its first one.

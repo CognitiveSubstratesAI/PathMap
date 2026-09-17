@@ -111,7 +111,7 @@ end
 
 Returns true if the path structurally exists in the trie (with OR without a value).
 Dangling paths (empty child nodes, no value) also return true — they are valid
-structural paths created by wz_create_path!.
+structural paths created by create_path!.
 
 Two-phase:
 Phase 1: node_along_path consumed all bytes → path exists (dangling or valued).
@@ -131,7 +131,7 @@ function path_exists_at(m::PathMap{V, A}, path) where {V, A}
     _ensure_root!(m)
     path_v = path isa AbstractVector{UInt8} ? path : collect(UInt8, path)
     # The EMPTY path always exists — upstream returns true even for an empty map
-    # (`read_zipper_at_borrowed_path("").path_exists()`; our own zipper_path_exists agrees,
+    # (`read_zipper_at_borrowed_path("").path_exists()`; our own path_exists agrees,
     # Zipper.jl:483 `isempty(key) ? true : ...`). We previously returned
     # `m.root_val !== nothing`, i.e. false unless a ROOT VALUE happened to exist — measured
     # against upstream by test/differential (path_exists_at/<empty>, /empty_map_empty_path,
@@ -151,7 +151,7 @@ function path_exists_at(m::PathMap{V, A}, path) where {V, A}
     # answered false where upstream answers true. Measured on {abc, abcdefghij}: "a", "abcd",
     # "abcdefghi" were all reported absent; a single 16-byte key gave FFFFFFFFFFFFFTFT across
     # prefix lengths 1..16 instead of all-true.
-    # `node_contains_partial_key` is the SAME primitive `zipper_path_exists` (Zipper.jl:482) uses,
+    # `node_contains_partial_key` is the SAME primitive `path_exists` (Zipper.jl:482) uses,
     # so this now agrees with the zipper — and with upstream trie_map.rs:328, which is literally
     # `read_zipper_at_borrowed_path(path).path_exists()`. Kept as a direct node walk rather than
     # delegating to a zipper because zipper construction allocates and
@@ -278,7 +278,7 @@ inferred (test/differential/rust_probe/src/bin/gen_rootval.rs):
     map holding only the empty key   val_count=1  iter_count=1  to_next_val_count=0
     empty key plus "ab"              val_count=2  iter_count=2  iter_keys=["", "ab"]
 
-Our `zipper_to_next_val!` matches the 0 — correct, and NOT the defect. The gap was that nothing
+Our `to_next_val!` matches the 0 — correct, and NOT the defect. The gap was that nothing
 ported `iter()`, so there was no enumeration that agreed with `val_count`. MEASURED at the time:
 all 13 enumeration sites across PathMap's own tests used the bare zipper walk, i.e. every one of
 them silently skipped a root value if the map had one. It cost a wrong diagnosis — a "broken
@@ -297,8 +297,8 @@ end
 
 function Base.iterate(m::PathMap{V, A}, state) where {V, A}
     _, z = state
-    zipper_to_next_val!(z) || return nothing
-    ((copy(zipper_path(z)), zipper_val(z)::V), (false, z))
+    to_next_val!(z) || return nothing
+    ((copy(path(z)), val(z)::V), (false, z))
 end
 
 Base.IteratorSize(::Type{<:PathMap}) = Base.SizeUnknown()
@@ -325,7 +325,7 @@ map — which is the ONLY place the *variant* of an algebraic result becomes obs
 🔴 THAT DISTINCTION IS WHY THE `Ring.jl` BLANKET-IMPL DIVERGENCE MATTERED and why nothing in this
 repo could see it. Our `Union{Nothing,V}` impls returned `Identity(SELF_IDENT)` where upstream
 returns `None` (ring.rs:718/734); through this function that is "a copy of self" instead of "empty".
-Every existing check goes through the ZIPPER forms (`wz_meet_into!` etc.), which consume the result
+Every existing check goes through the ZIPPER forms (`meet_into!` etc.), which consume the result
 internally and never expose the variant — so a 46-scenario upstream differential, upstream's own
 `option_subtract_test`, and the full suite were all green over it. Ported 2026-08-23 together with
 the fix, so the observing function exists.
@@ -401,6 +401,17 @@ end
 # Exports
 # =====================================================================
 
+# ── ZipperValues / ZipperValuesAt / ZipperConcrete on the map itself (trie_map.rs:593-623) ──────────────
+"`val(m)` — the map's root value (upstream `ZipperValues::val`, trie_map.rs:608)."
+val(m::PathMap) = m.root_val
+
+"`val_at(m, path)` — the value at `path` (upstream `ZipperValuesAt::val_at`, trie_map.rs:615)."
+val_at(m::PathMap, path) = isempty(path) ? m.root_val : get_val_at(m, path)
+
+"`is_shared(m)` — is the map's root node reachable from more than one place? (trie_map.rs:603)"
+is_shared(m::PathMap) = m.root !== nothing && refcount(m.root) > 1
+
 export PathMap, _ensure_root!, read_zipper, read_zipper_at_path
 export get_val_at, path_exists_at, val_count, eltype_V, eltype_A
+# `val`, `val_at`, `is_shared` are exported from ZipperTraits.jl
 export pjoin, pmeet, psubtract, prestrict

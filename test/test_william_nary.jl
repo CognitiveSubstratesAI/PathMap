@@ -25,14 +25,14 @@ const PM = PathMaps.PathMap
             set_val_at!(m3, Vector{UInt8}(k), UNIT_VAL)
         end
         out = PM{UnitVal}()
-        wz_join_n!(
+        zipper_n_join!(
             write_zipper(out), [write_zipper(m1), write_zipper(m2), write_zipper(m3)]
         )
         rz = read_zipper(out)
         keys = Set{String}()
-        while zipper_to_next_val!(rz)
+        while to_next_val!(rz)
 
-            push!(keys, String(copy(zipper_path(rz))))
+            push!(keys, String(copy(path(rz))))
         end
         @test "bird-robin" in keys
         @test "mammal-dog" in keys
@@ -55,14 +55,14 @@ const PM = PathMaps.PathMap
             set_val_at!(m3, Vector{UInt8}(k), UNIT_VAL)
         end
         out = PM{UnitVal}()
-        wz_meet_n!(
+        zipper_n_meet!(
             write_zipper(out), [write_zipper(m1), write_zipper(m2), write_zipper(m3)]
         )
         rz = read_zipper(out)
         keys = Set{String}()
-        while zipper_to_next_val!(rz)
+        while to_next_val!(rz)
 
-            push!(keys, String(copy(zipper_path(rz))))
+            push!(keys, String(copy(path(rz))))
         end
         @test keys == Set(["common-a", "common-b"])
         println("  meet: $(keys) — only universal patterns ✓")
@@ -82,15 +82,15 @@ const PM = PathMaps.PathMap
             set_val_at!(noise2, Vector{UInt8}(k), UNIT_VAL)
         end
         out = PM{UnitVal}()
-        wz_subtract_n!(
+        zipper_n_subtract!(
             write_zipper(out),
             [write_zipper(base), write_zipper(noise1), write_zipper(noise2)]
         )
         rz = read_zipper(out)
         keys = Set{String}()
-        while zipper_to_next_val!(rz)
+        while to_next_val!(rz)
 
-            push!(keys, String(copy(zipper_path(rz))))
+            push!(keys, String(copy(path(rz))))
         end
         @test keys == Set(["keep-a", "keep-b"])
         println("  subtract: $(keys) — noise removed ✓")
@@ -103,12 +103,12 @@ const PM = PathMaps.PathMap
             set_val_at!(m, Vector{UInt8}("space-$i"), UNIT_VAL)
         end
         out = PM{UnitVal}()
-        wz_join_n!(write_zipper(out), [write_zipper(m) for m in maps])
+        zipper_n_join!(write_zipper(out), [write_zipper(m) for m in maps])
         rz = read_zipper(out)
         keys = Set{String}()
-        while zipper_to_next_val!(rz)
+        while to_next_val!(rz)
 
-            push!(keys, String(copy(zipper_path(rz))))
+            push!(keys, String(copy(path(rz))))
         end
         @test "shared" in keys
         @test length(keys) == 6  # 1 shared + 5 unique
