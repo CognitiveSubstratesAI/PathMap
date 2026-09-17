@@ -1111,3 +1111,13 @@ BATTERY_MAKE_Z[] =
         PathMaps.ProductZipperG(dpz, PathMaps.ReadZipperCore{UnitVal, PathMaps.GlobalAlloc}[])
     end
 run_battery("ProductZipperG over DependentZipper (CmpSource shape)")
+
+# ── FOURTH INVOCATION: PathTracker over the read zipper. ─────────────────────────────────────────
+# Upstream runs the same two batteries against `PathTracker::with_origin(trie.read_zipper_at_path(path), path)`
+# (path_tracker.rs:229-245). It is the wrapper that reinstates a path buffer for a "blind" zipper, so the
+# battery is exactly the right oracle: every path assertion below is answered by the TRACKER's own buffer,
+# not by the wrapped zipper's.
+BATTERY_MAKE_Z[] =
+    (m, path) -> isempty(path) ? PathMaps.PathTracker(read_zipper(m)) :
+        PathMaps.PathTracker(read_zipper_at_path(m, path), path)
+run_battery("PathTracker over the read zipper")

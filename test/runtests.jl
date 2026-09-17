@@ -954,6 +954,9 @@ include("test_upstream_zipper_iter_state.jl")
 # Upstream's node iteration-token contract tests (0.4.0; dense_byte_node.rs:2419, line_list_node.rs:3107-3329).
 include("test_upstream_iter_token.jl")
 
+# The 0.4.0 PathObserver mechanism + PathTracker (zipper.rs:510-741, path_tracker.rs).
+include("test_path_observers.jl")
+
 # shared_node_id guard + cached catamorphism (P0 #2; upstream zipper.rs:2638-2653, morphisms.rs:1922).
 include("test_shared_node_id.jl")
 

@@ -108,14 +108,30 @@ Node token contract (trie_node.rs:195-256, constants :408-478): `IterToken = u64
    returns, `ZipperPath`, `ZipperValuesAt`, for every zipper type (Read, Write, Tracked, TrieRef, Product,
    ProductG, Dependent, Prefix, Overlay, Empty, ACT). Fill the write-zipper movement gaps. Lean harness: the
    `sp_ascend!`/`sp_moved_byte` adapters become identities; drop `skip:wz-gap` where filled.
-4. **Observers** — `PathObserver` + implementors, `_observed` variants, `PathTracker`, `HashObserver`,
-   `MirrorPathObserver` (ProductZipperG / Dependent `descend_until_observed`), Overlay chunked descend.
-5. **MORK** — `ac172d5`: Leapfrog.jl (depth for `length(zipper_path)`, returned byte for `path[end]` after moves,
-   `focus_byte` for the pre-move last byte, count equalities on ascend); Space.jl coref helpers
-   (`_coref_path_length` → `depth`); Sinks.jl has no 1:1 site (structure differs; see inventory). Remove direct
-   struct-field reads where `depth`/`path` now suffice.
-6. **Old names** — remove the prefixed names once PathMap/test, MORK/src, MORK/test are migrated (or keep as
-   deprecated aliases for one release — user decision). Update `workflows/PORT_NAME_MAP.tsv`, CODEMAP.
+4. **Observers** — DONE with phase 3, closed out 2026-09-17: `PathObserver` and its implementors,
+   every `_observed` variant, `MirrorPathObserver` (ProductZipperG / Dependent `descend_until_observed`),
+   Overlay's chunked descend, `HashObserver`, `TruncatingObserver`, and **`PathTracker`**
+   (`src/zipper/PathTracker.jl`, path_tracker.rs 1:1). Tests: `test/test_path_observers.jl` (89 — an
+   observer's bytes must EQUAL the zipper's path at every step; chunking invariance; the mutant that
+   drops one `ascend!` report fails 3), and upstream's conformance battery now runs a fourth time over
+   `PathTracker`, as upstream does (491, first run).
+5. **MORK** — DONE with phase 3 (MORK `fa06d41`): `ac172d5`'s own changes where we have the counterpart —
+   Leapfrog's `depth(z)` for `length(path(z))`, the byte the move RETURNS instead of re-reading the path
+   tail, `focus_byte` for the pre-move byte; Space's coref helpers normalise the non-restoring
+   `descend_to_check!`. Sinks.jl has no 1:1 site (our sinks walk a scratch map, not a ProductZipper).
+6. **Old names** — DONE with phase 3: removed outright, no deprecated aliases, in all 7 repos;
+   `workflows/PORT_NAME_MAP.tsv` carries one RETIRED row for the whole class and CODEMAP a row for the
+   new surface. `version()` and `Project.toml` are 0.4.0 since 2026-09-17.
+
+## Upstream surface deliberately NOT ported (no Julia counterpart)
+
+| upstream | why it has no Julia counterpart |
+|---|---|
+| `ZipperPathBuffer` — the `reserve_buffers` / `origin_path_assert_len` half | manual buffer reservation around a `Vec` whose capacity Rust cannot grow implicitly. `prepare_buffers` DOES exist here (`_prepare_buffers!`, a no-op for the read zipper; `_pz_prepare_buffers!` really does seed PrefixZipper's buffer, PrefixZipper.jl:108); the other two have no counterpart because Julia's `Vector` grows on demand and the constructors already `sizehint!` |
+| `ZipperReadOnlyConditionalValues` / `ReadZipperWitness` (`witness`, `get_val_with_witness`) | a witness exists so a borrow can outlive the zipper that produced it. Julia's GC keeps the value alive by itself; `get_val` already returns a value, not a borrow |
+| `OneFactor<Z>` (product_zipper.rs:893-932) | a lens that presents one factor of a product as a zipper; nothing in our tree composes products that way yet |
+| `PolyZipper` / `PolyZipperExplicit` + `pathmap-derive` | a derive macro that builds an enum dispatching to one of several zipper types. Julia's multiple dispatch over `AbstractZipper` does that without generated code, and where a named sum type is wanted a `Union` already serves: MORK's `AFactorZipper` is exactly upstream's `AFactor` enum (`MORK/src/kernel/Sources.jl:10`) |
+| `ArrayVec` observer (zipper.rs:569) | an inline, non-allocating capture buffer; `Vector{UInt8}` with `sizehint!` is the Julia equivalent and our `descend_until_max_bytes_observed!` already bounds the descent |
 
 ## Size
 

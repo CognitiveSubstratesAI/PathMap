@@ -86,6 +86,9 @@ include("zipper/DependentZipper.jl")
 # ProductZipperG — generic product zipper. Ports ProductZipperG in product_zipper.rs.
 include("zipper/ProductZipperG.jl")
 
+# PathTracker — gives ZipperPath to any moving zipper. Ports pathmap/src/path_tracker.rs.
+include("zipper/PathTracker.jl")
+
 # ── PathMap algorithmic layer ─────────────────────────────────────────────────
 
 # Morphisms. Ports pathmap/src/morphisms.rs.
@@ -118,8 +121,12 @@ include("precompile.jl")
 
 """
     version() -> VersionNumber
+
+The upstream PathMap version whose API and semantics this package ports (`~/dev-zone/PathMap` Cargo.toml).
+0.4.0 since 2026-09-17: the zipper trait surface, its return shapes and the node iteration-token contract
+are upstream's 0.4.0 ones (docs/ZIPPER_API_0.4.0_PORT_PLAN.md).
 """
-version() = v"0.3.0"
+version() = v"0.4.0"
 
 export version
 
