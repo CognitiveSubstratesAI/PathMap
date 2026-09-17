@@ -71,163 +71,62 @@ _atoms(out) =
         @test _atoms(np) == ["a", "b"]
     end
 
-    @testset "a grafted subtrie is lost when an ambiguous LineListNode overflows to dense — 26 of 34" begin
-        # This subsumes the `graft_map` testset below: graft_map's trailing `set_val(src_root_val)`
-        # is just one way to trigger it.
-        #
-        # HOW IT WAS ESTABLISHED, because the method is the point. All 34 divergences were shrunk to
-        # minimal reproducers, then each was run TWICE: once as-is, and once with every set_val at
-        # the focus disabled (drop the explicit `SETVAL`, and clear `SROOTVAL` so graft_map's and
-        # join_map_into's internal `set_val(src_root_val)` cannot fire).
-        #
-        #     set_val DISABLED  ->  the two engines agree byte for byte on 26 of 26
-        #     set_val ENABLED   ->  all 26 diverge, upstream losing the grafted content
-        #
-        # One controlled variable, 26 independent cases. That is why the pairs below are written as
-        # PAIRS: the no-set_val member is not decoration, it is the control that makes the other
-        # member mean something. Delete it and all you have left is two engines disagreeing.
-        #
-        # ⚠️ THE OBVIOUS READING OF THAT EXPERIMENT IS WRONG, and it was written down here before it
-        # was checked. "set_val discards the immediately preceding op" fits all 26 cases and fits the
-        # controlled pairs — and it is false. Two upstream defects cooperate:
-        #
-        #   CREATION   `set_payload_abstract`'s branch that clears a colliding slot before installing
-        #              a child is guarded on `is_child_ptr::<0>()` (line_list_node.rs:977). When the
-        #              colliding slot holds a VALUE at a longer key it does not fire, so the graft is
-        #              parked in the free slot and the node ends up `slot0 = child at K`,
-        #              `slot1 = payload at K…` — the shape upstream's own `validate_node` calls an
-        #              "ambiguous path violation" and panics on (:2784). Nothing on this path calls
-        #              `validate_node`, so it is built silently and still enumerates correctly.
-        #   DETONATION the next op needing a third payload overflows the node into `convert_to_dense`
-        #              (:1086), which transplants both slots with `set_child` keyed on the FIRST BYTE
-        #              only (:1101, :1121). Both keys share that byte, and `set_child` on an occupied
-        #              byte is `swap_rec` — a clobber whose return value is dropped.
-        #
-        # set_val is merely the cheapest way to force the overflow. The four probes below are the
-        # discriminators that separate the two stories; the last two AGREE with upstream, and a test
-        # that only recorded disagreements would have thrown away the evidence that matters.
-        #
-        # WE WIN THESE FOR A REAL REASON, not by luck: our `_convert_to_dense!` goes through
-        # `merge_from_list_node!` -> `_bn_join_child_into!`, the JOINING transplant. Upstream's
-        # `convert_to_dense` cannot call its own `join_child_into` because that method needs
-        # `V: Lattice` and the impl block at line_list_node.rs:576 does not have the bound. That is an
-        # UNDOCUMENTED DEVIATION of ours that happens to be correct — recorded here so nobody
-        # "restores parity" by making our transplant clobber too.
-
-        # --- PAIR 1: graft, no source root value -------------------------------------------------
-        a = _defect_run("graft alone — engines AGREE (control)",
-            "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\n")
-        @test _atoms(a) == ["::aa", ":ab::"]
-
-        b = _defect_run("graft then SETVAL — upstream drops the graft",
-            "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n")
-        @test _atoms(b) == [":", "::aa", ":ab::"]     # upstream: [:, ::aa] — `:ab::` gone
-        @test ":ab::" in _atoms(b)                     # the grafted path SURVIVES the set_val
-
-        # --- PAIR 2: insert_prefix. NO graft involved, which is what generalises the defect --------
-        c = _defect_run("insert_prefix alone — engines AGREE (control)",
-            "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN bb\nOP INSPREFIX a\n")
-        @test _atoms(c) == ["bb:", "bba:"]
-
-        d = _defect_run("insert_prefix then SETVAL — upstream reverts the prefix insertion",
-            "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN bb\nOP INSPREFIX a\nOP SETVAL\n")
-        @test _atoms(d) == ["bb", "bb:", "bba:"]      # upstream: [bb, bb:] — `bba:` gone
-        @test "bba:" in _atoms(d)
-
-        # --- PAIR 3: join_map_into --------------------------------------------------------------
-        e = _defect_run("join alone — engines AGREE (control)",
-            "A ::\nAROOTVAL 0\nS :aa ab ba\nSROOTVAL 0\nORIGIN :\nOP JOINMAP\n")
-        @test _atoms(e) == ["::", "::", "::aa", ":ab", ":ba"]   # `::` twice: SHARED duplicate, see below
-
-        f = _defect_run("join then SETVAL — upstream drops everything the join added",
-            "A ::\nAROOTVAL 0\nS :aa ab ba\nSROOTVAL 0\nORIGIN :\nOP JOINMAP\nOP SETVAL\n")
-        @test _atoms(f) == [":", "::", "::aa", ":ab", ":ba"]    # upstream: [:, ::] — 3 paths gone
-        @test all(p -> p in _atoms(f), ["::aa", ":ab", ":ba"])
-
-        # --- CONTROL: set_val ALONE is harmless on both sides ------------------------------------
-        # Without this the defect could be read as "upstream's set_val is destructive", which is
-        # wrong and would send a reader hunting in the wrong function. It is destructive only when
-        # it follows an op that replaced the node at the focus.
-        g = _defect_run("SETVAL with no preceding op — engines AGREE",
-            "A ::aa\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN :\nOP SETVAL\n")
-        @test _atoms(g) == [":", "::aa"]
-
-        # --- CONTROL: it is NOT about zippers created at a path ----------------------------------
-        # Reaching the same focus by DESCEND from the map root instead of write_zipper_at_path gives
-        # byte-identical results on both engines, so `root_key_start` / the origin is not involved.
-        h = _defect_run("same as PAIR 2 but focus reached by DESCEND — identical",
-            "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN -\nOP DESCEND bb\nOP INSPREFIX a\nOP SETVAL\n"
-        )
-        @test _atoms(h) == _atoms(d)
-
-        # --- THE FOUR DISCRIMINATORS: node SHAPE decides, not op adjacency --------------------
-        # Each outcome was predicted from the Rust source BEFORE being run, and all four matched on
-        # both engines. Two of them agree with upstream, which is exactly why they are convincing.
-        base = "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\n"
-
-        d1 = _defect_run(
-            "D1 graft + SETVAL — upstream loses the graft", base * "OP SETVAL\n"
-        )
-        @test _atoms(d1) == [":", "::aa", ":ab::"]              # upstream: [:, ::aa]
-
-        # D2 kills "set_val discards the PRECEDING op": put an unrelated op in between and upstream
-        # still loses the graft. The graft was already corrupted; set_val only detonates it.
-        d2 = _defect_run(
-            "D2 graft + REMOVEVAL + SETVAL — STILL lost, so adjacency is irrelevant",
-            base * "OP REMOVEVAL 0\nOP SETVAL\n")
-        @test _atoms(d2) == [":", "::aa", ":ab::"]              # upstream: [:, ::aa] — still
-
-        # D3 kills it from the other side: make the parent DENSE already (3 distinct first bytes)
-        # and there is no LineList overflow to trigger, so set_val directly after the graft is
-        # harmless — and BOTH ENGINES AGREE, including that the graft correctly REPLACED `::aa`.
-        d3 = _defect_run("D3 parent already dense — no overflow, engines AGREE",
-            "A ::aa b c\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n"
-        )
-        @test _atoms(d3) == [":", ":ab::", "b", "c"]            # `::aa` correctly gone on BOTH
-
-        # D4 isolates the colliding sibling: with slot_1 free there is no ambiguous node to build,
-        # so again no loss and the engines AGREE.
-        d4 = _defect_run("D4 slot_1 free — no ambiguous node, engines AGREE",
-            "A :\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n")
+    # ─── 2026-09-17: THE GRAFT / INSERT_PREFIX / JOIN FAMILY BELOW WAS RE-BASELINED TO UPSTREAM f0cd6b7 ───
+    # These testsets used to pin behaviour from BEFORE upstream f0cd6b7 ("Fixes for a number of issues
+    # adjacent to PathMap#79", 2026-09-02): a graft at a focus inside a compressed key run KEPT THE OLD
+    # RUN beside the grafted one. That was SHARED by old upstream and by us, which is why the old
+    # assertions expected e.g. `[::aa, :ab::]` after a graft at `:` and a `bb` enumerated twice after a
+    # join. Upstream fixed it (graft_internal removes all branches before setting the new one; LineList
+    # set_payload_abstract replaces a value under a longer compressed key); we ported the fix (delta
+    # P1 #5), and the PathMapsSpec Lean model — our intended semantics — agrees with every expectation
+    # below. The old narrative (an "ambiguous LineListNode" clobbered on overflow to dense, 26 of 34 fuzz
+    # cases) described that pre-fix shape; see git history for it. The vendored fuzz answers were
+    # regenerated from upstream HEAD the same day and agree with every expectation below.
+    @testset "graft replaces the key run below the focus (upstream f0cd6b7)" begin
+        # graft at `:` replaces `:aa` (below the focus) with the source
+        a = _defect_run("graft alone", "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\n")
+        @test _atoms(a) == [":ab::"]
+        b = _defect_run("graft then SETVAL", "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n")
+        @test _atoms(b) == [":", ":ab::"]
+        d2 = _defect_run("graft, REMOVEVAL, SETVAL", "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP REMOVEVAL 0\nOP SETVAL\n")
+        @test _atoms(d2) == [":", ":ab::"]
+        # parent already dense (3 first bytes): same replacement, siblings untouched
+        d3 = _defect_run("parent dense", "A ::aa b c\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n")
+        @test _atoms(d3) == [":", ":ab::", "b", "c"]
+        d4 = _defect_run("nothing below the focus", "A :\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n")
         @test _atoms(d4) == [":", ":ab::"]
     end
 
-    @testset "graft_map destroys the subtrie it just grafted, when the source has a root value" begin
-        # ⚠️ A SPECIAL CASE of the testset above — kept because it is the shape the defect was first
-        # found in and the one the upstream report leads with. graft_map = graft_internal(src root)
-        # followed by set_val(src root value) under the default `graft_root_vals` feature, so the
-        # source's root value is what supplies the destroying set_val here.
-        # `graft_map` = graft_internal(src_root_node) then, under the DEFAULT `graft_root_vals`
-        # feature, set_val(src_root_val). That set_val lands in the slot the graft just wrote.
-        #   upstream -> [::,::b]            the source's `bb::` is GONE
-        #   ours     -> [::,::b,::bb::]     the graft survives AND the root value is set
-        out = _defect_run("source HAS a root value",
-            "A ::b\nAROOTVAL 0\nS bb::\nSROOTVAL 1\nORIGIN ::\nOP GRAFTMAP\n")
-        @test _atoms(out) == ["::", "::b", "::bb::"]
-
-        # CONTROL that isolates the cause: same program, root value removed. Upstream keeps the
-        # graft here, so the root value is what destroys it — not the graft point's key width.
-        ctl = _defect_run("source has NO root value — upstream agrees",
-            "A ::b\nAROOTVAL 0\nS bb::\nSROOTVAL 0\nORIGIN ::\nOP GRAFTMAP\n")
-        @test _atoms(ctl) == ["::b", "::bb::"]
-
-        # Single-byte graft point: retires the "multi-byte node key" hypothesis this family was
-        # once attributed to — the defect fires here too.
-        one = _defect_run("single-byte origin — still diverges upstream",
-            "A :b\nAROOTVAL 0\nS bb::\nSROOTVAL 1\nORIGIN :\nOP GRAFTMAP\n")
-        @test ":" in [string(c) for c in ":"]           # (guard: origin is a single byte)
-        @test _atoms(one) == [":", ":b", ":bb::"]
+    @testset "insert_prefix moves the key run instead of copying it (upstream f0cd6b7)" begin
+        c = _defect_run("insert_prefix", "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN bb\nOP INSPREFIX a\n")
+        @test _atoms(c) == ["bba:"]
+        d = _defect_run("insert_prefix then SETVAL", "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN bb\nOP INSPREFIX a\nOP SETVAL\n")
+        @test _atoms(d) == ["bb", "bba:"]
+        # the same focus reached by DESCEND from the map root gives the same answer
+        h = _defect_run("focus by DESCEND", "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN -\nOP DESCEND bb\nOP INSPREFIX a\nOP SETVAL\n")
+        @test _atoms(h) == _atoms(d)
     end
 
-    @testset "the [bb,bb] duplicate is SHARED upstream behaviour, not our corruption" begin
-        # After a join at a focus inside a multi-byte slot key, one value is reachable through two
-        # slot encodings, so it enumerates twice. BOTH engines do this identically — verified on
-        # three shapes against the release binary. It looked exactly like our structural corruption
-        # until the join was run alone on both sides; that is the `00020` lesson.
-        for (tag, s) in (("S = a:b ab ba", "a:b ab ba"), ("S = ba", "ba"), ("S = a", "a"))
-            out = _defect_run("duplicate after join — $tag",
-                "A bb\nAROOTVAL 0\nS $s\nSROOTVAL 0\nORIGIN b\nOP JOINMAP\n")
-            @test count(==("bb"), _atoms(out)) == 2
+    @testset "graft_map: the source root value becomes the focus value, the run below is replaced" begin
+        out = _defect_run("source HAS a root value", "A ::b\nAROOTVAL 0\nS bb::\nSROOTVAL 1\nORIGIN ::\nOP GRAFTMAP\n")
+        @test _atoms(out) == ["::", "::bb::"]
+        ctl = _defect_run("source has NO root value", "A ::b\nAROOTVAL 0\nS bb::\nSROOTVAL 0\nORIGIN ::\nOP GRAFTMAP\n")
+        @test _atoms(ctl) == ["::bb::"]
+        one = _defect_run("single-byte origin", "A :b\nAROOTVAL 0\nS bb::\nSROOTVAL 1\nORIGIN :\nOP GRAFTMAP\n")
+        @test _atoms(one) == [":", ":bb::"]
+    end
+
+    @testset "join_map_into at a mid-key focus enumerates each path once (upstream f0cd6b7)" begin
+        e = _defect_run("join", "A ::\nAROOTVAL 0\nS :aa ab ba\nSROOTVAL 0\nORIGIN :\nOP JOINMAP\n")
+        @test _atoms(e) == ["::", "::aa", ":ab", ":ba"]
+        f = _defect_run("join then SETVAL", "A ::\nAROOTVAL 0\nS :aa ab ba\nSROOTVAL 0\nORIGIN :\nOP JOINMAP\nOP SETVAL\n")
+        @test _atoms(f) == [":", "::", "::aa", ":ab", ":ba"]
+        # used to enumerate `bb` twice on both engines (the old "SHARED duplicate")
+        for (tag, src, want) in (("S = a:b ab ba", "a:b ab ba", ["ba:b", "bab", "bb", "bba"]),
+                                 ("S = ba", "ba", ["bb", "bba"]), ("S = a", "a", ["ba", "bb"]))
+            out = _defect_run("join — $tag", "A bb\nAROOTVAL 0\nS $src\nSROOTVAL 0\nORIGIN b\nOP JOINMAP\n")
+            @test _atoms(out) == want
+            @test count(==("bb"), _atoms(out)) == 1
         end
     end
 end

@@ -932,7 +932,13 @@ function _wz_graft_internal!(
         nk = collect(_wz_node_key(z))
         if !isempty(nk)
             sub_branch_added = _wz_in_mut_static_result!(
-                z, (node, key) -> node_set_branch!(node, key, src), (_, _) -> true
+                z, (node, key) -> begin
+                    # A graft replaces everything below the focus (upstream f0cd6b7,
+                    # write_zipper.rs:2389-2394) — without it a mid-key focus kept the old key run
+                    # beside the grafted one (delta P1 #5; Lean-harness #686)
+                    node_remove_all_branches!(node, key, false)
+                    node_set_branch!(node, key, src)
+                end, (_, _) -> true
             )
             if sub_branch_added
                 _wz_mend_root!(z)
@@ -2075,6 +2081,7 @@ function wz_insert_prefix!(z::WriteZipperCore{V, A}, prefix) where {V, A}
     is_none(focus_anr) && return false
     focus_rc = into_option(focus_anr)
     focus_rc === nothing && return false
+    isempty(prefix_v) && return true      # inserting zero bytes is a no-op (upstream f0cd6b7)
     new_parent = _wz_make_parent_node(prefix_v, focus_rc, z.alloc)
     _wz_graft_internal!(z, new_parent)
     true

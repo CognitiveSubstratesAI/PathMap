@@ -90,7 +90,12 @@ Not exercised by phase B: `to_next_k_path` with k > depth (P3 `8082317`) — the
   op table v4). Model change (`ofValRes` follows upstream `AlgebraicResult::status()`: an identity without
   SELF_IDENT is Element) closed the 5 `meet_into ret` programs. 12c produced no remaining first divergence.
   Verified WARM: related test files, PathMap suite 172/172 and MORK 8168/8168 in `MORK/tools/warm_suite.sh`.
-- **The 2 left, attributed:** #686 is **P1 #5** (`f0cd6b7`): `insert_prefix` at a one-byte write-zipper root kept
+- **2 → 0 (2026-09-17).** P1 #5 ported (`f0cd6b7`: `graft_internal` removes all branches before setting the
+  new one; LineList `set_payload_abstract` also replaces a value stored under a longer compressed key;
+  `insert_prefix("")` is a no-op) with its six upstream tests (`test/test_upstream_insert_prefix.jl`; a
+  mutant of the LineList rule fails 2, of both halves 9). #747 fixed as a DELIBERATE DEVIATION
+  (`test/differential/UPSTREAM_BUGS.md` §3; mutant fails 2). **The Lean harness now reports 0 of 1000.**
+- **The 2 that were left, attributed:** #686 is **P1 #5** (`f0cd6b7`): `insert_prefix` at a one-byte write-zipper root kept
   the old key run beside the prefixed copy (`graft_internal` lacks `node_remove_all_branches`), surfacing later at
   `set_val`. #747 is an **upstream defect we ported 1:1**: dense `prestrict_abstract` (dense_byte_node.rs:489-545)
   drops a value-only entry (or an entry's value) when `other` has no value at that byte without clearing
@@ -161,3 +166,13 @@ Under 0.3 semantics the equivalent rule is: invalidate the token on every in-nod
   equals the OLD vendored upstream answer), mostly GRAFTMAP / INSPREFIX / REMPREFIX / JOINMAP → expected from #5.
   Some (e.g. 00020) are unattributed.
 - `expected/*.tsv` and `UPSTREAM_BUGS.md` must be regenerated / re-checked after the fixes.
+- **2026-09-17:** `prefix/insert_prefix_at_foo` left `EXPECTED_PASS.txt`. Its vendored answer
+  `[foo:bar,foo:ns:bar]` is the pre-`f0cd6b7` stale-run bug; since porting P1 #5 we answer `[foo:ns:bar]`, which
+  is what upstream HEAD's own `write_zipper_insert_prefix_mid_key_replaces_old_downstream_path` asserts. It goes
+  back in when `expected/upstream.tsv` is regenerated from a HEAD probe (rust_probe needs the 0.4.0 API first).
+  `test/upstream_defects.jl`'s graft / insert_prefix / join family was re-baselined to HEAD for the same reason.
+- **Re-vendored the same day from upstream HEAD `f477a91`** (probe built in `~/csai-work/rust_probe_head`, cases
+  byte-identical to `fuzz/cases.txt`): the 0.4.0 API needed no probe change except that `ascend` now RETURNS the
+  bytes ascended — `run_fuzz.jl` / `run_differential.jl` print that count. Result: curated **46/46**, fuzz
+  **2995/3000**; the 5 left (`00175 01357 01449 01494 01539`) are UPSTREAM_BUGS.md §1, still present at HEAD, and
+  the resulting TRIE equals HEAD's in every other case. `prefix/insert_prefix_at_foo` is back in the baseline.

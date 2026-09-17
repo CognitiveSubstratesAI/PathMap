@@ -7,7 +7,8 @@
 #   * a listed case that starts matching                                -> only LOGS, asking you
 #                                                                          to remove its line
 #
-# So it is green at today's fidelity and can only tighten. 2970 of 3000 currently match
+# So it is green at today's fidelity and can only tighten. 2995 of 3000 currently match against
+# upstream HEAD f477a91 (re-vendored 2026-09-17; the 5 left are the dense subtract_into defect, UPSTREAM_BUGS.md §1)
 # (the gate's own `@info` line prints this each run; the previous "2919" here was stale).
 #
 # WHY IT EXISTS. The 42 CURATED scenarios in test/differential/ only find what someone thought to

@@ -161,3 +161,25 @@ const _RESTRICT_CASES = Tuple{String, String, String}[
         @test (name, got) == (name, want)
     end
 end
+
+# ⚠️ DELIBERATE DEVIATION from upstream (test/differential/UPSTREAM_BUGS.md, Lean-harness program #747):
+# dense `prestrict_abstract` (a DENSE self against a LineList/TinyRef other) drops a value-only entry
+# when `other` has no value at that byte, but upstream leaves `is_identity` set, so `restrict` reports
+# Identity and the caller keeps the UNRESTRICTED node. Shape of #747: self is dense with children 00
+# and 02 (a third key inserted then removed — dense nodes do not shrink back), other is a two-key
+# LineList with a value at 00 and a longer key under 02, so every self byte has a partial key in other.
+@testset "restrict drops value-only dense entries and reports Element (#747)" begin
+    self = PathMaps.PathMap{UInt64}()
+    for (k, v) in ((UInt8[0], 1), (UInt8[2], 2), (UInt8[3], 3))
+        set_val_at!(self, k, UInt64(v))
+    end
+    remove_val_at!(self, UInt8[3], true)
+    @test self.root.node isa PathMaps.DenseByteNode
+    src = PathMaps.PathMap{UInt64}()
+    set_val_at!(src, UInt8[0], UInt64(5))
+    set_val_at!(src, UInt8[2, 1], UInt64(6))
+    @test src.root.node isa PathMaps.LineListNode        # -> _bn_prestrict_abstract, the defective path
+    st = wz_restrict!(write_zipper(self), tr_get_focus_anr(trie_ref_at_path(src, UInt8[])))
+    @test st == ALG_STATUS_ELEMENT
+    @test sort([collect(UInt8, k) for (k, _) in self]) == [UInt8[0]]
+end

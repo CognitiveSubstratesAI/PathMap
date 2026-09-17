@@ -1058,6 +1058,13 @@ function _bn_prestrict_abstract(
                     new_node.mask = set(new_node.mask, key_byte)
                     push!(new_node.values, _cf_copy(cf))
                 else
+                    # ⚠️ DELIBERATE DEVIATION (test/differential/UPSTREAM_BUGS.md): `other` has no value
+                    # at this byte, so a value in this entry is DROPPED (the new entry never gets one) —
+                    # and an entry with no onward link is dropped entirely. Upstream
+                    # (dense_byte_node.rs:489-545) leaves `is_identity` set here, so `restrict` reports
+                    # Identity and the caller keeps the unrestricted node (Lean-harness #747).
+                    has_val(cf) && (is_identity = false)
+                    cf.rec === nothing && (is_identity = false)
                     if cf.rec !== nothing
                         other_child = get_node_at_key(other, UInt8[key_byte])
                         other_node = if (other_child isa ANRNone)

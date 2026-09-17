@@ -242,7 +242,10 @@ function _fuzz_run(::Type{V}, c) where {V}
             PathMaps.wz_descend_to!(wz, _fb(arg))
             "-"
         elseif name == "ASCEND"
-            string(PathMaps.wz_ascend!(wz, parse(Int, arg)))
+            # upstream 0.4.0 prints the bytes ascended (`ascend -> usize`, zipper.rs:391)
+            before = length(PathMaps.wz_path(wz))
+            PathMaps.wz_ascend!(wz, parse(Int, arg))
+            string(before - length(PathMaps.wz_path(wz)))
         elseif name == "SETVAL"
             string(PathMaps.wz_set_val!(wz, _fparse_val(V, arg)) !== nothing)
         elseif name == "REMOVEVAL"

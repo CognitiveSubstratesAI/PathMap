@@ -763,8 +763,9 @@ function set_payload_abstract!(
     node_key_0 = n.key0
     overlap = find_prefix_overlap(key, node_key_0)
     if overlap > 0
-        # Replace existing child branch at same key
-        if is_child && is_child_0(n) && overlap == length(key)
+        # Replace the existing downstream branch at this key — including a VALUE stored under a longer
+        # compressed key, which is downstream too (upstream f0cd6b7, line_list_node.rs:997-1001)
+        if is_child && overlap == length(key) && (is_child_0(n) || length(node_key_0) > length(key))
             take_slot0_payload!(n)
             return set_payload_abstract!(n, is_child, key, payload)
         end
@@ -796,7 +797,7 @@ function set_payload_abstract!(
     node_key_1 = n.key1
     overlap1 = find_prefix_overlap(key, node_key_1)
     if overlap1 > 0
-        if is_child && is_child_1(n) && overlap1 == length(key)
+        if is_child && overlap1 == length(key) && (is_child_1(n) || length(node_key_1) > length(key))   # f0cd6b7
             take_slot1_payload!(n)
             return set_payload_abstract!(n, is_child, key, payload)
         end

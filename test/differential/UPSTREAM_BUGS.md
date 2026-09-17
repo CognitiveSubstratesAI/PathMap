@@ -166,3 +166,21 @@ mistake: **shrink first, then attribute.**
 Next step if picked up: determine whether the duplicate is a mid-edge enumeration artifact in
 upstream's read zipper (in which case ours is more correct and this becomes a deviation) or a
 genuine multi-value state we fail to represent (in which case it is our defect).
+
+## 3. Dense `prestrict_abstract` reports Identity after dropping entries — DEVIATION (2026-09-17)
+
+**Upstream** `dense_byte_node.rs:489-545` (`ByteNode::prestrict_abstract`, a DENSE self against a
+LineList/TinyRef other), at `f477a91`: for a byte where `other` has a partial key but NO value, an entry
+of `self` that carries a value loses it (the new entry is built without one), and an entry with no onward
+link is dropped altogether — yet `is_identity` is never cleared on that path. The result is
+`Identity(SELF_IDENT)`, so `WriteZipperCore::restrict` keeps the UNRESTRICTED node: the branch that should
+have been removed survives and the status says nothing changed. (Upstream `lean/FINDINGS.md` #8 records
+the opposite imprecision — `Element` for an unchanged trie; this one changes the EFFECT.)
+
+**Found by** the PathMapsSpec Lean-model harness (program #747): self dense `{00, 02}` (values), other
+`{00 ↦ v, 0201 ↦ v}` → the model removes `02` and reports Element; upstream's logic keeps it.
+
+**We deviate:** `_bn_prestrict_abstract` clears `is_identity` when the entry has a value or has no onward
+link (`src/nodes/DenseByteNode.jl`). Pinned by `test/test_restrict.jl`
+"restrict drops value-only dense entries and reports Element (#747)" (a mutant restoring upstream's logic
+fails it). Unfiled upstream.

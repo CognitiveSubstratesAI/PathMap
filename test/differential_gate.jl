@@ -46,7 +46,8 @@ include(joinpath(@__DIR__, "differential", "run_differential.jl"))
     isempty(improved) ||
         @info "differential IMPROVED — add to test/differential/EXPECTED_PASS.txt to lock in" improved
 
-    # The 5 known divergences are DELIBERATELY outside the baseline, not hidden: they are real
+    # 2026-09-17: re-vendored from upstream HEAD f477a91 — all 46 match, so the baseline is the full set.
+    # (Historical:) The 5 known divergences are DELIBERATELY outside the baseline, not hidden: they are real
     # fidelity gaps to close (graft_root_vals family, empty-path existence, remove_prefix at a
     # non-root focus), each with upstream's answer recorded in expected/upstream.tsv.
     @test length(passing) >= length(baseline)

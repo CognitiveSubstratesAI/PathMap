@@ -23,6 +23,8 @@
 #
 # The two scripts below were MEASURED against the upstream release binary
 # (`gen_fuzz --exec`, 52fd9df, default features); the expected strings are its exact output.
+# Re-measured 2026-09-17 against upstream HEAD f477a91: identical except that 0.4.0's `ascend` returns the
+# bytes ascended, so ASCEND prints `1` where it printed `true`.
 using PathMaps, Test
 
 include(joinpath(@__DIR__, "differential", "run_fuzz.jl"))
@@ -41,7 +43,7 @@ include(joinpath(@__DIR__, "differential", "run_fuzz.jl"))
             "OP DESCEND aa\nOP REMOVEVAL 1\nOP ASCEND 1\n" *
             "OP DESCEND b\nOP REMOVEVAL 1\nOP ASCEND 1\nOP TAKEMAP 0\n"
         )
-        @test out == "-;true;true;-;true;true;None;|[ba] vc=1"
+        @test out == "-;true;1;-;true;1;None;|[ba] vc=1"
         @test occursin(";None;", out)          # NOT ";[] vc=0;" — an empty map is the bug
     end
 
@@ -53,7 +55,7 @@ include(joinpath(@__DIR__, "differential", "run_fuzz.jl"))
             "OP DESCEND aa\nOP REMOVEVAL 1\nOP ASCEND 1\n" *
             "OP DESCEND b\nOP REMOVEVAL 1\nOP RESET\nOP SUB 0\n"
         )
-        @test out == "-;true;true;-;true;-;None;|[] vc=0"
+        @test out == "-;true;1;-;true;-;None;|[] vc=0"
         @test !occursin(";Element;", out)
     end
 end

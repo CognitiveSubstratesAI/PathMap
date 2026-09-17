@@ -280,7 +280,11 @@ function differential_results()
     m = _mk(["foo:bar"])
     ret_over = let wz = PathMaps.write_zipper_at_path(m, _b("foo:"))
         PathMaps.wz_descend_to!(wz, _b("bar"))
-        r = PathMaps.wz_ascend!(wz, 5)
+        # upstream 0.4.0: `ascend` returns the number of bytes ascended (zipper.rs:391), not a Bool;
+        # ours returns Bool, so the probe's value is the path-length difference.
+        before = length(PathMaps.wz_path(wz))
+        PathMaps.wz_ascend!(wz, 5)
+        r = before - length(PathMaps.wz_path(wz))
         PathMaps.wz_set_val!(wz, PathMaps.UnitVal())
         r
     end
