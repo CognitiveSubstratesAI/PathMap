@@ -45,6 +45,9 @@ include("nodes/BridgeNode.jl")
 # The CLOSED union of node types + the narrowing accessors — needs every node type to exist first.
 include("nodes/NodeVariant.jl")
 
+# The five concrete AbstractNodeRef variants — their payloads are the types NodeVariant.jl just defined.
+include("nodes/NodeRef.jl")
+
 # ── ADR-001 node-slab scaffold (additive; NOT wired into the live trie yet) ────
 include("pathmap/NodeSlab.jl")
 include("pathmap/SlabTrie.jl")

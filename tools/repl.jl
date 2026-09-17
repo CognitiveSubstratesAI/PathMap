@@ -38,7 +38,7 @@ function mkmap(pairs::Pair...)
 end
 
 if isinteractive()
-    println("PathMap v0.3.0 loaded.")
+    println("PathMap v$(PathMaps.version()) loaded.")
     println("  t()              — run full test suite")
     println("  mkmap(k=>v, ...) — build a test PathMap")
 end

@@ -37,6 +37,27 @@ singleton, anything else is asserted into the closed union. Upstream's `TaggedNo
 end
 
 """
+    _fnode_opt(inner, V, A) -> Union{Nothing, TrieNodeVariant{V,A}}
+
+The narrowing that PRESERVES THE NULL, for the `rc.node` reads whose callee distinguishes `nothing` from
+`EmptyNode`.
+
+🔴 READ THIS BEFORE REACHING FOR `as_tagged` INSTEAD. `as_tagged` maps the null sentinel to the `EmptyNode`
+singleton; for the read/removal accessors those two are NOT interchangeable. `node_remove_val!(::Nothing)`
+returns `nothing` ("no value to remove") while `node_remove_val!(::EmptyNode)` ERRORS as unreachable.
+Swapping one site from the first to the second cost 18 fuzz cases on 2026-09-17
+(docs/PERF_AUDIT_2026-09-17.md). `_fnode_opt` cannot cause that: `nothing` stays `nothing` and only the
+non-null branch is asserted into the closed union, which every node type already satisfies.
+
+The `Union{Nothing, …}` return is a 7-way union at the call site; Julia still union-splits it, and it is
+what turns `node_get_child` / `node_replace_child!` / `node_remove_val!` / `pjoin_dyn` on a stack node from
+a vtable lookup into a jump table.
+"""
+@inline function _fnode_opt(inner, ::Type{V}, ::Type{A}) where {V, A <: Allocator}
+    inner === nothing ? nothing : inner::TrieNodeVariant{V, A}
+end
+
+"""
     as_tagged(rc::TrieNodeODRc) -> TrieNodeVariant
 
 Returns the inner node (= `TaggedNodeRef`). Mirrors `TrieNodeODRc::as_tagged`, which yields

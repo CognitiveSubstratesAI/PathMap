@@ -121,7 +121,7 @@ function _wz_replace_top_node!(
 ) where {V, A}
     if length(z.focus_stack) > 1
         pop!(z.focus_stack)
-        parent_node = z.focus_stack[end].node
+        parent_node = _fnode_opt(z.focus_stack[end].node, V, A)
         pk = collect(_wz_parent_key(z))          # parent_key as owned Vector
         node_replace_child!(parent_node, pk, new_rc)
         push!(z.focus_stack, new_rc)
@@ -198,7 +198,7 @@ function _wz_ensure_write_unique!(z::WriteZipperCore{V, A}) where {V, A}
     # from the just-made_mut'd parent. (Stale "deepcopy" premise in the old comment was
     # wrong: clone_self shallow-SHARES children with a refcount bump, not a deepcopy.)
     for k in 2:n
-        parent = z.focus_stack[k - 1].node
+        parent = _fnode_opt(z.focus_stack[k - 1].node, V, A)
         parent === nothing && break
         pk = _wz_parent_key_for_level(z, k)   # view: node_get_child only READS the key
         gc = node_get_child(parent, pk)::Union{Nothing, Tuple{Int, TrieNodeODRc{V, A}}}
@@ -238,7 +238,7 @@ function _wz_in_mut_static_result!(
         # `&mut dyn TrieNode`, so there is no null to materialise, and hence no code to port.
         fresh = TrieNodeODRc(LineListNode{V, A}(z.alloc), z.alloc)
         _wz_replace_top_node!(z, fresh)
-        focus_node = z.focus_stack[end].node
+        focus_node = _fnode_opt(z.focus_stack[end].node, V, A)
     end
     result = node_f(focus_node, key)
     if result isa TrieNodeODRc
@@ -284,7 +284,8 @@ function _wz_descend_to_internal!(z::WriteZipperCore{V, A}) where {V, A}
         # node_get_child methods return exactly this), stabilizing `consumed`/`child_rc` and killing
         # the downstream `length`/`>=`/`+`/`view` dynamic-dispatch cascade. Semantic no-op.
         result =
-            node_get_child(focus_node, key)::Union{Nothing, Tuple{Int, TrieNodeODRc{V, A}}}
+            node_get_child(focus_node::TrieNodeVariant{V, A}, key)::Union{
+                Nothing, Tuple{Int, TrieNodeODRc{V, A}}}
         result === nothing && break
         consumed, child_rc = result
         # Only descend if there are bytes remaining AFTER consuming this child's key
@@ -392,9 +393,11 @@ function remove_val!(z::WriteZipperCore{V, A}, prune::Bool=false) where {V, A}
     # 🔴 NOT `as_tagged` here. The sentinel and `EmptyNode` DIVERGE for this callee:
     # `node_remove_val!(::Nothing, …)` returns `nothing` ("there was no value"), while
     # `node_remove_val!(::EmptyNode, …)` ERRORS as unreachable (EmptyNode.jl:56). Narrowing this read
-    # cost 18 fuzz cases on 2026-09-17 — the other six sites in this file narrow safely because both
-    # of their methods agree.
-    focus_node = z.focus_stack[end].node
+    # with `as_tagged` cost 18 fuzz cases on 2026-09-17 — the other six sites in this file narrow
+    # safely because both of their methods agree. `_fnode_opt` is the narrowing that is safe HERE:
+    # it asserts only the non-null branch into the closed union and leaves the sentinel alone, so the
+    # `::Nothing` method still gets the call it is there to answer.
+    focus_node = _fnode_opt(z.focus_stack[end].node, V, A)
     old_val = node_remove_val!(focus_node, nk, prune)
     # ⚠️ `_wz_prune_path_internal!`, NOT `prune_path!` — and note this is the OPPOSITE choice from
     # `join_k_path_into!`, which must use the public one. Upstream really does differ per site:
@@ -716,8 +719,15 @@ function _wz_get_focus_anr(z::WriteZipperCore{V, A}) where {V, A}
         # empty node has no subtrie at any key. Guarded HERE rather than as a `::Nothing` method
         # because the empty answer is `ANRNone{V,A}()` — it needs the type params, which only the
         # zipper knows. Same contract hole as the node_* accessors; found by the fuzzer.
+        # `::TrieNodeVariant{V,A}` on the non-null branch: the field is declared
+        # `Union{Nothing, AbstractTrieNode{V,A}}`, so the `!== nothing` test leaves an ABSTRACT receiver and
+        # `get_node_at_key` dispatches dynamically, which made this function infer `Any` and took every
+        # downstream `is_none` / `as_tagged` / `_check_anr_sharing` / `pmeet_dyn` in `meet_into!` and
+        # `join_map_into!` with it. The assertion is a semantic no-op (the union lists every node type) and
+        # does NOT touch the null case, which still answers `ANRNone`.
         fnode = z.focus_stack[end].node
-        fnode === nothing ? ANRNone{V, A}() : get_node_at_key(fnode, nk)
+        fnode === nothing ? ANRNone{V, A}() :
+        get_node_at_key(fnode::TrieNodeVariant{V, A}, nk)
     end
 end
 
@@ -736,7 +746,7 @@ function _wz_remove_branches!(z::WriteZipperCore{V, A}, prune::Bool) where {V, A
         removed
     else
         @assert length(z.focus_stack) == 1
-        if node_is_empty(z.focus_stack[1].node)
+        if node_is_empty(_fnode_opt(z.focus_stack[1].node, V, A))
             return false
         end
         empty_rc = TrieNodeODRc(LineListNode{V, A}(z.alloc), z.alloc)
@@ -1200,7 +1210,7 @@ function join_map_into!(z::WriteZipperCore{V, A}, map::PathMap{V, A}) where {V, 
         _wz_graft_internal!(z, copy(src_rc))
         ALG_STATUS_ELEMENT
     else
-        result = pjoin_dyn(as_tagged(focus_anr), src_rc.node)
+        result = pjoin_dyn(as_tagged(focus_anr), _fnode_opt(src_rc.node, V, A))
         if result isa AlgResElement
             _wz_graft_internal!(z, result.value)
             ALG_STATUS_ELEMENT
@@ -1788,7 +1798,7 @@ Mirrors `WriteZipperCore::prune_path`.
 function prune_path!(z::WriteZipperCore{V, A}) where {V, A}
     nk = collect(_wz_node_key(z))
     isempty(nk) && return 0
-    focus_node = z.focus_stack[end].node
+    focus_node = _fnode_opt(z.focus_stack[end].node, V, A)
     node_pruned = node_remove_dangling!(focus_node, nk)
     trie_pruned = node_pruned > 0 ? _wz_prune_path_internal!(z) : 0
     max(node_pruned, trie_pruned)

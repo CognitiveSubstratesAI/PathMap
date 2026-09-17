@@ -233,11 +233,68 @@ claim above therefore rests on ALLOCATION COUNTS and STATIC DISPATCH SITES, both
    heap-allocated, and the zipper's `ancestors` stack pushes a tuple with a `Union` field per descent. Removing
    them means changing the node interface (write the item into caller-owned buffers) or splitting `ancestors`
    into parallel arrays — both bigger than this pass.
-2. The 41 remaining dispatch sites are concentrated in `join_map_into!` (17) and `meet_into!` (19), where the
-   node pairs come out of `AbstractNodeRef` slots whose validity is a separate tag bit — the same
-   representation problem as Finding 6. Fixing it means a typed slot, not another assertion.
+2. ~~The 41 remaining dispatch sites…~~ **RESOLVED, and my attribution was WRONG — see round 3 below.**
 3. `_cata_ascend_to_fork!`'s per-fork `copy(origin_path(z))` + `[w]` (85 k allocations over 5 000 keys) —
    left deliberately, see above. Removing them needs a fold interface that states whether the callee may
    retain its arguments.
 4. Finding 6's 140 JET type-error reports: baseline re-recorded, class unchanged.
 5. Codecov is wired but has not yet reported — the first run lands on the next push to each repo.
+
+
+---
+
+# Round 3 (same day) — the last 40 sites were two abstract STRUCT FIELDS, not the tag bits
+
+🔴 **I attributed these wrongly above.** "Still open" #2 said the remaining sites came from `AbstractNodeRef`
+slots whose validity lives in a separate tag bit, i.e. the Finding 6 representation problem, and that fixing
+them needed a typed slot. That was a hypothesis written from the shape of the call sites. Re-running
+`@report_opt` and reading WHAT each site dispatches on (`~/csai-work/gates/audit/opt_report_r3*.log`) gave a
+different answer: 34 of the 40 were one cascade, from two fields that upstream declares concrete and we did
+not.
+
+    upstream trie_node.rs:839   BorrowedDyn(TaggedNodeRef<'a, V, A>)   BorrowedTiny(TinyRefNode<'a, V, A>)
+    ours (TrieNode.jl)          node::AbstractTrieNode{V,A}            node::AbstractTrieNode{V,A}
+
+The `ANRBorrowedTiny` field even carried the comment *"Placeholder until TinyRefNode is ported in Phase 1b …
+TinyRefNode.jl will narrow this"*. TinyRefNode was ported; the narrowing never happened. One abstract field
+made `get_node_at_key` dispatch dynamically, which made `_wz_get_focus_anr` infer `Any`, which made
+`is_none`, `as_tagged`, `_check_anr_sharing`, `_wz_graft_internal!`, `pjoin_dyn` and `pmeet_dyn` dispatch in
+turn — the whole of `meet_into!`'s and `join_map_into!`'s cost.
+
+## Fixed
+
+**`src/nodes/NodeRef.jl`** (new) holds the five concrete variants with upstream's payload types
+(`TrieNodeVariant` = `TaggedNodeRef`, `TinyRefNode`). They had to move out of `TrieNode.jl` for the same
+reason `NodeVariant.jl` exists: neither payload type is defined yet that early in the load order. The
+abstract supertype stays in `TrieNode.jl`, because `DenseByteNode.jl`'s `try_as_tagged(r::AbstractNodeRef)`
+needs it in a signature.
+
+**`_fnode_opt(inner, V, A)`** (NodeVariant.jl) narrows the eight `focus_stack[…].node` reads. It is the
+narrowing that is SAFE for callees that distinguish the sentinel from `EmptyNode`: `nothing` stays
+`nothing`, only the non-null branch is asserted into the closed union. That is what makes it usable at the
+`remove_val!` site whose `as_tagged` narrowing cost 18 fuzz cases in round 2 — that site is now narrowed,
+and the fuzz gate is unchanged at 2995.
+
+| probe | round 2 | round 3 |
+|---|---|---|
+| `set_val_at!` | 4 | **1** |
+| `remove_val_at!` | 2 | **0** |
+| `join_map_into!` | 16 | **4** |
+| `meet_into!` | 18 | **3** |
+| **union over 9 entry points** | **40** | **8** |
+
+Gates: PathMap 172/172, fuzz 2995 matching / 5 known-divergent (identical to before the change), curated
+differential 4358/4358.
+
+## The 8 that remain, and why they stay
+
+- `pmeet_dyn(::TrieNodeVariant, ::TrieNodeVariant)` and `pjoin_dyn(::TrieNodeVariant, ::Union{Nothing,
+  TrieNodeVariant})` — TWO union-typed arguments, so 36+ combinations: past any union-splitting threshold.
+  This is the algebraic double dispatch itself, and upstream pays a vtable call here too (`dyn TrieNode`).
+- `_wz_graft_internal!(z, ::Any)` ×2 — the `AlgebraicResult` payload those calls return.
+- The `node_f` closure calls inside `_wz_in_mut_static_result!` — the closure is invoked with the 7-way
+  `Union{Nothing, TrieNodeVariant}`.
+
+Closing these needs a different node interface (a single-dispatch algebra, or `AlgebraicResult` parameterised
+on its payload), not another assertion. That is a design change, and it is not worth doing on the evidence
+here: 8 sites across nine entry points, none of them per-byte.
