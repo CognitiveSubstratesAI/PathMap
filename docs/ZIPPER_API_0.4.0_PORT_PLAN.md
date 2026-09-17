@@ -75,7 +75,17 @@ Node token contract (trie_node.rs:195-256, constants :408-478): `IterToken = u64
    (dense_byte_node.rs:315-381, 1010-1053), LineList (line_list_node.rs:1950-2133), Viz callers; node tests
    (`byte_node_iter_token_crosses_mask_word_boundaries`, `test_line_list_ascend_iter_token`,
    `…after_focus_skips_partial_item`, `…skips_descendant_item`, `…uses_canonical_tokens`).
-2. **Zipper token consumers** — `reascend_iter_token` in ascend / ascend_within_node; `descend_first_byte`
+2. **Zipper token consumers** — DONE 2026-09-17, all as upstream bodies: `_reascend_iter_token!` in ascend,
+   ascend_byte, ascend_within_node and the k-path exits (replaces our INVALID writes); `descend_first_byte`
+   reuses the token (nonexistent early-out, `ascend_iter_token` for a partial item); token-based
+   `to_next_sibling_byte`; `to_prev_sibling_byte` = `to_sibling(false)` with e659a96 (dense via
+   `next_bit`/`prev_bit`, `bit_sibling` removed; LineList prev rule); `to_next_get_val` `< TOKEN_LAST`;
+   `k_path_internal` = zipper.rs:3131-3223 with `continue_from_focus` (our `resume_from` filter and re-sync
+   loop removed; the mutant with `false` fails 7 + 80); native `descend_until_max_bytes`;
+   `descend_to_existing_byte` invalidates in the partial-key arm. Internal `_zc_*` functions already
+   return the 0.4.0 shapes (byte / count); the public `zipper_*` still return Bool until phase 3. An
+   AllocCheck site from a `UInt8[]` fallback in LineList `ascend_iter_token` was removed (pin 3 held).
+   Lean seeds 1–6: the same 7 FINDINGS-#8 programs. Originally planned: `reascend_iter_token` in ascend / ascend_within_node; `descend_first_byte`
    (2179-2233); token `to_next_sibling_byte` (2359-2424); `to_next_get_val` `< TOKEN_LAST`; `k_path_internal`
    3132-3222 verbatim (drops our `resume_from` and resync loop).
 3. **Generic API + return shapes** — abstract types, upstream-named generics, `depth`, `focus_byte`, Option/count

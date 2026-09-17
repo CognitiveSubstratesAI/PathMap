@@ -1179,9 +1179,8 @@ function ascend_iter_token(n::LineListNode, token::IterToken, byte_count::Int)
     node_iter_token_is_nonexistent(token) && error("cannot ascend a nonexistent iteration token")
     byte_count > 0 || error("cannot ascend zero bytes within a node")
     key0 = n.key0
-    key1 = is_used_1(n) ? n.key1 : UInt8[]
     key_end_0 = length(key0)
-    key_end_1 = key_end_0 + length(key1)
+    key_end_1 = key_end_0 + _ll_key_len_1(n)    # an offset past key_end_0 implies slot 1 is used
     offset = if token == TOKEN_LAST
         key_end_1
     else
@@ -1189,7 +1188,7 @@ function ascend_iter_token(n::LineListNode, token::IterToken, byte_count::Int)
         Int(token & ITER_TOKEN_OFFSET_MASK)
     end
     (offset > 0 && offset <= key_end_1) || error("iteration token does not describe an in-node focus")
-    key, key_offset, key_start = offset <= key_end_0 ? (key0, offset, 0) : (key1, offset - key_end_0, key_end_0)
+    key, key_offset, key_start = offset <= key_end_0 ? (key0, offset, 0) : (n.key1, offset - key_end_0, key_end_0)
     byte_count <= key_offset || error("ascent passes the LineListNode root")
     ascended_offset = key_offset - byte_count
     ascended_offset == 0 && return zero(IterToken)
@@ -1511,19 +1510,26 @@ function get_sibling_of_child(
             end
         end
     else
-        if slice_starts_with(k1, key) && slice_starts_with(k0, common_key)
-            last_idx_1based = last_idx + 1
-            length(k0) < last_idx_1based && return (nothing, nothing)
-            k0_last = k0[last_idx_1based]
-            if k0_last != key[end]
-                sib = if length(k0) == length(key) && is_child_0(n)
-                    as_tagged(into_child(n.slot0))
-                else
-                    nothing
-                end
-                return (k0_last, sib)
-            end
+        # line_list_node.rs:2478-2501 (e659a96): the slot whose key agrees with `common_key` and has a
+        # smaller byte at the last position — slot 1 first (the nearer one) — whether or not `key` exists.
+        key_byte(candidate) = (length(candidate) > last_idx &&
+            view(candidate, 1:last_idx) == common_key && candidate[last_idx + 1] < key[last_idx + 1]) ?
+            candidate[last_idx + 1] : nothing
+        slot = 1
+        sibling_byte = is_used_1(n) ? key_byte(k1) : nothing
+        if sibling_byte === nothing
+            slot = 0
+            sibling_byte = key_byte(k0)
+            sibling_byte === nothing && return (nothing, nothing)
         end
+        sib = if slot == 0 && length(k0) == length(key) && is_child_0(n)
+            as_tagged(into_child(n.slot0))
+        elseif slot == 1 && length(k1) == length(key) && is_child_1(n)
+            as_tagged(into_child(n.slot1))
+        else
+            nothing
+        end
+        return (sibling_byte, sib)
     end
     (nothing, nothing)
 end

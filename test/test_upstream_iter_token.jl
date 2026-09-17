@@ -173,6 +173,32 @@ end
     end
 end
 
+@testset "bit_siblings_test (utils/mod.rs, e659a96)" begin
+    x = UInt64(0b0000000000000000000000000000000000000100001001100000000000000010)
+    i = UInt64(1) << 18
+    p = UInt64(1) << 21
+    nn = UInt64(1) << 17
+    f = UInt64(1) << 26
+    l = UInt64(1) << 1
+    mask = PathMaps.ByteMask((x, UInt64(0), UInt64(0), UInt64(0)))
+    bit_i = UInt8(trailing_zeros(i))
+    @test i & x != 0
+    @test PathMaps.prev_bit(mask, bit_i) == UInt8(trailing_zeros(nn))
+    @test PathMaps.next_bit(mask, bit_i) == UInt8(trailing_zeros(p))
+    @test PathMaps.prev_bit(mask, UInt8(trailing_zeros(l))) === nothing
+    @test PathMaps.next_bit(mask, UInt8(trailing_zeros(f))) === nothing
+    m = PathMaps.ByteMask((UInt64(0), UInt64(0), UInt64(0), UInt64(0)))
+    for byte in UInt8[10, 20, 70, 130, 200]
+        m = PathMaps.ByteMask(PathMaps.with_bit_set(m.bits, byte))
+    end
+    @test PathMaps.prev_bit(m, UInt8(64)) == 20
+    @test PathMaps.next_bit(m, UInt8(63)) == 70
+    @test PathMaps.prev_bit(m, UInt8(130)) == 70
+    @test PathMaps.next_bit(m, UInt8(70)) == 130
+    @test PathMaps.prev_bit(m, UInt8(200)) == 130
+    @test PathMaps.next_bit(m, UInt8(130)) == 200
+end
+
 end # testset
 
 end # module

@@ -335,30 +335,6 @@ function _bn_set_payload_owned!(
 end
 
 # =====================================================================
-# bit_sibling — helper for get_sibling_of_child
-# =====================================================================
-
-"""
-    bit_sibling(pos, x, next) → UInt8
-
-Returns the position of the previous (`next=false`) or next (`next=true`)
-active bit in word `x` relative to `pos`. If there is no such bit, returns
-`pos`. Assumes `pos` is active in `x`. Ports upstream `bit_sibling`.
-"""
-function bit_sibling(pos::UInt8, x::UInt64, next::Bool)::UInt8
-    if next
-        pos == 0 && return UInt8(0)
-        succ = ~UInt64(0) >> (64 - Int(pos))
-        m = x & succ
-        m == 0 ? pos : UInt8(63 - leading_zeros(m))
-    else
-        prec = ~(~UInt64(0) >> (63 - Int(pos)))
-        m = x & prec
-        m == 0 ? pos : UInt8(trailing_zeros(m))
-    end
-end
-
-# =====================================================================
 # val_count_below_node — helper for node_val_count
 # =====================================================================
 
@@ -1503,35 +1479,15 @@ function prior_branch_key(n::AbstractByteNode, key::AbstractVector{UInt8})
     test_bit(n.mask, k) ? UInt8[k] : UInt8[]
 end
 
+# dense_byte_node.rs:1243-1257 (e659a96): the ByteMask neighbour of `key[1]`; `key[1]` itself need not exist.
 function get_sibling_of_child(
     n::AbstractByteNode{V, A}, key::AbstractVector{UInt8}, nxt::Bool
 ) where {V, A}
     length(key) != 1 && return (nothing, nothing)
     k = key[1]
-    mask_i = ((k & 0xC0) >> 6) + 1   # 1-based word index
-    bit_i = k & UInt8(0x3F)
-
-    nb = bit_sibling(bit_i, n.mask.bits[mask_i], !nxt)
-    if nb == bit_i  # no sibling in this word — search adjacent words
-        local found = false
-        local new_mask_i = mask_i
-        while true
-            nxt ? (new_mask_i += 1) : (new_mask_i -= 1)
-            (new_mask_i < 1 || new_mask_i > 4) && break
-            w = n.mask.bits[new_mask_i]
-            w == 0 && continue
-            nb = nxt ? UInt8(trailing_zeros(w)) : UInt8(63 - leading_zeros(w))
-            mask_i = new_mask_i
-            found = true
-            break
-        end
-        found || return (nothing, nothing)
-    end
-
-    sibling_key = nb | (UInt8((mask_i - 1) << 6))
-    @assert test_bit(n.mask, sibling_key)
-    idx = Int(index_of(n.mask, sibling_key)) + 1
-    @inbounds cf = n.values[idx]
+    sibling_key = nxt ? next_bit(n.mask, k) : prev_bit(n.mask, k)
+    sibling_key === nothing && return (nothing, nothing)
+    cf = n.values[Int(index_of(n.mask, sibling_key)) + 1]
     child = cf.rec === nothing ? nothing : as_tagged(cf.rec)
     (sibling_key, child)
 end
@@ -1753,5 +1709,5 @@ end
 
 export CoFreeEntry, has_rec, has_val
 export AbstractByteNode, DenseByteNode, CellByteNode
-export merge_from_list_node!, bit_sibling, val_count_below_node
+export merge_from_list_node!, val_count_below_node
 export node_add_payload!
