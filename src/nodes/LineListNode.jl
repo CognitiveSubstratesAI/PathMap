@@ -1887,10 +1887,13 @@ function factor_prefix!(n::LineListNode{V, A}) where {V, A}
     (!is_used_0(n) || !is_used_1(n)) && return nothing
     key0, key1 = n.key0, n.key1
     overlap = find_prefix_overlap(key0, key1)
-    # overlap == 1 is legal if: slot0 is a val OR (both len==1 and slot1 is a val)
+    # overlap == 1 is legal iff (upstream e7879a6, line_list_node.rs:1080-1085):
+    #   A: slot0 holds a VALUE with a ONE-byte key (a value at the shared byte, slot1 continuing below), or
+    #   B: both keys are one byte long and slot1 is a value.
+    # Ours accepted A for a value of ANY key length ("too loose", delta P1 #6/#7).
     legal_overlap =
         overlap == 1 &&
-        (!is_child_0(n) || (!is_child_1(n) && length(key0) == 1 && length(key1) == 1))
+        ((!is_child_0(n) && length(key0) == 1) || (!is_child_1(n) && length(key0) == 1 && length(key1) == 1))
     (overlap == 0 || legal_overlap) && return nothing
 
     r = _merge_guts(overlap, key0, n, 0, key1, n, 1)
@@ -1926,6 +1929,9 @@ function drop_head_dyn!(self::LineListNode{V, A}, byte_cnt::Int) where {V, A}
             remaining = byte_cnt - klen0
             @assert is_child_0(self)
             child_rc = into_child(take_slot0_payload!(self))
+            # A dangling child (the empty sentinel) has nothing below the dropped bytes and cannot be
+            # made unique (upstream line_list_node.rs:2737-2740; Lean-harness s2#534, s3#597, s4#267)
+            is_empty_node(child_rc) && return nothing
             if remaining > 0
                 # COW: the child may be SHARED (shallow clone). drop_head_dyn! mutates
                 # it in place, so make it unique first — mirrors Rust
@@ -1948,6 +1954,29 @@ function drop_head_dyn!(self::LineListNode{V, A}, byte_cnt::Int) where {V, A}
     if byte_cnt < key0_len && byte_cnt < key1_len
         new_key0 = key0[(byte_cnt + 1):end]
         new_key1 = key1[(byte_cnt + 1):end]
+        # Shortened keys that COINCIDE (with the same payload kind) must be JOINED into one payload
+        # (upstream 8679140 + e7879a6, line_list_node.rs:2761-2796); ours kept both and double-counted
+        # (delta P1 #6; Lean-harness s3#648).
+        if new_key0 == new_key1 && is_child_0(self) == is_child_1(self)
+            p1 = take_slot1_payload!(self)
+            p0 = take_slot0_payload!(self)
+            merged = if is_child(p0)
+                c0, c1 = into_child(p0), into_child(p1)
+                r = pjoin(c0, c1)
+                r isa AlgResElement ? ValOrChild(r.value) :
+                    r isa AlgResIdentity ? ValOrChild((r.mask & SELF_IDENT) > 0 ? c0 : c1) : nothing
+            else
+                v0, v1 = into_val(p0), into_val(p1)
+                r = pjoin(v0, v1)
+                r isa AlgResElement ? ValOrChild{V, A}(0x0, r.value, nothing) :
+                    r isa AlgResIdentity ? ValOrChild{V, A}(0x0, (r.mask & SELF_IDENT) > 0 ? v0 : v1, nothing) : nothing
+            end
+            merged === nothing && return nothing
+            node = LineListNode{V, A}(self.alloc)
+            node.key0 = new_key0
+            node.slot0 = merged
+            return TrieNodeODRc(node, self.alloc)
+        end
         if new_key0 <= new_key1
             self.key0 = new_key0
             self.key1 = new_key1
@@ -1988,6 +2017,7 @@ function drop_head_dyn!(self::LineListNode{V, A}, byte_cnt::Int) where {V, A}
 
     @assert is_child(merged_payload) "drop_head_dyn!: merged payload must be a child"
     child_rc = into_child(merged_payload)
+    is_empty_node(child_rc) && return nothing       # upstream line_list_node.rs:2868-2871
     if chop_bytes == byte_cnt
         return child_rc
     else
@@ -2098,6 +2128,12 @@ function _follow_path_to_value(
 ) where {V, A}
     k = @view key[1:end]
     while true
+        # 1:1 with upstream `follow_path_to_value` after b2a0c09 (line_list_node.rs:1675-1697): the
+        # VALUE check happens at EVERY node, BEFORE following an onward link. A node can hold a value
+        # and a child under the same key, or a value at a prefix of the key; checking only after the
+        # walk ran out of links dropped both, so `restrict`/`restricting` silently lost the value on a
+        # branching path (delta P1 #3; Lean-harness s2#1518, s3#826, s4#209/#752, s5#1860).
+        node_first_val_depth_along_key(node, k) !== nothing && return (true, nothing)
         r = node_get_child(node, k)
         r === nothing && break
         (consumed, next_rc) = r
@@ -2108,7 +2144,6 @@ function _follow_path_to_value(
         node = _as_tagged_or_empty(next_rc)
         k = @view k[(consumed + 1):end]
     end
-    node_first_val_depth_along_key(node, k) !== nothing && return (true, nothing)
     node_contains_partial_key(node, k) && return (false, (k, node))
     (false, nothing)
 end

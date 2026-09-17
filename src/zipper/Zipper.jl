@@ -563,6 +563,9 @@ function _descend_first!(z::ReadZipperCore{V, A}) where {V, A}
     prefix_opt, child_opt = first_child_from_key(_zfnode(z), _znode_key(z))
     prefix_opt === nothing && return nothing   # unreachable per upstream
     append!(z.prefix_buf, prefix_opt)
+    # upstream `descend_first` (zipper.rs:3242-3270): a non-empty step invalidates the token BEFORE the
+    # ancestor push, in both arms
+    isempty(prefix_opt) || (z.focus_iter_token = NODE_ITER_INVALID)
     if child_opt !== nothing
         push!(z.ancestors, (z.focus_node, z.focus_iter_token, length(z.prefix_buf)))
         z.focus_node = child_opt   # already AbstractTrieNode (from first_child_from_key)
@@ -732,10 +735,12 @@ function zipper_descend_indexed_byte!(z::ReadZipperCore{V, A}, child_idx::Int) w
     prefix_opt, child_opt = nth_child_from_key(_zfnode(z), _znode_key(z), child_idx)
     prefix_opt === nothing && return false
     push!(z.prefix_buf, prefix_opt)
+    # upstream zipper.rs:2162-2176: the focus moved, so the token is invalidated in BOTH arms, and
+    # BEFORE the ancestor push (ours pushed the stale token, and kept it when no child node exists)
+    z.focus_iter_token = NODE_ITER_INVALID
     if child_opt !== nothing
         push!(z.ancestors, (z.focus_node, z.focus_iter_token, length(z.prefix_buf)))
         z.focus_node = child_opt   # AbstractTrieNode from nth_child_from_key
-        z.focus_iter_token = NODE_ITER_INVALID
     end
     true
 end

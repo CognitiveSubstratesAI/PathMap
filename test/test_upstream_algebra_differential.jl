@@ -179,4 +179,30 @@ set_from_map(m) = Set{Vector{UInt8}}(P.pm_keys(m))
             @test set_from_map(P.pm_meet(P.pm_join(ma, mb), P.pm_join(ma, mc))) == expected
         end
     end
+
+    # upstream b2a0c09 `restrict_matches_btreeset_oracle`: a path of `self` survives when some prefix of
+    # it — the empty prefix and the path itself both count — carries a value in `other`.
+    @testset "restrict_matches_btreeset_oracle (upstream b2a0c09)" begin
+        restrict_oracle(left, right) =
+            Set(p for p in left if any(k -> p[1:k] in right, 0:length(p)))
+        pm_restrict(a, b) = P.result_into_map(P.prestrict(a, b), a, b, a.alloc)
+        # the minimal shapes first: restrict(a, a) must be a
+        for paths in (["ab", "abc"], ["ab", "abc", "abd"], ["a", "ab", "abc"],
+                      ["a", "abc", "abd"], ["a", "ab", "abc", "abd", "xy"])
+            set = Set(Vector{UInt8}.(paths))
+            m = map_from_set(set)
+            @test set_from_map(pm_restrict(m, m)) == set
+        end
+        for seed in UInt64(0):UInt64(63)
+            for (name, left, right) in (
+                ("prefix_free", fixed_width_set(seed, UInt64(0xA1)), fixed_width_set(seed, UInt64(0xB2))),
+                ("prefix_heavy", prefix_heavy_set(seed, UInt64(0xC3)), prefix_heavy_set(seed, UInt64(0xD4))),
+                ("lopsided", prefix_heavy_set(seed, UInt64(0xE5)), fixed_width_set(seed, UInt64(0xF6))),
+                ("self_restrict", prefix_heavy_set(seed, UInt64(0x17)), prefix_heavy_set(seed, UInt64(0x17))))
+                l, r = Set(left), Set(right)
+                @test (name, seed, set_from_map(pm_restrict(map_from_set(l), map_from_set(r)))) ==
+                      (name, seed, restrict_oracle(l, r))
+            end
+        end
+    end
 end

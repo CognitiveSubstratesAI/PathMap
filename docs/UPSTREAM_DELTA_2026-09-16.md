@@ -95,6 +95,30 @@ Not exercised by phase B: `to_next_k_path` with k > depth (P3 `8082317`) — the
   `insert_prefix("")` is a no-op) with its six upstream tests (`test/test_upstream_insert_prefix.jl`; a
   mutant of the LineList rule fails 2, of both halves 9). #747 fixed as a DELIBERATE DEVIATION
   (`test/differential/UPSTREAM_BUGS.md` §3; mutant fails 2). **The Lean harness now reports 0 of 1000.**
+- **Seeds 2–6 (2026-09-17): 42 → 7, and the gate now runs seeds 1–3.** Seed 1 alone read 0/1000 while
+  seeds 2–6 (2000 programs each) still held 42 first divergences. Fixed, each attributed by replay and ported
+  from upstream's current body:
+  - **12c** (`401881e`): dense `iter_token_for_path` answers a key of 2+ bytes with the token for its first
+    byte (dense_byte_node.rs); ours restarted the node.
+  - **descend token reset** (zipper.rs:2162-2176, 3242-3270): `zipper_descend_indexed_byte!` and
+    `_descend_first!` invalidate `focus_iter_token` before pushing the ancestor.
+  - **P1 #8**: `graft_masked_branches` always removes the unset branches and then grafts per byte (no
+    empty-source shortcut for 3+ bits).
+  - **P1 #3** (`b2a0c09`): LineList `_follow_path_to_value` checks for a value at every node before following
+    a link. Upstream's BTreeSet oracle test is ported (`test_upstream_algebra_differential.jl`); a mutant fails 3.
+  - **Dense counter-identity join** (`in_place_default_impl`): an identity without SELF_IDENT stores the
+    other value and reports Element.
+  - **P1 #6/#7** (`8679140`, `1438d2b`, `e7879a6`): `factor_prefix` uses upstream's legal-overlap rule.
+    `drop_head_dyn!` joins shortened keys that coincide and returns nothing for a dangling child.
+  - **`prune_path_internal`**: 1:1 port (write_zipper.rs:2476-2578). Our byte walk returned a different
+    count (s2#631). The first version of the port raised MORK's JET dispatch ratchet from 110 to 142: the
+    node calls return `Any`, and that made all the path arithmetic dynamic. The node call results are now
+    type-asserted, and the ratchet reads 113 (pin 113). The 8 sites left are node-type dispatch.
+
+  **The 7 that remain** are upstream `lean/FINDINGS.md` #8, ported as is: s2#358, s4#1831 and s6#1812 on
+  `join_into`; s3#248, s5#1111 and s6#375 on `join_map_into`; s4#1302 on `restrict`. In each, the
+  destination is unchanged, but the status is Element where the model says Identity, and it depends on the
+  node shape. `KNOWN_DIVERGENT.tsv` lists the 2 of them inside seeds 1–3.
 - **The 2 that were left, attributed:** #686 is **P1 #5** (`f0cd6b7`): `insert_prefix` at a one-byte write-zipper root kept
   the old key run beside the prefixed copy (`graft_internal` lacks `node_remove_all_branches`), surfacing later at
   `set_val`. #747 is an **upstream defect we ported 1:1**: dense `prestrict_abstract` (dense_byte_node.rs:489-545)

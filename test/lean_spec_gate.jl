@@ -1,6 +1,6 @@
 # PathMaps ⟷ Lean model (lean/PathMapsSpec) DIFFERENTIAL — RATCHET.
 #
-# 1000 random programs over 49 read / write / algebra operations (test/differential/spec/ops.toml),
+# 1000 random programs per seed (seeds 1-3) over 49 read / write / algebra operations (test/differential/spec/ops.toml),
 # run in-process on PathMaps and on the resident `pathmaps-oracle --spec`. The model specifies the
 # INTENDED behaviour of our port, so every divergence is a defect or a model error, attributed in
 # docs/UPSTREAM_DELTA_2026-09-16.md. Same ratchet contract as fuzz_gate.jl:
@@ -22,14 +22,14 @@ include(joinpath(@__DIR__, "differential", "spec", "SpecHarness.jl"))
         @warn "Lean model not built — lean_spec_gate skipped" build = "cd $(SpecHarness.LEAN_DIR) && lake build"
         @test_skip false
     else
-        ver, n, seed, known = SpecHarness.read_known()
+        ver, n, seeds, known = SpecHarness.read_known()
         @test ver == SpecHarness.SPEC_VERSION
         if ver == SpecHarness.SPEC_VERSION
-            now = Base.invokelatest(SpecHarness.gate_classes; n, seed)
+            now = Base.invokelatest(SpecHarness.gate_classes; n, seeds)
             new = sort!([i for i in keys(now) if !haskey(known, i)])
             changed = sort!([i for i in keys(now) if haskey(known, i) && known[i] != now[i]])
             fixed = sort!([i for i in keys(known) if !haskey(now, i)])
-            @info "PathMaps vs Lean model" programs = n divergent = length(now) known = length(known) new = length(new) changed = length(changed) now_matching = length(fixed)
+            @info "PathMaps vs Lean model" programs = n * length(seeds) divergent = length(now) known = length(known) new = length(new) changed = length(changed) now_matching = length(fixed)
             for i in new
                 @error "NEW divergence — attribute it (replay the state), then fix or record" program = i class = now[i]
             end

@@ -277,9 +277,16 @@ function _bn_join_val_into!(n::AbstractByteNode{V, A}, k::UInt8, val::V) where {
         idx = Int(index_of(n.mask, k)) + 1
         @inbounds cf = n.values[idx]
         if cf.val !== nothing
+            # `Lattice::join_into` = `in_place_default_impl` (ring.rs:586-601): an identity WITHOUT
+            # SELF_IDENT means the join IS `other`, so self takes it and the status is Element. Ours
+            # kept self for every identity — invisible for upstream's u64 (SELF only) but wrong for our
+            # max-lattice: a dense ⊔ LineList join kept the smaller value (Lean-harness s2#1100, s4#593/#982).
             r = pjoin(cf.val, val)
             if r isa AlgResElement
                 cf.val = r.value
+                return ALG_STATUS_ELEMENT
+            elseif r isa AlgResIdentity && (r.mask & SELF_IDENT) == 0
+                cf.val = val
                 return ALG_STATUS_ELEMENT
             else
                 return ALG_STATUS_IDENTITY
@@ -1341,7 +1348,14 @@ function new_iter_token(n::AbstractByteNode)
 end
 
 function iter_token_for_path(n::AbstractByteNode, key::AbstractVector{UInt8})
-    length(key) != 1 && return new_iter_token(n)
+    isempty(key) && return new_iter_token(n)
+    # A key of 2+ bytes names a NON-EXISTENT path below the item at `key[1]` (a dense item is one
+    # byte; had `key[1]` an onward node, the zipper would be inside it). Upstream 401881e answers
+    # NODE_ITER_INVALID, which only has a meaning under its 0.4.0 token contract; under ours the
+    # equivalent is "continue after `key[1]`" — the one-byte token. Returning the FRESH token (as we
+    # did) restarted the node, so `to_next_val` jumped BACKWARDS and could leave the zipper root
+    # (delta #12c; Lean-harness s3#378, s4#379/#479, s5#1220, s6#697/#1445).
+    length(key) > 1 && return iter_token_for_path(n, view(key, 1:1))
     k = Int(key[1])
     idx = (k & 0b11000000) >> 6
     bit_i = k & 0b00111111

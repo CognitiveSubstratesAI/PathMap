@@ -736,14 +736,12 @@ function wz_graft_masked_branches!(
         end
         return nothing
     end
-    # 3+ bits: upstream merges in bulk (merge_branches_into_focus, :1593-1675); an absent / empty
-    # source removes (remove_unset ? everything : the masked branches). The per-byte graft below is
-    # the same contract (the deviation noted above).
-    if is_none(src_anr) || node_is_empty(as_tagged(src_anr))
-        remove_unset ? _wz_remove_branches!(z, false) :
-            wz_remove_unmasked_branches!(z, ByteMask(.~child_mask.bits), false)
-        return nothing
-    end
+    # 3+ bits: upstream merges in bulk (merge_branches_into_focus, :1593-1675). We use the same per-byte
+    # graft as the arms above (the deviation noted in the docstring). ⚠️ Including for an absent/empty
+    # source: upstream's bulk path then DELETES the masked branches (`remove_unmasked_branches(!mask)`),
+    # while its own 1/2-bit arms — and the PathMapsSpec model — only clear BELOW them and leave a masked
+    # branch that existed as a dangling path. Copying the bulk shortcut made our result depend on how
+    # many bits were set (Lean-harness s2#445/#1712, s3#432/#597/#1701, s5#351/#894, s6#1709).
     remove_unset && _wz_remove_branches!(z, false)
     for b in iter(child_mask)
         wz_descend_to!(z, UInt8[b])
@@ -1902,41 +1900,80 @@ so it is not silently assumed equivalent.
 """
 function _wz_prune_path_internal!(z::WriteZipperCore{V, A},
     should_ascend::Bool=false) where {V, A}
-    # The loop only ever SHORTENS prefix_buf, so snapshotting it is enough to undo the movement.
-    # Snapshot LAZILY — taken only just before the first cursor move. Most calls prune nothing and
-    # break out of the loop immediately, and upstream allocates nothing at all here (it re-slices),
-    # so an eager `copy` would put an allocation on a hot path that previously had none.
-    saved = UInt8[]
-    snapped = false
-    pruned = 0
+    # 🔴 1:1 PORT of upstream `prune_path_internal` (write_zipper.rs:2476-2578), replacing our own
+    # byte-at-a-time walk, whose returned count differed from upstream's (Lean-harness s2#631: 1 vs 2).
+    # It mirrors `ascend_until` over a COPY of the path (`temp_len`), popping the node stack as it goes
+    # and leaving `prefix_buf` alone unless `should_ascend`; then removes the dangling branch once, at
+    # the node it stopped in. The returned count is `length(path) - length(stopped-at path)`.
+    node_is_empty(as_tagged(z.focus_stack[end])) || return 0   # must be at the end of a dangling path
+
+    # Node calls dispatch on the abstract node type; their results are asserted so the path
+    # arithmetic stays typed (MORK's JET dispatch ratchet counted +32 sites without them).
+    path_buf = copy(z.prefix_buf)
+    origin_len::Int = z.origin_path_len
+    temp_len::Int = length(path_buf)
+    ascended = false
+    just_popped = false
+    node_key_end::Int = temp_len
+
     while true
-        inner = z.focus_stack[end].node
-        # node is empty if it's nothing OR its inner node says so
-        is_empty = (inner === nothing) || node_is_empty(inner)
-        is_empty || break
-        wz_at_root(z) && break
-        if !should_ascend && !snapped
-            saved = copy(z.prefix_buf)   # first cursor move only — see the note above
-            snapped = true
+        (temp_len == 0 || temp_len == origin_len) && break
+        nks::Int = _wz_node_key_start(z)
+        # mirrors `ascend_within_node`, on the copied path
+        branch_key = prior_branch_key(as_tagged(z.focus_stack[end]), view(path_buf, (nks + 1):temp_len))::Vector{UInt8}
+        new_len = max(origin_len, nks + length(branch_key))
+        ascended = true
+        temp_len = new_len
+        node_key_end = new_len + 1        # on a break, drop everything after a 1-byte node key
+        # mirrors `ascend_across_nodes`
+        if temp_len == nks
+            isempty(z.prefix_idx) && break
+            length(z.focus_stack) > 1 && pop!(z.focus_stack)     # try_backtrack_node
+            pop!(z.prefix_idx)
+            just_popped = true
         end
-        old_len = length(z.prefix_buf)
-        wz_ascend!(z, 1) || break
-        nk = collect(_wz_node_key(z))
-        parent_inner = z.focus_stack[end].node
-        if !isempty(nk) && parent_inner !== nothing
-            node_remove_all_branches!(parent_inner, nk, true)
+        # mirrors `child_count` and `is_val`
+        nks2::Int = _wz_node_key_start(z)
+        node_key = view(path_buf, (nks2 + 1):temp_len)
+        focus_node = as_tagged(z.focus_stack[end])
+        if (node_count_branches_recursive(focus_node, node_key)::Int) > 1
+            if just_popped
+                # `descend_step_internal`: re-enter the child we just popped out of
+                key = view(path_buf, (nks2 + 1):length(path_buf))
+                r = node_get_child_mut(focus_node, key)::Union{Nothing, Tuple{Int, TrieNodeODRc{V, A}}}
+                if r !== nothing
+                    consumed, next_rc = r
+                    if consumed < length(key) && !is_empty_node(next_rc)
+                        make_unique!(next_rc)
+                        push!(z.prefix_idx, nks2 + consumed)
+                        push!(z.focus_stack, next_rc)
+                    end
+                end
+            end
+            break
         end
-        pruned += old_len - length(z.prefix_buf)
-        parent_empty = (parent_inner === nothing) || node_is_empty(parent_inner)
-        (parent_empty && !wz_is_val(z)) || break
+        just_popped = false
+        # a value stops the ascent too — and then the CURRENT subtrie is the one removed
+        if node_contains_val(focus_node, node_key)::Bool
+            node_key_end = temp_len
+            break
+        end
     end
-    # Put the cursor back. `pruned` was accumulated inside the loop from the in-loop truncation
-    # delta, so it still reports the same byte count upstream does (`path_buf.len() - temp_path.len()`,
-    # write_zipper.rs:2431) and callers such as a future `prune_ascend` port keep working.
-    if snapped && length(z.prefix_buf) < length(saved)
-        resize!(z.prefix_buf, length(saved))
-        copyto!(z.prefix_buf, saved)
+
+    if ascended
+        nke::Int = _wz_node_key_start(z)
+        next_node_key = path_buf[(nke + 1):node_key_end]
+        r2 = node_get_child_mut(as_tagged(z.focus_stack[end]), next_node_key)::Union{Nothing, Tuple{Int, TrieNodeODRc{V, A}}}
+        if r2 !== nothing && r2[1] < length(next_node_key) && !is_empty_node(r2[2])
+            make_unique!(r2[2])
+            node_remove_all_branches!(as_tagged(r2[2]), next_node_key[(r2[1] + 1):end], true)
+        else
+            node_remove_all_branches!(as_tagged(z.focus_stack[end]), next_node_key, true)
+        end
     end
+
+    pruned = length(path_buf) - temp_len
+    should_ascend && resize!(z.prefix_buf, temp_len)
     pruned
 end
 
