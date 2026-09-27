@@ -1108,7 +1108,9 @@ BATTERY_MAKE_Z[] =
         dpz = PathMaps.DependentZipper(
             inner, nothing, (payload, p, idx) -> (payload, nothing)
         )
-        PathMaps.ProductZipperG(dpz, PathMaps.ReadZipperCore{UnitVal, PathMaps.GlobalAlloc}[])
+        PathMaps.ProductZipperG(
+            dpz, PathMaps.ReadZipperCore{UnitVal, PathMaps.GlobalAlloc}[]
+        )
     end
 run_battery("ProductZipperG over DependentZipper (CmpSource shape)")
 
@@ -1118,6 +1120,9 @@ run_battery("ProductZipperG over DependentZipper (CmpSource shape)")
 # battery is exactly the right oracle: every path assertion below is answered by the TRACKER's own buffer,
 # not by the wrapped zipper's.
 BATTERY_MAKE_Z[] =
-    (m, path) -> isempty(path) ? PathMaps.PathTracker(read_zipper(m)) :
+    (m, path) -> if isempty(path)
+        PathMaps.PathTracker(read_zipper(m))
+    else
         PathMaps.PathTracker(read_zipper_at_path(m, path), path)
+    end
 run_battery("PathTracker over the read zipper")

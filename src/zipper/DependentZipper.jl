@@ -139,7 +139,13 @@ function _dpz_ascend_cond!(dz::DependentZipper, allow_stop_on_val::Bool)::Int
                 return ascended
             end
         else
-            return ascended + (allow_stop_on_val ? ascend_until!(dz.primary) : ascend_until_branch!(dz.primary))
+            return ascended + (
+                if allow_stop_on_val
+                    ascend_until!(dz.primary)
+                else
+                    ascend_until_branch!(dz.primary)
+                end
+            )
         end
     end
 end

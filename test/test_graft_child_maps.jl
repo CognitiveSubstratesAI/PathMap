@@ -258,4 +258,3 @@ end
     @test (remove_unmasked_branches!(wz, ByteMask(), false); true)
     @test sort([String(copy(k)) for (k, _) in m]) == ["a", "b", "c"]
 end
-

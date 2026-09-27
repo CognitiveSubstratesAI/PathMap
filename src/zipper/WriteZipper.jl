@@ -284,7 +284,9 @@ function _wz_descend_to_internal!(z::WriteZipperCore{V, A}) where {V, A}
         # node_get_child methods return exactly this), stabilizing `consumed`/`child_rc` and killing
         # the downstream `length`/`>=`/`+`/`view` dynamic-dispatch cascade. Semantic no-op.
         result =
-            node_get_child(focus_node::TrieNodeVariant{V, A}, key)::Union{
+            node_get_child(
+                focus_node::TrieNodeVariant{V, A}, key
+            )::Union{
                 Nothing, Tuple{Int, TrieNodeODRc{V, A}}}
         result === nothing && break
         consumed, child_rc = result
@@ -513,7 +515,8 @@ end
 
 # write_zipper.rs:1038-1050
 depth(z::WriteZipperCore) = max(length(z.prefix_buf) - z.origin_path_len, 0)
-focus_byte(z::WriteZipperCore) = isempty(z.prefix_buf) ? nothing : @inbounds(z.prefix_buf[end])
+focus_byte(z::WriteZipperCore) =
+    isempty(z.prefix_buf) ? nothing : @inbounds(z.prefix_buf[end])
 root_prefix_path(z::WriteZipperCore) = view(z.prefix_buf, 1:z.origin_path_len)
 
 # =====================================================================
@@ -726,8 +729,11 @@ function _wz_get_focus_anr(z::WriteZipperCore{V, A}) where {V, A}
         # `join_map_into!` with it. The assertion is a semantic no-op (the union lists every node type) and
         # does NOT touch the null case, which still answers `ANRNone`.
         fnode = z.focus_stack[end].node
-        fnode === nothing ? ANRNone{V, A}() :
-        get_node_at_key(fnode::TrieNodeVariant{V, A}, nk)
+        if fnode === nothing
+            ANRNone{V, A}()
+        else
+            get_node_at_key(fnode::TrieNodeVariant{V, A}, nk)
+        end
     end
 end
 
@@ -823,7 +829,9 @@ graft the source's subtrie at `[b]` — `get_focus_at`, i.e. `get_node_at_key`, 
 node when `[b]` ends inside a key (`node_get_child` does not: harness program #607) — then, under
 `graft_root_vals`, set or clear the focus value from the source's value at `[b]`.
 """
-function _wz_graft_src_at_byte!(z::WriteZipperCore{V, A}, src_anr::AbstractNodeRef{V, A}, b::UInt8) where {V, A}
+function _wz_graft_src_at_byte!(
+    z::WriteZipperCore{V, A}, src_anr::AbstractNodeRef{V, A}, b::UInt8
+) where {V, A}
     if is_none(src_anr)
         _wz_graft_internal!(z, nothing)
         remove_val!(z, false)
@@ -1083,7 +1091,9 @@ so the value is passed explicitly (as `meet_into!`'s `src_root_val` already is):
 form is upstream's `graft`. The 2-argument form grafts the node ONLY and leaves the focus value
 alone — it is `graft_internal`, not `graft` (docs/UPSTREAM_DELTA_2026-09-16.md #17b).
 """
-function graft!(z::WriteZipperCore{V, A}, src_anr::AbstractNodeRef{V, A}, src_val::Union{Nothing, V}) where {V, A}
+function graft!(
+    z::WriteZipperCore{V, A}, src_anr::AbstractNodeRef{V, A}, src_val::Union{Nothing, V}
+) where {V, A}
     _wz_graft_internal!(z, into_option(src_anr))
     src_val === nothing ? remove_val!(z, false) : set_val!(z, src_val)
     nothing
@@ -1564,7 +1574,11 @@ function join_k_path_into!(
     elseif byte_cnt > 0
         make_unique!(self_rc)
         new_node = drop_head_dyn!(as_tagged(self_rc), byte_cnt)
-        new_node = (new_node === nothing || node_is_empty(as_tagged(new_node))) ? nothing : new_node
+        new_node = if (new_node === nothing || node_is_empty(as_tagged(new_node)))
+            nothing
+        else
+            new_node
+        end
         _wz_graft_internal!(z, new_node)
         new_node !== nothing
     else
@@ -1876,7 +1890,9 @@ function _wz_prune_path_internal!(z::WriteZipperCore{V, A},
         (temp_len == 0 || temp_len == origin_len) && break
         nks::Int = _wz_node_key_start(z)
         # mirrors `ascend_within_node`, on the copied path
-        branch_key = prior_branch_key(as_tagged(z.focus_stack[end]), view(path_buf, (nks + 1):temp_len))::Vector{UInt8}
+        branch_key = prior_branch_key(
+            as_tagged(z.focus_stack[end]), view(path_buf, (nks + 1):temp_len)
+        )::Vector{UInt8}
         new_len = max(origin_len, nks + length(branch_key))
         ascended = true
         temp_len = new_len
@@ -1896,7 +1912,9 @@ function _wz_prune_path_internal!(z::WriteZipperCore{V, A},
             if just_popped
                 # `descend_step_internal`: re-enter the child we just popped out of
                 key = view(path_buf, (nks2 + 1):length(path_buf))
-                r = node_get_child_mut(focus_node, key)::Union{Nothing, Tuple{Int, TrieNodeODRc{V, A}}}
+                r = node_get_child_mut(
+                    focus_node, key
+                )::Union{Nothing, Tuple{Int, TrieNodeODRc{V, A}}}
                 if r !== nothing
                     consumed, next_rc = r
                     if consumed < length(key) && !is_empty_node(next_rc)
@@ -1919,10 +1937,14 @@ function _wz_prune_path_internal!(z::WriteZipperCore{V, A},
     if ascended
         nke::Int = _wz_node_key_start(z)
         next_node_key = path_buf[(nke + 1):node_key_end]
-        r2 = node_get_child_mut(as_tagged(z.focus_stack[end]), next_node_key)::Union{Nothing, Tuple{Int, TrieNodeODRc{V, A}}}
+        r2 = node_get_child_mut(
+            as_tagged(z.focus_stack[end]), next_node_key
+        )::Union{Nothing, Tuple{Int, TrieNodeODRc{V, A}}}
         if r2 !== nothing && r2[1] < length(next_node_key) && !is_empty_node(r2[2])
             make_unique!(r2[2])
-            node_remove_all_branches!(as_tagged(r2[2]), next_node_key[(r2[1] + 1):end], true)
+            node_remove_all_branches!(
+                as_tagged(r2[2]), next_node_key[(r2[1] + 1):end], true
+            )
         else
             node_remove_all_branches!(as_tagged(z.focus_stack[end]), next_node_key, true)
         end
@@ -1993,7 +2015,9 @@ function remove_unmasked_branches!(
             consumed, child_rc = r
             if length(nk) >= consumed
                 is_empty_node(child_rc) || make_unique!(child_rc)
-                node_remove_unmasked_branches!(child_rc.node, nk[(consumed + 1):end], mask, prune)
+                node_remove_unmasked_branches!(
+                    child_rc.node, nk[(consumed + 1):end], mask, prune
+                )
                 if node_is_empty(as_tagged(child_rc))
                     node_remove_all_branches!(focus_node, nk[1:consumed], prune)
                 end
@@ -2193,7 +2217,8 @@ end
 export WriteZipperCore, WriteZipperUntracked
 export _wz_at_root, _wz_node_key, _wz_node_key_start
 export _wz_parent_key_for_level, _wz_ensure_write_unique!
-export _wz_get_focus_anr, _wz_graft_internal!, _wz_remove_branches!, _wz_prune_path_internal!
+export _wz_get_focus_anr,
+    _wz_graft_internal!, _wz_remove_branches!, _wz_prune_path_internal!
 export write_zipper, write_zipper_at_path, set_val_at!, remove_val_at!
 # ZipperWriting (write_zipper.rs:16-336); the ZipperMoving / Zipper / ZipperValues names this type
 # implements are exported from ZipperTraits.jl

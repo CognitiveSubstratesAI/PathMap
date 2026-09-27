@@ -71,7 +71,8 @@ const NODE_ITER_FINISHED = typemax(IterToken) - 1
 # upstream `debug_assert_iter_token_layout` (trie_node.rs:449-469), checked once at load
 @assert TOKEN_LAST & NODE_TOKEN_SPECIAL_BIT == NODE_TOKEN_SPECIAL_BIT
 @assert TOKEN_LAST & NODE_TOKEN_NONEXISTENT_BIT == 0
-@assert TOKEN_LAST & ~(NODE_TOKEN_SPECIAL_BIT | NODE_TOKEN_NONEXISTENT_BIT) == NODE_TOKEN_NONEXISTENT_BIT - 1
+@assert TOKEN_LAST & ~(NODE_TOKEN_SPECIAL_BIT | NODE_TOKEN_NONEXISTENT_BIT) ==
+    NODE_TOKEN_NONEXISTENT_BIT - 1
 @assert TOKEN_AFTER_LAST == typemax(IterToken)
 @assert NODE_ITER_INVALID < TOKEN_LAST < NODE_ITER_FINISHED < TOKEN_AFTER_LAST
 
@@ -80,7 +81,8 @@ const NODE_ITER_FINISHED = typemax(IterToken) - 1
 
 Whether `token` names a nonexistent path within the node (trie_node.rs:475). Not for the sentinels.
 """
-@inline node_iter_token_is_nonexistent(token::IterToken) = (token & NODE_TOKEN_NONEXISTENT_BIT) != 0
+@inline node_iter_token_is_nonexistent(token::IterToken) =
+    (token & NODE_TOKEN_NONEXISTENT_BIT) != 0
 
 # =====================================================================
 # Node-type tag constants
@@ -520,7 +522,11 @@ function node_count_branches_recursive(node, key::AbstractVector{UInt8})
     result = node_get_child(node, key)
     result === nothing && return count_branches(node, key)
     consumed, child_rc = result
-    length(key) >= consumed ? count_branches(as_tagged(child_rc), view(key, (consumed + 1):length(key))) : 0
+    if length(key) >= consumed
+        count_branches(as_tagged(child_rc), view(key, (consumed + 1):length(key)))
+    else
+        0
+    end
 end
 
 """
@@ -991,7 +997,8 @@ end
 # =====================================================================
 
 export MAX_NODE_KEY_BYTES, NODE_ITER_INVALID, NODE_ITER_FINISHED
-export IterToken, NODE_TOKEN_SPECIAL_BIT, NODE_TOKEN_NONEXISTENT_BIT, TOKEN_LAST, TOKEN_AFTER_LAST
+export IterToken,
+    NODE_TOKEN_SPECIAL_BIT, NODE_TOKEN_NONEXISTENT_BIT, TOKEN_LAST, TOKEN_AFTER_LAST
 export node_iter_token_is_nonexistent
 export EMPTY_NODE_TAG, DENSE_BYTE_NODE_TAG, LINE_LIST_NODE_TAG
 export CELL_BYTE_NODE_TAG, TINY_REF_NODE_TAG, BRIDGE_NODE_TAG

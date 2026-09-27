@@ -111,7 +111,8 @@ descend_to_byte!(z::AbstractZipper, b::UInt8) = descend_to!(z, UInt8[b])
 # Julia convenience: upstream's byte arguments are `u8`; accept any Integer and convert once, so call
 # sites can write `descend_to_byte!(z, 11)`. `UInt8(...)` still throws on an out-of-range value.
 descend_to_byte!(z::AbstractZipper, b::Integer) = descend_to_byte!(z, UInt8(b))
-descend_to_existing_byte!(z::AbstractZipper, b::Integer) = descend_to_existing_byte!(z, UInt8(b))
+descend_to_existing_byte!(z::AbstractZipper, b::Integer) =
+    descend_to_existing_byte!(z, UInt8(b))
 
 "`descend_to_existing_byte!(z, b)` — descend one byte only if it is in `child_mask`; returns whether it moved."
 function descend_to_existing_byte!(z::AbstractZipper, b::UInt8)
@@ -160,7 +161,8 @@ function descend_until_observed!(z::AbstractZipper, obs)
 end
 
 "`descend_until_max_bytes!(z, max_bytes)` — `descend_until_max_bytes_observed!(z, max_bytes, nothing)`."
-descend_until_max_bytes!(z::AbstractZipper, max_bytes::Int) = descend_until_max_bytes_observed!(z, max_bytes, nothing)
+descend_until_max_bytes!(z::AbstractZipper, max_bytes::Int) =
+    descend_until_max_bytes_observed!(z, max_bytes, nothing)
 
 """
 `descend_until_max_bytes_observed!(z, max_bytes, obs)` — as `descend_until_observed!`, but never more than
@@ -303,13 +305,15 @@ function descend_last_path_observed!(z::AbstractZipper, obs)
 end
 
 "`descend_first_k_path!(z, k)` — `descend_first_k_path_observed!(z, k, nothing)`."
-descend_first_k_path!(z::AbstractZipper, k::Int) = descend_first_k_path_observed!(z, k, nothing)
+descend_first_k_path!(z::AbstractZipper, k::Int) =
+    descend_first_k_path_observed!(z, k, nothing)
 
 """
 `descend_first_k_path_observed!(z, k, obs)` — depth-first search for the first path exactly `k` bytes below
 the focus. `false` (focus unchanged) if none exists or `k == 0`.
 """
-descend_first_k_path_observed!(z::AbstractZipper, k::Int, obs) = _k_path_default_internal!(z, k, depth(z), obs)
+descend_first_k_path_observed!(z::AbstractZipper, k::Int, obs) =
+    _k_path_default_internal!(z, k, depth(z), obs)
 
 "`to_next_k_path!(z, k)` — `to_next_k_path_observed!(z, k, nothing)`."
 to_next_k_path!(z::AbstractZipper, k::Int) = to_next_k_path_observed!(z, k, nothing)
@@ -379,7 +383,8 @@ function is_shared end
 to_next_get_val!(z::AbstractZipper) = to_next_get_val_observed!(z, nothing)
 
 "`to_next_get_val_observed!(z, obs)` — `to_next_val_observed!`, returning the value (or `nothing` at the root)."
-to_next_get_val_observed!(z::AbstractZipper, obs) = to_next_val_observed!(z, obs) ? get_val(z) : nothing
+to_next_get_val_observed!(z::AbstractZipper, obs) =
+    to_next_val_observed!(z, obs) ? get_val(z) : nothing
 
 # ── PathObserver (zipper.rs:510-741) ─────────────────────────────────────────────────────────────────────────
 """
@@ -401,9 +406,12 @@ descend_to!(obs::Base.RefValue{Int}, p) = (obs[] += length(p); nothing)
 descend_to_byte!(obs::Base.RefValue{Int}, ::UInt8) = (obs[] += 1; nothing)
 ascend!(obs::Base.RefValue{Int}, steps::Int) = (obs[] -= steps; nothing)
 
-descend_to!(obs::Tuple{Any, Any}, p) = (descend_to!(obs[1], p); descend_to!(obs[2], p); nothing)
-descend_to_byte!(obs::Tuple{Any, Any}, b::UInt8) = (descend_to_byte!(obs[1], b); descend_to_byte!(obs[2], b); nothing)
-ascend!(obs::Tuple{Any, Any}, steps::Int) = (ascend!(obs[1], steps); ascend!(obs[2], steps); nothing)
+descend_to!(obs::Tuple{Any, Any}, p) =
+    (descend_to!(obs[1], p); descend_to!(obs[2], p); nothing)
+descend_to_byte!(obs::Tuple{Any, Any}, b::UInt8) =
+    (descend_to_byte!(obs[1], b); descend_to_byte!(obs[2], b); nothing)
+ascend!(obs::Tuple{Any, Any}, steps::Int) =
+    (ascend!(obs[1], steps); ascend!(obs[2], steps); nothing)
 
 "`MirrorPathObserver(z)` — replays observed movement onto another zipper (even off the end of its trie)."
 struct MirrorPathObserver{Z <: AbstractZipper} <: PathObserver
@@ -471,13 +479,17 @@ end
 
 export AbstractZipper, PathObserver, MirrorPathObserver, HashObserver
 export path_exists, is_val, child_count, child_mask, val, val_at
-export depth, at_root, focus_byte, reset!, val_count, descend_to!, descend_to_check!, descend_to_existing!,
-    descend_to_val!, descend_to_byte!, descend_to_existing_byte!, descend_indexed_byte!, descend_first_byte!,
+export depth, at_root, focus_byte, reset!, val_count, descend_to!, descend_to_check!,
+    descend_to_existing!,
+    descend_to_val!, descend_to_byte!, descend_to_existing_byte!, descend_indexed_byte!,
+    descend_first_byte!,
     descend_last_byte!, descend_until!, descend_until_observed!, descend_until_max_bytes!,
-    descend_until_max_bytes_observed!, ascend!, ascend_byte!, ascend_until!, ascend_until_branch!,
+    descend_until_max_bytes_observed!, ascend!, ascend_byte!, ascend_until!,
+    ascend_until_branch!,
     to_next_sibling_byte!, to_prev_sibling_byte!, to_next_step!, to_next_step_observed!
 export path, move_to_path!
 export to_next_val!, to_next_val_observed!, descend_last_path!, descend_last_path_observed!,
-    descend_first_k_path!, descend_first_k_path_observed!, to_next_k_path!, to_next_k_path_observed!
+    descend_first_k_path!, descend_first_k_path_observed!, to_next_k_path!,
+    to_next_k_path_observed!
 export origin_path, root_prefix_path, fork_read_zipper, shared_node_id, is_shared
 export get_val, to_next_get_val!, to_next_get_val_observed!

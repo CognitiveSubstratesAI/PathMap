@@ -50,7 +50,7 @@ function dec_pathn!(d::Dec, n::Int)::Union{Vector{UInt8}, Nothing}
     end
     p
 end
-function dec_path!(d::Dec, lim::Int = 6)::Union{Vector{UInt8}, Nothing}
+function dec_path!(d::Dec, lim::Int=6)::Union{Vector{UInt8}, Nothing}
     n = dec_mod!(d, lim)
     n === nothing ? nothing : dec_pathn!(d, n)
 end
@@ -67,7 +67,7 @@ function dec_mask!(d::Dec)::Union{Vector{UInt8}, Nothing}
 end
 
 # ── rendering (mirrors Fuzz.hexPath / showVal / showBool / showByteOpt) ────────────────────────────────
-hex_byte(b::UInt8)::String = string(b; base = 16, pad = 2)
+hex_byte(b::UInt8)::String = string(b; base=16, pad=2)
 hex_path(p::AbstractVector{UInt8})::String = isempty(p) ? "_" : join(hex_byte.(p))
 show_val(::Nothing)::String = "-"
 show_val(v::Integer)::String = string(v)
@@ -75,9 +75,16 @@ show_bool(b::Bool)::String = b ? "1" : "0"
 show_byte_opt(::Nothing)::String = "-"
 show_byte_opt(b::UInt8)::String = hex_byte(b)
 function show_status(s::PathMaps.AlgebraicStatus)::String
-    s == ALG_STATUS_ELEMENT ? "Element" : s == ALG_STATUS_IDENTITY ? "Identity" : "None"
+    if s == ALG_STATUS_ELEMENT
+        "Element"
+    elseif s == ALG_STATUS_IDENTITY
+        "Identity"
+    else
+        "None"
+    end
 end
-byte_mask(bs::Vector{UInt8})::ByteMask = foldl((m, b) -> ByteMask(PathMaps.with_bit_set(m.bits, b)), bs; init = ByteMask())
+byte_mask(bs::Vector{UInt8})::ByteMask =
+    foldl((m, b) -> ByteMask(PathMaps.with_bit_set(m.bits, b)), bs; init=ByteMask())
 
 # ── adapters: one name per operation for BOTH zipper types (multiple dispatch) ────────────────────────
 # Only operations the write zipper really has get a WriteZipperCore method; the rest are `wz_gap`
@@ -156,8 +163,11 @@ end
 
 function emit!(st::SpecState, name::String, ret::String)
     st.phase = :fingerprint
-    push!(st.out, string(st.step, " ", name, " ret=", ret,
-        " W=", fingerprint(st.wz), " R=", fingerprint(st.rz)))
+    push!(
+        st.out,
+        string(st.step, " ", name, " ret=", ret,
+            " W=", fingerprint(st.wz), " R=", fingerprint(st.rz))
+    )
     st.step += 1
     st.phase = :op
     nothing
@@ -168,9 +178,10 @@ end
 # node (and value) at a read zipper's focus is a TrieRef at the same absolute path.
 focus_map(st::SpecState, z::RZ) = st.m1
 focus_map(st::SpecState, z::WZ) = st.m0
-sp_focus_ref(st::SpecState, z, extra::Vector{UInt8} = UInt8[]) =
+sp_focus_ref(st::SpecState, z, extra::Vector{UInt8}=UInt8[]) =
     trie_ref_at_path(focus_map(st, z), vcat(collect(sp_origin(z)), extra))
-src_anr(st::SpecState, extra::Vector{UInt8} = UInt8[]) = get_focus(sp_focus_ref(st, st.rz, extra))
+src_anr(st::SpecState, extra::Vector{UInt8}=UInt8[]) =
+    get_focus(sp_focus_ref(st, st.rz, extra))
 src_val(st::SpecState) = get_val(sp_focus_ref(st, st.rz))
 src_map(st::SpecState) = make_map(sp_focus_ref(st, st.rz))
 
@@ -191,11 +202,11 @@ end
 function dump_walk(z::RZ)::String
     lines = String[]
     function walk()
-        length(lines) >= DUMP_CAP && return
+        length(lines) >= DUMP_CAP && return nothing
         push!(lines, string(hex_path(path(z)), ":", show_val(val(z))))
         mask = child_mask(z)
         for b in 0x00:0xff
-            length(lines) >= DUMP_CAP && return
+            length(lines) >= DUMP_CAP && return nothing
             PathMaps.test_bit(mask, b) || continue
             descend_to_byte!(z, b)
             walk()
@@ -218,7 +229,7 @@ function seed!(m::PathMap{UInt64}, d::Dec, n::Int)::Bool
 end
 
 function create_root!(m::PathMap{UInt64}, r::Vector{UInt8})
-    isempty(r) && return
+    isempty(r) && return nothing
     wz = write_zipper_at_path(m, r)
     create_path!(wz)
     nothing
@@ -234,13 +245,17 @@ is compared at the step where it happened.
 function run_julia(bytes::Vector{UInt8})::Vector{String}
     d = Dec(bytes)
     m0 = PathMap{UInt64}()
-    n0 = dec_mod!(d, 8); n0 === nothing && return ["EMPTY"]
+    n0 = dec_mod!(d, 8)
+    n0 === nothing && return ["EMPTY"]
     seed!(m0, d, n0) || return ["EMPTY"]
     m1 = PathMap{UInt64}()
-    n1 = dec_mod!(d, 8); n1 === nothing && return ["EMPTY"]
+    n1 = dec_mod!(d, 8)
+    n1 === nothing && return ["EMPTY"]
     seed!(m1, d, n1) || return ["EMPTY"]
-    r0 = dec_path!(d, 4); r0 === nothing && return ["EMPTY"]
-    r1 = dec_path!(d, 4); r1 === nothing && return ["EMPTY"]
+    r0 = dec_path!(d, 4)
+    r0 === nothing && return ["EMPTY"]
+    r1 = dec_path!(d, 4)
+    r1 === nothing && return ["EMPTY"]
     st = try
         create_root!(m0, r0)
         create_root!(m1, r1)
@@ -252,10 +267,17 @@ function run_julia(bytes::Vector{UInt8})::Vector{String}
         while st.step < MAX_STEPS && spec_step!(st, d)
         end
         st.phase = :dump
-        vcat(st.out, ["MAP0 " * dump_map(m0), "MAP1 " * dump_map(m1),
-            "ROOT0 " * hex_path(r0), "ROOT1 " * hex_path(r1)])
+        vcat(
+            st.out,
+            ["MAP0 " * dump_map(m0), "MAP1 " * dump_map(m1),
+                "ROOT0 " * hex_path(r0), "ROOT1 " * hex_path(r1)]
+        )
     catch e
-        where = st.phase == :dump ? "dump" : string(st.phase, " ", st.cur < 0 ? "-" : OP_NAMES[st.cur + 1])
+        where = if st.phase == :dump
+            "dump"
+        else
+            string(st.phase, " ", st.cur < 0 ? "-" : OP_NAMES[st.cur + 1])
+        end
         vcat(st.out, [throw_line(where, e, catch_backtrace())])
     end
 end
@@ -320,13 +342,18 @@ const IGNORE_FIELDS = Ref(Set{String}())
 
 "Split a trace line into (head, W fingerprint, R fingerprint); a line without them is all head."
 function split_line(l::AbstractString)
-    iw = findfirst(" W=", l); ir = findfirst(" R=", l)
+    iw = findfirst(" W=", l)
+    ir = findfirst(" R=", l)
     (iw === nothing || ir === nothing) && return (String(l), "", "")
     (l[1:(first(iw) - 1)], l[(last(iw) + 1):(first(ir) - 1)], l[(last(ir) + 1):end])
 end
 
 mask_fp(fp::AbstractString, fields) =
-    foldl((acc, f) -> replace(acc, Regex(" " * f * "\\S*") => " " * f * "*"), fields; init = String(fp))
+    foldl(
+        (acc, f) -> replace(acc, Regex(" " * f * "\\S*") => " " * f * "*"),
+        fields;
+        init=String(fp)
+    )
 
 function normalize(l::String)::String
     isempty(IGNORE_FIELDS[]) && return l
@@ -341,11 +368,13 @@ end
 function first_diff(a::String, b::String)::String
     startswith(a, "THROW") && return join(split(a)[[1, 2, 4, 5]], " ")
     startswith(b, "THROW") && return "model THROW"
-    ha, wa, ra = split_line(a); hb, wb, rb = split_line(b)
+    ha, wa, ra = split_line(a)
+    hb, wb, rb = split_line(b)
     ha == hb || return (occursin("ret=", ha) ? "ret" : line_kind(a))
     for (tag, x, y) in (("W", wa, wb), ("R", ra, rb))
         x == y && continue
-        tx = split(x); ty = split(y)
+        tx = split(x)
+        ty = split(y)
         i = findfirst(k -> get(tx, k, "") != get(ty, k, ""), 1:max(length(tx), length(ty)))
         i == 1 && return tag * ".path"
         return tag * "." * string(first(get(tx, i, get(ty, i, "?"))))
@@ -354,7 +383,7 @@ function first_diff(a::String, b::String)::String
 end
 
 "Compare one input. `nothing` if the traces agree (after `IGNORE_FIELDS` masking)."
-function compare(o::Oracle, bytes::Vector{UInt8}; idx::Int = 0)::Union{Divergence, Nothing}
+function compare(o::Oracle, bytes::Vector{UInt8}; idx::Int=0)::Union{Divergence, Nothing}
     jl = run_julia(bytes)
     md = run_model(o, bytes)
     for i in 1:max(length(jl), length(md))
@@ -366,13 +395,13 @@ function compare(o::Oracle, bytes::Vector{UInt8}; idx::Int = 0)::Union{Divergenc
 end
 
 "Random programs: `n` inputs of `len` bytes, deterministic per (seed, index)."
-function fuzz(n::Int; seed::Int = 1, len::Int = 64)::Vector{Divergence}
+function fuzz(n::Int; seed::Int=1, len::Int=64)::Vector{Divergence}
     o = Oracle()
     out = Divergence[]
     try
         for i in 1:n
             bytes = rand(Xoshiro(hash((seed, i))), UInt8, len)
-            dv = compare(o, bytes; idx = i)
+            dv = compare(o, bytes; idx=i)
             dv === nothing || push!(out, dv)
         end
     finally
@@ -382,11 +411,16 @@ function fuzz(n::Int; seed::Int = 1, len::Int = 64)::Vector{Divergence}
 end
 
 "The op name of a trace line (`<step> <name> ret=...`), or the line kind (MAP0/MAP1/ROOT1/THROW)."
-line_kind(l::String) = (parts = split(l); length(parts) >= 2 && all(isdigit, parts[1]) ? parts[2] : parts[1])
+line_kind(l::String) =
+    (parts=split(l); length(parts) >= 2 && all(isdigit, parts[1]) ? parts[2] : parts[1])
 
 "The class of a divergence: the op (or final line) where it first differs, and the first field."
 divergence_class(dv::Divergence)::String =
-    string(line_kind(dv.model == "<missing>" ? dv.julia : dv.model), "  ", first_diff(dv.julia, dv.model))
+    string(
+        line_kind(dv.model == "<missing>" ? dv.julia : dv.model),
+        "  ",
+        first_diff(dv.julia, dv.model)
+    )
 
 "Group divergences by class, largest first."
 function classes(ds::Vector{Divergence})::Dict{String, Vector{Divergence}}
@@ -397,8 +431,8 @@ function classes(ds::Vector{Divergence})::Dict{String, Vector{Divergence}}
     groups
 end
 
-function report(ds::Vector{Divergence}; examples::Int = 1)
-    for (k, v) in sort(collect(classes(ds)); by = kv -> -length(kv[2]))
+function report(ds::Vector{Divergence}; examples::Int=1)
+    for (k, v) in sort(collect(classes(ds)); by=kv -> -length(kv[2]))
         println(rpad(k, 60), length(v))
         for dv in v[1:min(end, examples)]
             println("    #", dv.idx, " line ", dv.line)
@@ -415,11 +449,11 @@ const GATE_N = 1000
 const GATE_SEEDS = (1, 2, 3)
 
 "The gate's population: (seed, program index) => divergence class (unmasked, first divergence only)."
-function gate_classes(; n::Int = GATE_N, seeds = GATE_SEEDS)::Dict{Tuple{Int, Int}, String}
+function gate_classes(; n::Int=GATE_N, seeds=GATE_SEEDS)::Dict{Tuple{Int, Int}, String}
     IGNORE_FIELDS[] = Set{String}()
     out = Dict{Tuple{Int, Int}, String}()
     for seed in seeds
-        for dv in fuzz(n; seed = seed)
+        for dv in fuzz(n; seed=seed)
             out[(seed, dv.idx)] = divergence_class(dv)
         end
     end
@@ -427,7 +461,7 @@ function gate_classes(; n::Int = GATE_N, seeds = GATE_SEEDS)::Dict{Tuple{Int, In
 end
 
 "Read KNOWN_DIVERGENT.tsv -> (spec_version, n, seeds, Dict((seed, idx) => class))."
-function read_known(path::String = KNOWN_PATH)
+function read_known(path::String=KNOWN_PATH)
     ver = n = -1
     seeds = Int[]
     known = Dict{Tuple{Int, Int}, String}()
@@ -439,7 +473,7 @@ function read_known(path::String = KNOWN_PATH)
                 seeds = parse.(Int, split(m[3], ','))
             end
         elseif !isempty(strip(l))
-            sd, i, c = split(l, '\t'; limit = 3)
+            sd, i, c = split(l, '\t'; limit=3)
             known[(parse(Int, sd), parse(Int, i))] = String(c)
         end
     end
@@ -452,13 +486,25 @@ end
 Regenerate KNOWN_DIVERGENT.tsv from the current port. Only after every new or changed class has been
 attributed (replay the program, test the mechanism) and recorded in docs/UPSTREAM_DELTA_*.md.
 """
-function write_known(path::String = KNOWN_PATH; n::Int = GATE_N, seeds = GATE_SEEDS)
+function write_known(path::String=KNOWN_PATH; n::Int=GATE_N, seeds=GATE_SEEDS)
     cls = gate_classes(; n, seeds)
     open(path, "w") do io
-        println(io, "# KNOWN_DIVERGENT — PathMaps vs the Lean model (lean/PathMapsSpec), first divergence per program.")
-        println(io, "# Generated by SpecHarness.write_known; gated by test/lean_spec_gate.jl. Attribution: docs/UPSTREAM_DELTA_2026-09-16.md.")
-        println(io, "# Remaining `join_into` / `join_map_into` / `restrict` `ret` entries are upstream lean/FINDINGS.md #8: the")
-        println(io, "# status is Element although the destination is unchanged (it depends on node shape) — ported as is.")
+        println(
+            io,
+            "# KNOWN_DIVERGENT — PathMaps vs the Lean model (lean/PathMapsSpec), first divergence per program."
+        )
+        println(
+            io,
+            "# Generated by SpecHarness.write_known; gated by test/lean_spec_gate.jl. Attribution: docs/UPSTREAM_DELTA_2026-09-16.md."
+        )
+        println(
+            io,
+            "# Remaining `join_into` / `join_map_into` / `restrict` `ret` entries are upstream lean/FINDINGS.md #8: the"
+        )
+        println(
+            io,
+            "# status is Element although the destination is unchanged (it depends on node shape) — ported as is."
+        )
         println(io, "# spec_version=$(SPEC_VERSION) n=$(n) seeds=$(join(seeds, ','))")
         for k in sort!(collect(keys(cls)))
             println(io, k[1], '\t', k[2], '\t', cls[k])

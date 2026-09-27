@@ -27,16 +27,25 @@ include(joinpath(@__DIR__, "differential", "spec", "SpecHarness.jl"))
         if ver == SpecHarness.SPEC_VERSION
             now = Base.invokelatest(SpecHarness.gate_classes; n, seeds)
             new = sort!([i for i in keys(now) if !haskey(known, i)])
-            changed = sort!([i for i in keys(now) if haskey(known, i) && known[i] != now[i]])
+            changed = sort!([
+                i for i in keys(now) if haskey(known, i) && known[i] != now[i]
+            ])
             fixed = sort!([i for i in keys(known) if !haskey(now, i)])
-            @info "PathMaps vs Lean model" programs = n * length(seeds) divergent = length(now) known = length(known) new = length(new) changed = length(changed) now_matching = length(fixed)
+            @info "PathMaps vs Lean model" programs = n * length(seeds) divergent = length(
+                now
+            ) known = length(known) new = length(new) changed = length(changed) now_matching = length(
+                fixed
+            )
             for i in new
-                @error "NEW divergence — attribute it (replay the state), then fix or record" program = i class = now[i]
+                @error "NEW divergence — attribute it (replay the state), then fix or record" program =
+                    i class = now[i]
             end
             for i in changed
                 @error "divergence class CHANGED — re-attribute" program = i was = known[i] now = now[i]
             end
-            isempty(fixed) || @info "listed programs now match — remove them (SpecHarness.write_known())" programs = fixed
+            isempty(fixed) ||
+                @info "listed programs now match — remove them (SpecHarness.write_known())" programs =
+                    fixed
             @test isempty(new)
             @test isempty(changed)
         end

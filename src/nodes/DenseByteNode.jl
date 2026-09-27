@@ -344,7 +344,9 @@ end
 Recursively counts values in the subtree rooted at `rc`, with memoisation.
 Ports upstream `val_count_below_node`.
 """
-function val_count_below_node(rc::TrieNodeODRc{V, A}, cache::Dict{UInt64, Int})::Int where {V, A}
+function val_count_below_node(
+    rc::TrieNodeODRc{V, A}, cache::Dict{UInt64, Int}
+)::Int where {V, A}
     # Mirrors upstream trie_node.rs:2377-2394: the empty-sentinel case (`rc.node === nothing`,
     # left behind by remove_val_at! without prune=true, the default) must short-circuit to 0
     # BEFORE as_tagged/node_val_count — it is not a node to recurse into. Caching is also
@@ -1345,7 +1347,10 @@ const ITER_TOKEN_BYTE_MASK = (one(IterToken) << ITER_TOKEN_BYTE_BITS) - 1
     bit_idx = start & 0x3F
     while true
         word = @inbounds(n.mask.bits[word_idx + 1]) & (typemax(UInt64) << bit_idx)
-        word != 0 && return (UInt8(word_idx * 64 + trailing_zeros(word)), _bn_iter_token_values_idx(token))
+        word != 0 && return (
+            UInt8(word_idx * 64 + trailing_zeros(word)),
+            _bn_iter_token_values_idx(token)
+        )
         word_idx += 1
         word_idx == 4 && return nothing
         bit_idx = 0
@@ -1368,12 +1373,15 @@ end
 # dense_byte_node.rs:1032-1036
 function ascend_iter_token(n::AbstractByteNode, token::IterToken, byte_count::Int)
     token == NODE_ITER_INVALID && error("cannot ascend an invalid iteration token")
-    byte_count == 1 || error("ByteNode::ascend_iter_token: byte_count must be 1, got $byte_count")
+    byte_count == 1 ||
+        error("ByteNode::ascend_iter_token: byte_count must be 1, got $byte_count")
     new_iter_token(n)
 end
 
 # dense_byte_node.rs:1038-1053. `after_focus` is not needed: a one-byte token already means "after `k`".
-function next_items(n::AbstractByteNode{V, A}, token::IterToken, after_focus::Bool) where {V, A}
+function next_items(
+    n::AbstractByteNode{V, A}, token::IterToken, after_focus::Bool
+) where {V, A}
     (token == NODE_ITER_INVALID || token == NODE_ITER_FINISHED) &&
         error("ByteNode::next_items: control sentinel token $(repr(token))")
     token &= ~NODE_TOKEN_NONEXISTENT_BIT

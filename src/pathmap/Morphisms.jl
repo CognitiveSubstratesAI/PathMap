@@ -265,7 +265,7 @@ where `sub_path` is the "jumped" sub-path for jumping variant (else `[]`).
 # vector and the memo hold their values INLINE instead of boxing every one. CLAUDE.md bans `Vector{Any}`
 # in hot paths; `map_hash` was the heaviest op in the 2026-09-17 audit (Finding 5).
 function _cata_cached!(z::ReadZipperCore{V, A}, alg_f::Function, jumping::Bool,
-    ::Type{W} = Any) where {V, A, W}
+    ::Type{W}=Any) where {V, A, W}
     reset!(z)
 
     stack = _CataFrame[]
@@ -656,7 +656,11 @@ function _cata_hybrid_cached!(
     # Wrapper: strips the (W, used) return, captures used into used_ref
     function inner_alg(mask, ch, jump_len, fval, cur_path)
         sub_path =
-            jumping ? view(cur_path, max(1, length(cur_path) - jump_len):length(cur_path)) : UInt8[]
+            if jumping
+                view(cur_path, max(1, length(cur_path) - jump_len):length(cur_path))
+            else
+                UInt8[]
+            end
         (w, used) = alg_f(mask, ch, fval, collect(sub_path), cur_path)
         used_ref[] = used
         w

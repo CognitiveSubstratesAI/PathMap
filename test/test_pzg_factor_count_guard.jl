@@ -53,7 +53,9 @@ const PMG = PathMaps.PathMap
 
     dpz = PathMaps.DependentZipper(read_zipper(m), nothing, cb)
     pz = PathMaps.PrefixZipper(UInt8[], dpz)           # CmpSource's shape — load-bearing, see header
-    prz = PathMaps.ProductZipperG(pz, PathMaps.ReadZipperCore{UnitVal, PathMaps.GlobalAlloc}[])
+    prz = PathMaps.ProductZipperG(
+        pz, PathMaps.ReadZipperCore{UnitVal, PathMaps.GlobalAlloc}[]
+    )
 
     counts = Set{Int}()
     steps = 0

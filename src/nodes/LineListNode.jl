@@ -765,7 +765,8 @@ function set_payload_abstract!(
     if overlap > 0
         # Replace the existing downstream branch at this key — including a VALUE stored under a longer
         # compressed key, which is downstream too (upstream f0cd6b7, line_list_node.rs:997-1001)
-        if is_child && overlap == length(key) && (is_child_0(n) || length(node_key_0) > length(key))
+        if is_child && overlap == length(key) &&
+            (is_child_0(n) || length(node_key_0) > length(key))
             take_slot0_payload!(n)
             return set_payload_abstract!(n, is_child, key, payload)
         end
@@ -797,7 +798,8 @@ function set_payload_abstract!(
     node_key_1 = n.key1
     overlap1 = find_prefix_overlap(key, node_key_1)
     if overlap1 > 0
-        if is_child && overlap1 == length(key) && (is_child_1(n) || length(node_key_1) > length(key))   # f0cd6b7
+        if is_child && overlap1 == length(key) &&
+            (is_child_1(n) || length(node_key_1) > length(key))   # f0cd6b7
             take_slot1_payload!(n)
             return set_payload_abstract!(n, is_child, key, payload)
         end
@@ -1175,8 +1177,10 @@ end
 
 # line_list_node.rs:2018-2057
 function ascend_iter_token(n::LineListNode, token::IterToken, byte_count::Int)
-    (token == NODE_ITER_INVALID || token == NODE_ITER_FINISHED) && error("cannot ascend a sentinel iteration token")
-    node_iter_token_is_nonexistent(token) && error("cannot ascend a nonexistent iteration token")
+    (token == NODE_ITER_INVALID || token == NODE_ITER_FINISHED) &&
+        error("cannot ascend a sentinel iteration token")
+    node_iter_token_is_nonexistent(token) &&
+        error("cannot ascend a nonexistent iteration token")
     byte_count > 0 || error("cannot ascend zero bytes within a node")
     key0 = n.key0
     key_end_0 = length(key0)
@@ -1184,17 +1188,20 @@ function ascend_iter_token(n::LineListNode, token::IterToken, byte_count::Int)
     offset = if token == TOKEN_LAST
         key_end_1
     else
-        token & ~ITER_TOKEN_OFFSET_MASK == 0 || error("iteration token is not a LineListNode token")
+        token & ~ITER_TOKEN_OFFSET_MASK == 0 ||
+            error("iteration token is not a LineListNode token")
         Int(token & ITER_TOKEN_OFFSET_MASK)
     end
-    (offset > 0 && offset <= key_end_1) || error("iteration token does not describe an in-node focus")
-    key, key_offset, key_start = offset <= key_end_0 ? (key0, offset, 0) : (n.key1, offset - key_end_0, key_end_0)
+    (offset > 0 && offset <= key_end_1) ||
+        error("iteration token does not describe an in-node focus")
+    key, key_offset, key_start =
+        offset <= key_end_0 ? (key0, offset, 0) : (n.key1, offset - key_end_0, key_end_0)
     byte_count <= key_offset || error("ascent passes the LineListNode root")
     ascended_offset = key_offset - byte_count
     ascended_offset == 0 && return zero(IterToken)
     # A shared prefix has one canonical token: its occurrence in slot 0's key.
     if key_start > 0 && ascended_offset <= key_end_0 &&
-       view(key, 1:ascended_offset) == view(key0, 1:ascended_offset)
+        view(key, 1:ascended_offset) == view(key0, 1:ascended_offset)
         return IterToken(ascended_offset)
     end
     IterToken(key_start + ascended_offset)
@@ -1512,9 +1519,16 @@ function get_sibling_of_child(
     else
         # line_list_node.rs:2478-2501 (e659a96): the slot whose key agrees with `common_key` and has a
         # smaller byte at the last position — slot 1 first (the nearer one) — whether or not `key` exists.
-        key_byte(candidate) = (length(candidate) > last_idx &&
-            view(candidate, 1:last_idx) == common_key && candidate[last_idx + 1] < key[last_idx + 1]) ?
-            candidate[last_idx + 1] : nothing
+        key_byte(candidate) =
+            if (
+                length(candidate) > last_idx &&
+                view(candidate, 1:last_idx) == common_key &&
+                candidate[last_idx + 1] < key[last_idx + 1]
+            )
+                candidate[last_idx + 1]
+            else
+                nothing
+            end
         slot = 1
         sibling_byte = is_used_1(n) ? key_byte(k1) : nothing
         if sibling_byte === nothing
@@ -1965,7 +1979,10 @@ function factor_prefix!(n::LineListNode{V, A}) where {V, A}
     # Ours accepted A for a value of ANY key length ("too loose", delta P1 #6/#7).
     legal_overlap =
         overlap == 1 &&
-        ((!is_child_0(n) && length(key0) == 1) || (!is_child_1(n) && length(key0) == 1 && length(key1) == 1))
+        (
+            (!is_child_0(n) && length(key0) == 1) ||
+            (!is_child_1(n) && length(key0) == 1 && length(key1) == 1)
+        )
     (overlap == 0 || legal_overlap) && return nothing
 
     r = _merge_guts(overlap, key0, n, 0, key1, n, 1)
@@ -2035,13 +2052,23 @@ function drop_head_dyn!(self::LineListNode{V, A}, byte_cnt::Int) where {V, A}
             merged = if is_child(p0)
                 c0, c1 = into_child(p0), into_child(p1)
                 r = pjoin(c0, c1)
-                r isa AlgResElement ? ValOrChild(r.value) :
-                    r isa AlgResIdentity ? ValOrChild((r.mask & SELF_IDENT) > 0 ? c0 : c1) : nothing
+                if r isa AlgResElement
+                    ValOrChild(r.value)
+                elseif r isa AlgResIdentity
+                    ValOrChild((r.mask & SELF_IDENT) > 0 ? c0 : c1)
+                else
+                    nothing
+                end
             else
                 v0, v1 = into_val(p0), into_val(p1)
                 r = pjoin(v0, v1)
-                r isa AlgResElement ? ValOrChild{V, A}(0x0, r.value, nothing) :
-                    r isa AlgResIdentity ? ValOrChild{V, A}(0x0, (r.mask & SELF_IDENT) > 0 ? v0 : v1, nothing) : nothing
+                if r isa AlgResElement
+                    ValOrChild{V, A}(0x0, r.value, nothing)
+                elseif r isa AlgResIdentity
+                    ValOrChild{V, A}(0x0, (r.mask & SELF_IDENT) > 0 ? v0 : v1, nothing)
+                else
+                    nothing
+                end
             end
             merged === nothing && return nothing
             node = LineListNode{V, A}(self.alloc)

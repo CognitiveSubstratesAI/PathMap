@@ -3,7 +3,57 @@
 
 const SPEC_VERSION = 4
 const NOPS = 49
-const OP_NAMES = ["descend_to", "descend_to_byte", "ascend", "ascend_byte", "reset", "descend_first_byte", "descend_last_byte", "descend_indexed_byte", "descend_until", "ascend_until", "ascend_until_branch", "to_next_sibling_byte", "to_prev_sibling_byte", "to_next_step", "to_next_val", "descend_first_k_path", "k_path_walk", "descend_last_path", "move_to_path", "descend_to_existing", "descend_to_val", "descend_to_existing_byte", "descend_until_max_bytes", "descend_to_check", "val_at", "make_map_val_count", "dump", "set_val", "remove_val", "create_path", "prune_path", "get_val_or_set_mut", "remove_branches", "remove_unmasked_branches", "take_map_restore", "insert_prefix", "remove_prefix", "graft", "graft_map", "graft_masked_branches", "join_into", "join_map_into", "meet_into", "subtract_into", "restrict", "restricting", "meet_2", "join_k_path_into", "meet_k_path_into"]
+const OP_NAMES = [
+    "descend_to",
+    "descend_to_byte",
+    "ascend",
+    "ascend_byte",
+    "reset",
+    "descend_first_byte",
+    "descend_last_byte",
+    "descend_indexed_byte",
+    "descend_until",
+    "ascend_until",
+    "ascend_until_branch",
+    "to_next_sibling_byte",
+    "to_prev_sibling_byte",
+    "to_next_step",
+    "to_next_val",
+    "descend_first_k_path",
+    "k_path_walk",
+    "descend_last_path",
+    "move_to_path",
+    "descend_to_existing",
+    "descend_to_val",
+    "descend_to_existing_byte",
+    "descend_until_max_bytes",
+    "descend_to_check",
+    "val_at",
+    "make_map_val_count",
+    "dump",
+    "set_val",
+    "remove_val",
+    "create_path",
+    "prune_path",
+    "get_val_or_set_mut",
+    "remove_branches",
+    "remove_unmasked_branches",
+    "take_map_restore",
+    "insert_prefix",
+    "remove_prefix",
+    "graft",
+    "graft_map",
+    "graft_masked_branches",
+    "join_into",
+    "join_map_into",
+    "meet_into",
+    "subtract_into",
+    "restrict",
+    "restricting",
+    "meet_2",
+    "join_k_path_into",
+    "meet_k_path_into"
+]
 
 """
     spec_step!(st, d) -> Bool
@@ -25,11 +75,23 @@ function spec_step!(st::SpecState, d::Dec)
         if t == 0
             z = st.wz
             sk = nothing
-            emit!(st, "descend_to", sk === nothing ? ((sp_descend_to!(z, a1); hex_path(a1))) : sk)
+            emit!(
+                st,
+                "descend_to",
+                sk === nothing ? (
+                    (sp_descend_to!(z, a1); hex_path(a1))
+                ) : sk
+            )
         else
             z = st.rz
             sk = nothing
-            emit!(st, "descend_to", sk === nothing ? ((sp_descend_to!(z, a1); hex_path(a1))) : sk)
+            emit!(
+                st,
+                "descend_to",
+                sk === nothing ? (
+                    (sp_descend_to!(z, a1); hex_path(a1))
+                ) : sk
+            )
         end
     elseif op == 1   # descend_to_byte
         t = dec_mod!(d, 2)
@@ -39,11 +101,23 @@ function spec_step!(st::SpecState, d::Dec)
         if t == 0
             z = st.wz
             sk = nothing
-            emit!(st, "descend_to_byte", sk === nothing ? ((sp_descend_to_byte!(z, a1); hex_byte(a1))) : sk)
+            emit!(
+                st,
+                "descend_to_byte",
+                sk === nothing ? (
+                    (sp_descend_to_byte!(z, a1); hex_byte(a1))
+                ) : sk
+            )
         else
             z = st.rz
             sk = nothing
-            emit!(st, "descend_to_byte", sk === nothing ? ((sp_descend_to_byte!(z, a1); hex_byte(a1))) : sk)
+            emit!(
+                st,
+                "descend_to_byte",
+                sk === nothing ? (
+                    (sp_descend_to_byte!(z, a1); hex_byte(a1))
+                ) : sk
+            )
         end
     elseif op == 2   # ascend
         t = dec_mod!(d, 2)
@@ -77,11 +151,15 @@ function spec_step!(st::SpecState, d::Dec)
         if t == 0
             z = st.wz
             sk = nothing
-            emit!(st, "reset", sk === nothing ? ((sp_reset!(z); "-")) : sk)
+            emit!(st, "reset", sk === nothing ? (
+                (sp_reset!(z); "-")
+            ) : sk)
         else
             z = st.rz
             sk = nothing
-            emit!(st, "reset", sk === nothing ? ((sp_reset!(z); "-")) : sk)
+            emit!(st, "reset", sk === nothing ? (
+                (sp_reset!(z); "-")
+            ) : sk)
         end
     elseif op == 5   # descend_first_byte
         t = dec_mod!(d, 2)
@@ -89,11 +167,27 @@ function spec_step!(st::SpecState, d::Dec)
         if t == 0
             z = st.wz
             sk = nothing
-            emit!(st, "descend_first_byte", sk === nothing ? (show_byte_opt(sp_moved_byte(z, sp_descend_first_byte!))) : sk)
+            emit!(
+                st,
+                "descend_first_byte",
+                if sk === nothing
+                    (show_byte_opt(sp_moved_byte(z, sp_descend_first_byte!)))
+                else
+                    sk
+                end
+            )
         else
             z = st.rz
             sk = nothing
-            emit!(st, "descend_first_byte", sk === nothing ? (show_byte_opt(sp_moved_byte(z, sp_descend_first_byte!))) : sk)
+            emit!(
+                st,
+                "descend_first_byte",
+                if sk === nothing
+                    (show_byte_opt(sp_moved_byte(z, sp_descend_first_byte!)))
+                else
+                    sk
+                end
+            )
         end
     elseif op == 6   # descend_last_byte
         t = dec_mod!(d, 2)
@@ -104,7 +198,11 @@ function spec_step!(st::SpecState, d::Dec)
         else
             z = st.rz
             sk = nothing
-            emit!(st, "descend_last_byte", sk === nothing ? (show_byte_opt(sp_moved_byte(z, descend_last_byte!))) : sk)
+            emit!(
+                st,
+                "descend_last_byte",
+                sk === nothing ? (show_byte_opt(sp_moved_byte(z, descend_last_byte!))) : sk
+            )
         end
     elseif op == 7   # descend_indexed_byte
         t = dec_mod!(d, 2)
@@ -114,11 +212,31 @@ function spec_step!(st::SpecState, d::Dec)
         if t == 0
             z = st.wz
             sk = nothing
-            emit!(st, "descend_indexed_byte", sk === nothing ? (show_byte_opt(sp_moved_byte(z, zz -> sp_descend_indexed_byte!(zz, a1)))) : sk)
+            emit!(
+                st,
+                "descend_indexed_byte",
+                if sk === nothing
+                    (show_byte_opt(
+                        sp_moved_byte(z, zz -> sp_descend_indexed_byte!(zz, a1))
+                    ))
+                else
+                    sk
+                end
+            )
         else
             z = st.rz
             sk = nothing
-            emit!(st, "descend_indexed_byte", sk === nothing ? (show_byte_opt(sp_moved_byte(z, zz -> sp_descend_indexed_byte!(zz, a1)))) : sk)
+            emit!(
+                st,
+                "descend_indexed_byte",
+                if sk === nothing
+                    (show_byte_opt(
+                        sp_moved_byte(z, zz -> sp_descend_indexed_byte!(zz, a1))
+                    ))
+                else
+                    sk
+                end
+            )
         end
     elseif op == 8   # descend_until
         t = dec_mod!(d, 2)
@@ -140,7 +258,11 @@ function spec_step!(st::SpecState, d::Dec)
         else
             z = st.rz
             sk = nothing
-            emit!(st, "ascend_until", sk === nothing ? (string(sp_ascended(z, ascend_until!))) : sk)
+            emit!(
+                st,
+                "ascend_until",
+                sk === nothing ? (string(sp_ascended(z, ascend_until!))) : sk
+            )
         end
     elseif op == 10   # ascend_until_branch
         t = dec_mod!(d, 2)
@@ -151,7 +273,11 @@ function spec_step!(st::SpecState, d::Dec)
         else
             z = st.rz
             sk = nothing
-            emit!(st, "ascend_until_branch", sk === nothing ? (string(sp_ascended(z, ascend_until_branch!))) : sk)
+            emit!(
+                st,
+                "ascend_until_branch",
+                sk === nothing ? (string(sp_ascended(z, ascend_until_branch!))) : sk
+            )
         end
     elseif op == 11   # to_next_sibling_byte
         t = dec_mod!(d, 2)
@@ -159,11 +285,27 @@ function spec_step!(st::SpecState, d::Dec)
         if t == 0
             z = st.wz
             sk = nothing
-            emit!(st, "to_next_sibling_byte", sk === nothing ? (show_byte_opt(sp_moved_byte(z, sp_to_next_sibling_byte!))) : sk)
+            emit!(
+                st,
+                "to_next_sibling_byte",
+                if sk === nothing
+                    (show_byte_opt(sp_moved_byte(z, sp_to_next_sibling_byte!)))
+                else
+                    sk
+                end
+            )
         else
             z = st.rz
             sk = nothing
-            emit!(st, "to_next_sibling_byte", sk === nothing ? (show_byte_opt(sp_moved_byte(z, sp_to_next_sibling_byte!))) : sk)
+            emit!(
+                st,
+                "to_next_sibling_byte",
+                if sk === nothing
+                    (show_byte_opt(sp_moved_byte(z, sp_to_next_sibling_byte!)))
+                else
+                    sk
+                end
+            )
         end
     elseif op == 12   # to_prev_sibling_byte
         t = dec_mod!(d, 2)
@@ -171,11 +313,27 @@ function spec_step!(st::SpecState, d::Dec)
         if t == 0
             z = st.wz
             sk = nothing
-            emit!(st, "to_prev_sibling_byte", sk === nothing ? (show_byte_opt(sp_moved_byte(z, sp_to_prev_sibling_byte!))) : sk)
+            emit!(
+                st,
+                "to_prev_sibling_byte",
+                if sk === nothing
+                    (show_byte_opt(sp_moved_byte(z, sp_to_prev_sibling_byte!)))
+                else
+                    sk
+                end
+            )
         else
             z = st.rz
             sk = nothing
-            emit!(st, "to_prev_sibling_byte", sk === nothing ? (show_byte_opt(sp_moved_byte(z, sp_to_prev_sibling_byte!))) : sk)
+            emit!(
+                st,
+                "to_prev_sibling_byte",
+                if sk === nothing
+                    (show_byte_opt(sp_moved_byte(z, sp_to_prev_sibling_byte!)))
+                else
+                    sk
+                end
+            )
         end
     elseif op == 13   # to_next_step
         t = dec_mod!(d, 2)
@@ -197,17 +355,29 @@ function spec_step!(st::SpecState, d::Dec)
         a1 === nothing && return false
         z = st.rz
         sk = (a1 == 0) ? "skip:k0" : nothing
-        emit!(st, "descend_first_k_path", sk === nothing ? (show_bool(descend_first_k_path!(z, a1))) : sk)
+        emit!(
+            st,
+            "descend_first_k_path",
+            sk === nothing ? (show_bool(descend_first_k_path!(z, a1))) : sk
+        )
     elseif op == 16   # k_path_walk
         a1 = dec_mod!(d, 4)
         a1 === nothing && return false
         z = st.rz
         sk = (a1 == 0) ? "skip:k0" : nothing
-        emit!(st, "k_path_walk", sk === nothing ? (join(hex_path.(sp_k_walk!(z, a1)), ",")) : sk)
+        emit!(
+            st,
+            "k_path_walk",
+            sk === nothing ? (join(hex_path.(sp_k_walk!(z, a1)), ",")) : sk
+        )
     elseif op == 17   # descend_last_path
         z = st.rz
         sk = nothing
-        emit!(st, "descend_last_path", sk === nothing ? (show_bool(descend_last_path!(z))) : sk)
+        emit!(
+            st,
+            "descend_last_path",
+            sk === nothing ? (show_bool(descend_last_path!(z))) : sk
+        )
     elseif op == 18   # move_to_path
         t = dec_mod!(d, 2)
         t === nothing && return false
@@ -232,7 +402,11 @@ function spec_step!(st::SpecState, d::Dec)
         else
             z = st.rz
             sk = nothing
-            emit!(st, "descend_to_existing", sk === nothing ? (string(descend_to_existing!(z, a1))) : sk)
+            emit!(
+                st,
+                "descend_to_existing",
+                sk === nothing ? (string(descend_to_existing!(z, a1))) : sk
+            )
         end
     elseif op == 20   # descend_to_val
         t = dec_mod!(d, 2)
@@ -245,7 +419,9 @@ function spec_step!(st::SpecState, d::Dec)
         else
             z = st.rz
             sk = nothing
-            emit!(st, "descend_to_val", sk === nothing ? (string(descend_to_val!(z, a1))) : sk)
+            emit!(
+                st, "descend_to_val", sk === nothing ? (string(descend_to_val!(z, a1))) : sk
+            )
         end
     elseif op == 21   # descend_to_existing_byte
         t = dec_mod!(d, 2)
@@ -258,7 +434,11 @@ function spec_step!(st::SpecState, d::Dec)
         else
             z = st.rz
             sk = nothing
-            emit!(st, "descend_to_existing_byte", sk === nothing ? (show_bool(descend_to_existing_byte!(z, a1))) : sk)
+            emit!(
+                st,
+                "descend_to_existing_byte",
+                sk === nothing ? (show_bool(descend_to_existing_byte!(z, a1))) : sk
+            )
         end
     elseif op == 22   # descend_until_max_bytes
         t = dec_mod!(d, 2)
@@ -271,7 +451,11 @@ function spec_step!(st::SpecState, d::Dec)
         else
             z = st.rz
             sk = nothing
-            emit!(st, "descend_until_max_bytes", sk === nothing ? (show_bool(descend_until_max_bytes!(z, a1))) : sk)
+            emit!(
+                st,
+                "descend_until_max_bytes",
+                sk === nothing ? (show_bool(descend_until_max_bytes!(z, a1))) : sk
+            )
         end
     elseif op == 23   # descend_to_check
         t = dec_mod!(d, 2)
@@ -284,7 +468,11 @@ function spec_step!(st::SpecState, d::Dec)
         else
             z = st.rz
             sk = nothing
-            emit!(st, "descend_to_check", sk === nothing ? (show_bool(descend_to_check!(z, a1))) : sk)
+            emit!(
+                st,
+                "descend_to_check",
+                sk === nothing ? (show_bool(descend_to_check!(z, a1))) : sk
+            )
         end
     elseif op == 24   # val_at
         t = dec_mod!(d, 2)
@@ -305,11 +493,19 @@ function spec_step!(st::SpecState, d::Dec)
         if t == 0
             z = st.wz
             sk = nothing
-            emit!(st, "make_map_val_count", sk === nothing ? (string(val_count(make_map(sp_focus_ref(st, z))))) : sk)
+            emit!(
+                st,
+                "make_map_val_count",
+                sk === nothing ? (string(val_count(make_map(sp_focus_ref(st, z))))) : sk
+            )
         else
             z = st.rz
             sk = nothing
-            emit!(st, "make_map_val_count", sk === nothing ? (string(val_count(make_map(sp_focus_ref(st, z))))) : sk)
+            emit!(
+                st,
+                "make_map_val_count",
+                sk === nothing ? (string(val_count(make_map(sp_focus_ref(st, z))))) : sk
+            )
         end
     elseif op == 26   # dump
         t = dec_mod!(d, 2)
@@ -351,24 +547,63 @@ function spec_step!(st::SpecState, d::Dec)
         z = st.wz
         r = st.rz
         sk = nothing
-        emit!(st, "get_val_or_set_mut", sk === nothing ? (show_val(get_val_or_set_mut!(z, UInt64(a1)))) : sk)
+        emit!(
+            st,
+            "get_val_or_set_mut",
+            sk === nothing ? (show_val(get_val_or_set_mut!(z, UInt64(a1)))) : sk
+        )
     elseif op == 32   # remove_branches
         z = st.wz
         r = st.rz
         sk = nothing
-        emit!(st, "remove_branches", sk === nothing ? ((e = sp_child_count(z) == 0; b = remove_branches!(z, false); e ? "?" : show_bool(b))) : sk)
+        emit!(
+            st,
+            "remove_branches",
+            if sk === nothing
+                (
+                    (e = sp_child_count(z) == 0;
+                    b = remove_branches!(z, false);
+                    e ? "?" : show_bool(b))
+                )
+            else
+                sk
+            end
+        )
     elseif op == 33   # remove_unmasked_branches
         a1 = dec_mask!(d)
         a1 === nothing && return false
         z = st.wz
         r = st.rz
         sk = nothing
-        emit!(st, "remove_unmasked_branches", sk === nothing ? ((remove_unmasked_branches!(z, byte_mask(a1), false); hex_path(a1))) : sk)
+        emit!(
+            st,
+            "remove_unmasked_branches",
+            if sk === nothing
+                (
+                    (remove_unmasked_branches!(z, byte_mask(a1), false); hex_path(a1))
+                )
+            else
+                sk
+            end
+        )
     elseif op == 34   # take_map_restore
         z = st.wz
         r = st.rz
         sk = nothing
-        emit!(st, "take_map_restore", sk === nothing ? ((e = sp_child_count(z) == 0 && val(z) === nothing; m = take_map!(z, false); m === nothing || graft_map!(z, m); e ? "?" : (m === nothing ? "0" : "1"))) : sk)
+        emit!(
+            st,
+            "take_map_restore",
+            if sk === nothing
+                (
+                    (e = sp_child_count(z) == 0 && val(z) === nothing;
+                    m = take_map!(z, false);
+                    m === nothing || graft_map!(z, m);
+                    e ? "?" : (m === nothing ? "0" : "1"))
+                )
+            else
+                sk
+            end
+        )
     elseif op == 35   # insert_prefix
         a1 = dec_path!(d)
         a1 === nothing && return false
@@ -387,12 +622,18 @@ function spec_step!(st::SpecState, d::Dec)
         z = st.wz
         r = st.rz
         sk = nothing
-        emit!(st, "graft", sk === nothing ? ((graft!(z, src_anr(st), src_val(st)); "-")) : sk)
+        emit!(
+            st, "graft", sk === nothing ? (
+                (graft!(z, src_anr(st), src_val(st)); "-")
+            ) : sk
+        )
     elseif op == 38   # graft_map
         z = st.wz
         r = st.rz
         sk = nothing
-        emit!(st, "graft_map", sk === nothing ? ((graft_map!(z, src_map(st)); "-")) : sk)
+        emit!(st, "graft_map", sk === nothing ? (
+            (graft_map!(z, src_map(st)); "-")
+        ) : sk)
     elseif op == 39   # graft_masked_branches
         a1 = dec_mask!(d)
         a1 === nothing && return false
@@ -401,58 +642,144 @@ function spec_step!(st::SpecState, d::Dec)
         z = st.wz
         r = st.rz
         sk = nothing
-        emit!(st, "graft_masked_branches", sk === nothing ? ((graft_masked_branches!(z, src_anr(st), byte_mask(a1), a2); hex_path(a1) * ":" * show_bool(a2))) : sk)
+        emit!(
+            st,
+            "graft_masked_branches",
+            if sk === nothing
+                (
+                    (graft_masked_branches!(z, src_anr(st), byte_mask(a1), a2);
+                    hex_path(a1) * ":" * show_bool(a2))
+                )
+            else
+                sk
+            end
+        )
     elseif op == 40   # join_into
         z = st.wz
         r = st.rz
         sk = nothing
-        emit!(st, "join_into", sk === nothing ? (show_status(join_into!(z, src_anr(st)))) : sk)
+        emit!(
+            st, "join_into", sk === nothing ? (show_status(join_into!(z, src_anr(st)))) : sk
+        )
     elseif op == 41   # join_map_into
         z = st.wz
         r = st.rz
         sk = nothing
-        emit!(st, "join_map_into", sk === nothing ? ((e = sp_child_count(z) == 0; s = join_map_into!(z, src_map(st)); e ? "?" : show_status(s))) : sk)
+        emit!(
+            st,
+            "join_map_into",
+            if sk === nothing
+                (
+                    (e = sp_child_count(z) == 0;
+                    s = join_map_into!(z, src_map(st));
+                    e ? "?" : show_status(s))
+                )
+            else
+                sk
+            end
+        )
     elseif op == 42   # meet_into
         z = st.wz
         r = st.rz
         sk = nothing
-        emit!(st, "meet_into", sk === nothing ? (show_status(meet_into!(z, src_anr(st), false, src_val(st)))) : sk)
+        emit!(
+            st,
+            "meet_into",
+            if sk === nothing
+                (show_status(meet_into!(z, src_anr(st), false, src_val(st))))
+            else
+                sk
+            end
+        )
     elseif op == 43   # subtract_into
         z = st.wz
         r = st.rz
         sk = nothing
-        emit!(st, "subtract_into", sk === nothing ? (show_status(subtract_into!(z, src_anr(st), false, src_val(st)))) : sk)
+        emit!(
+            st,
+            "subtract_into",
+            if sk === nothing
+                (show_status(subtract_into!(z, src_anr(st), false, src_val(st))))
+            else
+                sk
+            end
+        )
     elseif op == 44   # restrict
         z = st.wz
         r = st.rz
         sk = nothing
-        emit!(st, "restrict", sk === nothing ? ((e = sp_child_count(z) == 0; s = restrict!(z, src_anr(st)); e ? "?" : show_status(s))) : sk)
+        emit!(
+            st,
+            "restrict",
+            if sk === nothing
+                (
+                    (e = sp_child_count(z) == 0;
+                    s = restrict!(z, src_anr(st));
+                    e ? "?" : show_status(s))
+                )
+            else
+                sk
+            end
+        )
     elseif op == 45   # restricting
         z = st.wz
         r = st.rz
-        sk = (sp_child_count(z) == 0 || sp_child_count(st.rz) == 0) ? "skip:empty-focus" : nothing
-        emit!(st, "restricting", sk === nothing ? (show_bool(restricting!(z, src_anr(st)))) : sk)
+        sk = if (sp_child_count(z) == 0 || sp_child_count(st.rz) == 0)
+            "skip:empty-focus"
+        else
+            nothing
+        end
+        emit!(
+            st,
+            "restricting",
+            sk === nothing ? (show_bool(restricting!(z, src_anr(st)))) : sk
+        )
     elseif op == 46   # meet_2
         a1 = dec_path!(d)
         a1 === nothing && return false
         z = st.wz
         r = st.rz
         sk = nothing
-        emit!(st, "meet_2", sk === nothing ? (show_status(meet_2!(z, src_anr(st), src_anr(st, a1)))) : sk)
+        emit!(
+            st,
+            "meet_2",
+            sk === nothing ? (show_status(meet_2!(z, src_anr(st), src_anr(st, a1)))) : sk
+        )
     elseif op == 47   # join_k_path_into
         a1 = dec_mod!(d, 4)
         a1 === nothing && return false
         z = st.wz
         r = st.rz
         sk = nothing
-        emit!(st, "join_k_path_into", sk === nothing ? ((b = join_k_path_into!(z, a1, false); sp_child_count(z) == 0 ? "?" : show_bool(b))) : sk)
+        emit!(
+            st,
+            "join_k_path_into",
+            if sk === nothing
+                (
+                    (b = join_k_path_into!(z, a1, false);
+                    sp_child_count(z) == 0 ? "?" : show_bool(b))
+                )
+            else
+                sk
+            end
+        )
     elseif op == 48   # meet_k_path_into
         a1 = dec_mod!(d, 4)
         a1 === nothing && return false
         z = st.wz
         r = st.rz
-        sk = (a1 == 0) ? "skip:k0" : (sp_child_count(z) == 0) ? "skip:empty-focus" : nothing
-        emit!(st, "meet_k_path_into", sk === nothing ? (show_bool(meet_k_path_into!(z, a1, false))) : sk)
+        sk = if (a1 == 0)
+            "skip:k0"
+        elseif (sp_child_count(z) == 0)
+            "skip:empty-focus"
+        else
+            nothing
+        end
+        emit!(
+            st,
+            "meet_k_path_into",
+            sk === nothing ? (show_bool(meet_k_path_into!(z, a1, false))) : sk
+        )
     else
         emit!(st, "nop", "-")
     end

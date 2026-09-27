@@ -176,7 +176,7 @@ Run the suite and print each case. Callable when this file is `include`d — whi
 (`MORK/tools/warm_suite.sh file …/benchmarks/benchmarks.jl` then `run_benchmarks()`), avoiding the ~30 s
 cold start that `julia benchmarks/benchmarks.jl` pays before the first measurement.
 """
-function run_benchmarks(; tune::Bool = false)
+function run_benchmarks(; tune::Bool=false)
     println("PathMap Benchmarks")
     println("==================")
     println("Julia version: ", VERSION)
@@ -207,5 +207,5 @@ end
 
 # `julia --project=. benchmarks/benchmarks.jl [--tune]`
 if abspath(PROGRAM_FILE) == @__FILE__
-    run_benchmarks(; tune = "--tune" in ARGS)
+    run_benchmarks(; tune="--tune" in ARGS)
 end

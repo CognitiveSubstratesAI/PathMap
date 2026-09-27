@@ -19,15 +19,20 @@ kp_map(keys) = begin
     end
     m
 end
-kp_zipper(keys, root) = (m = kp_map(keys); isempty(root) ? read_zipper(m) : read_zipper_at_path(m, collect(UInt8, root)))
+kp_zipper(keys, root) = (
+    m=kp_map(keys);
+    isempty(root) ? read_zipper(m) : read_zipper_at_path(m, collect(UInt8, root))
+)
 kp_path(z) = collect(UInt8, path(z))
 kpb(s::String) = Vector{UInt8}(s)
 
 @testset "upstream k_path iteration tests (zipper.rs:4720-5125)" begin
 
     @testset "k_path_test1" begin
-        keys = [":5:above:3:the:4:fray:", ":5:err:", ":5:erronious:6:potato:", ":5:error:2:is:2:my:4:name:",
-            ":5:hello:5:world:", ":5:mucky:4:muck:", ":5:roger:6:rabbit:", ":5:zebra:", ":9:muckymuck:5:raker:"]
+        keys = [":5:above:3:the:4:fray:", ":5:err:", ":5:erronious:6:potato:",
+            ":5:error:2:is:2:my:4:name:",
+            ":5:hello:5:world:", ":5:mucky:4:muck:", ":5:roger:6:rabbit:", ":5:zebra:",
+            ":9:muckymuck:5:raker:"]
         z = kp_zipper(keys, ":")
         @test descend_indexed_byte!(z, 0) !== nothing
         sym_len = parse(Int, Char(kp_path(z)[1]))
@@ -51,7 +56,10 @@ kpb(s::String) = Vector{UInt8}(s)
 
     @testset "k_path_test2" begin
         K_PATH_TEST2_COUNT = 50
-        paths = [UInt8[((j + i) % 255) for j in 0:((i % 15) + 4)] for i in 0:(K_PATH_TEST2_COUNT - 1)]
+        paths = [
+            UInt8[((j + i) % 255) for j in 0:((i % 15) + 4)] for
+            i in 0:(K_PATH_TEST2_COUNT - 1)
+        ]
         z = kp_zipper(paths, UInt8[])
         descend_first_k_path!(z, 5)
         count = 1
@@ -152,25 +160,142 @@ kpb(s::String) = Vector{UInt8}(s)
             [253, 235, 49, 156, 40, 50, 60, 73, 145, 249],
             [228, 81, 220, 29, 208, 234, 27],
             [116, 109, 134, 122, 15, 78, 126, 240, 158, 42, 221, 229, 93, 200, 194],
-            [180, 216, 189, 14, 82, 14, 170, 195, 196, 42, 177, 144, 153, 156, 140, 109, 93, 78, 157],
+            [
+                180,
+                216,
+                189,
+                14,
+                82,
+                14,
+                170,
+                195,
+                196,
+                42,
+                177,
+                144,
+                153,
+                156,
+                140,
+                109,
+                93,
+                78,
+                157
+            ],
             [190, 6, 59, 69, 208, 253, 2, 33, 86],
             [245, 168, 144, 122, 243, 111],
             [123, 150, 249, 114, 32, 140, 186, 204, 199, 8, 205, 150, 34, 104, 186, 236],
             [8, 29, 191, 189, 72, 101, 39, 24, 105, 44, 13, 87, 75, 187],
             [14, 201, 29, 151, 113, 10, 175],
-            [83, 130, 247, 5, 250, 101, 141, 5, 42, 132, 205, 3, 118, 152, 33, 219, 1, 91, 204],
+            [
+                83,
+                130,
+                247,
+                5,
+                250,
+                101,
+                141,
+                5,
+                42,
+                132,
+                205,
+                3,
+                118,
+                152,
+                33,
+                219,
+                1,
+                91,
+                204
+            ],
             [207, 215, 38, 17, 244, 96],
-            [34, 132, 138, 222, 250, 162, 231, 68, 142, 162, 152, 172, 244, 102, 179, 111, 161, 95],
+            [
+                34,
+                132,
+                138,
+                222,
+                250,
+                162,
+                231,
+                68,
+                142,
+                162,
+                152,
+                172,
+                244,
+                102,
+                179,
+                111,
+                161,
+                95
+            ],
             [124, 120, 11, 4, 219, 210, 172, 50, 182, 160, 86, 88, 136, 122, 97, 98],
             [86, 74, 181, 17, 3, 173, 12],
             [18, 234, 66, 134, 20],
             [20, 24, 83, 219, 209, 20, 236, 128, 155, 15, 110, 54, 237, 105, 186, 62],
             [67, 11, 50, 124, 120, 33, 218],
-            [89, 248, 169, 97, 245, 98, 230, 53, 114, 198, 227, 148, 22, 127, 198, 153, 238, 59, 223],
-            [100, 128, 38, 54, 171, 186, 9, 133, 191, 82, 113, 86, 10, 72, 236, 124, 201, 65],
+            [
+                89,
+                248,
+                169,
+                97,
+                245,
+                98,
+                230,
+                53,
+                114,
+                198,
+                227,
+                148,
+                22,
+                127,
+                198,
+                153,
+                238,
+                59,
+                223
+            ],
+            [
+                100,
+                128,
+                38,
+                54,
+                171,
+                186,
+                9,
+                133,
+                191,
+                82,
+                113,
+                86,
+                10,
+                72,
+                236,
+                124,
+                201,
+                65
+            ],
             [152, 115, 99, 124, 81, 254, 0, 179, 24, 87, 24, 77, 60],
             [107, 117, 222, 38, 162, 193, 48, 44, 140, 162, 104, 139, 90],
-            [63, 29, 217, 85, 63, 130, 110, 121, 227, 43, 215, 223, 249, 1, 72, 134, 92, 188],
+            [
+                63,
+                29,
+                217,
+                85,
+                63,
+                130,
+                110,
+                121,
+                227,
+                43,
+                215,
+                223,
+                249,
+                1,
+                72,
+                134,
+                92,
+                188
+            ],
             [117, 3, 144, 15, 103, 113, 130, 253, 0, 102, 47, 24, 234, 0, 159],
             [38, 60, 197, 120, 53, 94, 202, 137, 116, 27, 12, 181],
             [248, 41, 252, 254, 98, 173, 42, 92, 30, 65, 72],
@@ -181,11 +306,50 @@ kpb(s::String) = Vector{UInt8}(s)
             [32, 161, 24, 162, 112, 152, 21, 226, 149, 253, 212, 246, 175, 182],
             [99, 7, 213, 87, 192, 2, 110, 242, 222, 89, 20, 83, 138, 112],
             [92, 64, 61, 35, 111, 41, 151, 121, 24, 157],
-            [115, 201, 114, 124, 135, 246, 93, 230, 210, 164, 213, 254, 108, 181, 77, 19, 103, 166],
+            [
+                115,
+                201,
+                114,
+                124,
+                135,
+                246,
+                93,
+                230,
+                210,
+                164,
+                213,
+                254,
+                108,
+                181,
+                77,
+                19,
+                103,
+                166
+            ],
             [26, 231, 59, 238, 246],
             [52, 74, 93, 202, 140, 11, 56, 46, 211, 194, 137, 65, 36, 90, 209],
             [56, 245, 179, 40, 190, 168, 116, 115],
-            [192, 215, 69, 171, 218, 187, 202, 120, 92, 33, 14, 77, 34, 46, 40, 93, 135, 117, 152],
+            [
+                192,
+                215,
+                69,
+                171,
+                218,
+                187,
+                202,
+                120,
+                92,
+                33,
+                14,
+                77,
+                34,
+                46,
+                40,
+                93,
+                135,
+                117,
+                152
+            ]
         ]
         z = kp_zipper(K_PATH_TEST4_KEYS, UInt8[])
         descend_first_k_path!(z, 5)
@@ -199,7 +363,7 @@ kpb(s::String) = Vector{UInt8}(s)
 
     @testset "k_path_test5 (straddles a node boundary)" begin
         keys = Vector{UInt8}[[3, 193, 4, 194, 1, 43, 3, 193, 8, 194, 1, 45, 194, 1, 46],
-                             [3, 193, 4, 194, 1, 43, 3, 193, 34, 193]]
+            [3, 193, 4, 194, 1, 43, 3, 193, 34, 193]]
         z = kp_zipper(keys, UInt8[])
         descend_to!(z, UInt8[3, 193, 4, 194, 1, 43, 3, 193, 8, 194, 1, 45, 194])
         @test path_exists(z)
@@ -210,14 +374,78 @@ kpb(s::String) = Vector{UInt8}(s)
     end
 
     K6 = Vector{UInt8}[
-        [2, 197, 97, 120, 105, 111, 109, 3, 193, 61, 4, 193, 97, 192, 192, 3, 193, 75, 192, 3, 193, 84, 192, 3, 193, 75, 128, 131, 193, 49],
-        [2, 197, 97, 120, 105, 111, 109, 3, 193, 61, 4, 193, 97, 192, 192, 3, 193, 84, 3, 193, 75, 192, 192, 3, 193, 75, 128, 131, 193, 49],
+        [
+            2,
+            197,
+            97,
+            120,
+            105,
+            111,
+            109,
+            3,
+            193,
+            61,
+            4,
+            193,
+            97,
+            192,
+            192,
+            3,
+            193,
+            75,
+            192,
+            3,
+            193,
+            84,
+            192,
+            3,
+            193,
+            75,
+            128,
+            131,
+            193,
+            49
+        ],
+        [
+            2,
+            197,
+            97,
+            120,
+            105,
+            111,
+            109,
+            3,
+            193,
+            61,
+            4,
+            193,
+            97,
+            192,
+            192,
+            3,
+            193,
+            84,
+            3,
+            193,
+            75,
+            192,
+            192,
+            3,
+            193,
+            75,
+            128,
+            131,
+            193,
+            49
+        ]
     ]
 
     @testset "k_path_test6 (recursive k_path with token invalidation)" begin
         function test_loop(z, descend_f, ascend_f)
             reset!(z)
-            P0 = UInt8[2, 197, 97, 120, 105, 111, 109, 3, 193, 61, 4, 193, 97, 192, 192, 3, 193]
+            P0 = UInt8[
+                2, 197, 97, 120, 105, 111, 109, 3, 193, 61, 4, 193, 97, 192, 192, 3, 193
+            ]
             descend_f(z, P0)                                    # L0 descent
             @test descend_first_k_path!(z, 1)
             @test kp_path(z) == vcat(P0, 75)
@@ -244,11 +472,20 @@ kpb(s::String) = Vector{UInt8}(s)
         test_loop(z, (z, p) -> (descend_to!(z, p); @test path_exists(z)),
             (z, n) -> @test ascend!(z, n) == n)
         # descend_to_byte & ascend_byte
-        test_loop(z, (z, p) -> for x in p; descend_to_byte!(z, x); @test path_exists(z); end,
-            (z, n) -> for _ in 1:n; @test ascend_byte!(z); end)
+        test_loop(z, (z, p) -> for x in p
+                descend_to_byte!(z, x)
+                @test path_exists(z)
+            end,
+            (z, n) -> for _ in 1:n
+                @test ascend_byte!(z)
+            end)
         # descend_first_byte & ascend_byte
-        test_loop(z, (z, p) -> for _ in p; @test descend_first_byte!(z) !== nothing; end,
-            (z, n) -> for _ in 1:n; @test ascend_byte!(z); end)
+        test_loop(z, (z, p) -> for _ in p
+                @test descend_first_byte!(z) !== nothing
+            end,
+            (z, n) -> for _ in 1:n
+                @test ascend_byte!(z)
+            end)
     end
 
     @testset "k_path_test7 (descend and re-ascend one step at a time)" begin
@@ -281,7 +518,9 @@ kpb(s::String) = Vector{UInt8}(s)
     end
 
     @testset "k_path_test9 (subtrie without further branches; outer trie branches)" begin
-        keys = Vector{UInt8}[[2, 194, 1, 1, 193, 5], [3, 194, 1, 0, 193, 6, 193, 5], [3, 193, 4, 193]]
+        keys = Vector{UInt8}[
+            [2, 194, 1, 1, 193, 5], [3, 194, 1, 0, 193, 6, 193, 5], [3, 193, 4, 193]
+        ]
         z = kp_zipper(keys, UInt8[2, 194])
         reset!(z)
         @test descend_first_k_path!(z, 1) == true
@@ -318,7 +557,9 @@ kpb(s::String) = Vector{UInt8}(s)
 
     # Lean-harness program #526: keys `02` and `020000` in one node must yield the k-path `02` ONCE
     @testset "to_next_k_path never repeats the k-path it resumes from (#526)" begin
-        z = kp_zipper([UInt8[0, 2, 1, 0, 3], UInt8[1], UInt8[3, 2], UInt8[3, 2, 0, 0]], UInt8[])
+        z = kp_zipper(
+            [UInt8[0, 2, 1, 0, 3], UInt8[1], UInt8[3, 2], UInt8[3, 2, 0, 0]], UInt8[]
+        )
         walk = Vector{UInt8}[]
         descend_first_k_path!(z, 2) && push!(walk, kp_path(z))
         while to_next_k_path!(z, 2) && length(walk) < 8
@@ -333,7 +574,8 @@ kpb(s::String) = Vector{UInt8}(s)
     @testset "to_next_val after a finished k-path walk (bdbdfdc)" begin
         z = kp_zipper(["ab", "ac", "b"], UInt8[])
         @test descend_first_k_path!(z, 2)
-        while to_next_k_path!(z, 2) end
+        while to_next_k_path!(z, 2)
+        end
         @test kp_path(z) == UInt8[]
         @test to_next_val!(z)
         @test kp_path(z) == kpb("ab")

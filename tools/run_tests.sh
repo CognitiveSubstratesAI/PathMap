@@ -63,7 +63,24 @@ case "$TARGET" in /*) ABS_TARGET="$TARGET" ;; *) ABS_TARGET="$ROOT/$TARGET" ;; e
 # threw, and was swallowed by `-i` — so passing AND failing targets both exited 0. Under `-i`,
 # nothing outside an explicit try/exit can be trusted to fail the build.
 DRIVER="$(mktemp "${TMPDIR:-/tmp}/pathmap_run_tests_XXXXXX.jl")"
-trap 'rm -f "$DRIVER"' EXIT
+# ── THE RUNNER WRITES THE EVIDENCE, NOT THE AGENT ────────────────────────────────────────────────
+# 🔴 UNTIL 2026-09-27 ONLY CORE'S RUNNERS DID THIS, so `require-tests-before-commit.sh` could not be
+# satisfied for PathMap by any legitimate means: the suite passed and the commit was still refused.
+# A gate nothing can pass is not a gate — it trains you to work around it. Written ONLY on a real
+# exit 0 and REMOVED on failure, so a red suite cannot be followed by a green commit.
+# ⚠️ ONLY A FULL, UNFILTERED SUITE IS EVIDENCE — `run_tests.sh <one-file>` must not mark, or one
+# passing probe would authorise a commit. For PathMap the full suite INCLUDES the upstream
+# differential, which is exactly what a port-conformance claim rests on.
+# shellcheck source=../../workflows/test_marker.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/workflows/test_marker.sh" 2>/dev/null || true
+_on_exit() {
+    rc=$?
+    rm -f "$DRIVER"
+    if [ "$TARGET" = "test/runtests.jl" ] && command -v write_marker >/dev/null 2>&1; then
+        write_marker "$ROOT" "$rc" "run_tests.sh full suite"
+    fi
+}
+trap _on_exit EXIT
 cat > "$DRIVER" <<EOF
 ok = try
     include(raw"$ROOT/tools/repl.jl")

@@ -224,7 +224,7 @@ function descend_to_existing!(pz::ProductZipper, k)
         descended += this_step
         if _pz_has_next_factor(pz)
             if child_count(pz.z) == 0 &&
-               (isempty(pz.factor_paths) ? 0 : pz.factor_paths[end]) < depth(pz)
+                (isempty(pz.factor_paths) ? 0 : pz.factor_paths[end]) < depth(pz)
                 _pz_enroll_next_factor!(pz)
             end
         else

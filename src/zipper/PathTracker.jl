@@ -97,7 +97,8 @@ function descend_first_byte!(t::PathTracker)::Union{Nothing, UInt8}
 end
 
 # Fan the descended bytes out to our own buffer as well as the caller's observer
-descend_until_observed!(t::PathTracker, obs) = descend_until_observed!(t.zipper, (t.path, obs))
+descend_until_observed!(t::PathTracker, obs) =
+    descend_until_observed!(t.zipper, (t.path, obs))
 
 function ascend!(t::PathTracker, steps::Int)
     ascended = ascend!(t.zipper, steps)
@@ -123,7 +124,8 @@ function ascend_until_branch!(t::PathTracker)
     ascended
 end
 
-to_next_step_observed!(t::PathTracker, obs) = to_next_step_observed!(t.zipper, (t.path, obs))
+to_next_step_observed!(t::PathTracker, obs) =
+    to_next_step_observed!(t.zipper, (t.path, obs))
 
 function to_next_sibling_byte!(t::PathTracker)::Union{Nothing, UInt8}
     byte = to_next_sibling_byte!(t.zipper)
@@ -143,7 +145,8 @@ end
 
 # ── ZipperIteration (path_tracker.rs:158-173): delegate, so the wrapped zipper keeps its native walk ─────
 to_next_val_observed!(t::PathTracker, obs) = to_next_val_observed!(t.zipper, (t.path, obs))
-descend_last_path_observed!(t::PathTracker, obs) = descend_last_path_observed!(t.zipper, (t.path, obs))
+descend_last_path_observed!(t::PathTracker, obs) =
+    descend_last_path_observed!(t.zipper, (t.path, obs))
 descend_first_k_path_observed!(t::PathTracker, k::Int, obs) =
     descend_first_k_path_observed!(t.zipper, k, (t.path, obs))
 to_next_k_path_observed!(t::PathTracker, k::Int, obs) =

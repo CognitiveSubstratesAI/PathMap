@@ -600,7 +600,8 @@ end
 # `stack.clone()` there copies every frame. Ours is a MUTABLE struct, so `copy(z.stack)` would hand
 # the clone the very same frame objects — and `fork_read_zipper`/`val_count` both clone and then
 # move, which mutates `node_depth`/`child_index` of the ORIGINAL zipper's frames.
-Base.copy(f::_ACTFrame) = _ACTFrame(f.node_id, f.child_count, f.child_index, f.next_id, f.node_depth)
+Base.copy(f::_ACTFrame) =
+    _ACTFrame(f.node_id, f.child_count, f.child_index, f.next_id, f.node_depth)
 
 """
     ACTZipper
@@ -980,7 +981,8 @@ function descend_until_observed!(z::ACTZipper, obs)
             nchildren = child_frame.child_count
             push!(z.stack, child_frame)
             z.cur_node = child_node
-            if child_node isa ACT_NodeBranch && (child_node.value !== nothing || nchildren > 1)
+            if child_node isa ACT_NodeBranch &&
+                (child_node.value !== nothing || nchildren > 1)
                 break
             end
         end
@@ -1020,7 +1022,9 @@ function ascend!(z::ACTZipper, steps::Int)::Int
         resize!(z.path, length(z.path) - this_steps)
         (at_root(z) || remaining == 0) && return steps - remaining
     end
-    error("ACTZipper ascend!: empty stack (upstream `unreachable!()`, arena_compact.rs:3141)")
+    error(
+        "ACTZipper ascend!: empty stack (upstream `unreachable!()`, arena_compact.rs:3141)"
+    )
 end
 
 # upstream `ACTZipper::ascend_to_branch` (arena_compact.rs:2683), shared by `ascend_until!`
@@ -1047,7 +1051,9 @@ function _act_ascend_to_branch!(z::ACTZipper, need_value::Bool)::Int
         end
         resize!(z.path, length(z.path) - this_steps)
         cur = z.cur_node
-        brk = cur isa ACT_NodeBranch && (nchildren > 1 || (need_value && cur.value !== nothing))
+        brk =
+            cur isa ACT_NodeBranch &&
+            (nchildren > 1 || (need_value && cur.value !== nothing))
         (brk || at_root(z)) && break
     end
     start_len - length(z.path)

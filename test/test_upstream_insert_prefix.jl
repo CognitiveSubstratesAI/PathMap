@@ -38,8 +38,13 @@ function ip_rewrite_ok(keys, focus, prefix)
     for k in keys
         set_val_at!(m, k, UNIT_VAL)
     end
-    expected = sort([(length(k) > length(focus) && k[1:length(focus)] == focus) ?
-                     vcat(focus, prefix, k[(length(focus) + 1):end]) : k for k in keys])
+    expected = sort([
+        if (length(k) > length(focus) && k[1:length(focus)] == focus)
+            vcat(focus, prefix, k[(length(focus) + 1):end])
+        else
+            k
+        end for k in keys
+    ])
     wz = write_zipper(m)
     descend_to!(wz, focus)
     insert_prefix!(wz, prefix)
@@ -55,7 +60,8 @@ end
         @test insert_prefix!(wz, ipb("b"))
         @test ip_keys(m) == [ipb("abaa")]
         @test get_val_at(m, ipb("aaa")) === nothing
-        rz = read_zipper(m); descend_to!(rz, ipb("aa"))
+        rz = read_zipper(m)
+        descend_to!(rz, ipb("aa"))
         @test !path_exists(rz)                     # stale key run must be gone
         @test ip_assert_valid_nodes(m)
 
@@ -71,7 +77,9 @@ end
 
     @testset "write_zipper_insert_prefix_keeps_focus_value" begin
         m = PMI{UnitVal}()
-        for k in ("a", "ab", "ac"); set_val_at!(m, ipb(k), UNIT_VAL); end
+        for k in ("a", "ab", "ac")
+            set_val_at!(m, ipb(k), UNIT_VAL)
+        end
         wz = write_zipper(m)
         descend_to!(wz, ipb("a"))
         @test insert_prefix!(wz, ipb("Z"))
@@ -113,11 +121,16 @@ end
         bad = 0
         for _ in 1:2000
             alphabet = rand(rng, 2:3)
-            keys = [UInt8[UInt8('a') + rand(rng, 0:(alphabet - 1)) for _ in 1:rand(rng, 0:5)] for _ in 1:rand(rng, 1:6)]
+            keys = [
+                UInt8[UInt8('a') + rand(rng, 0:(alphabet - 1)) for _ in 1:rand(rng, 0:5)]
+                for _ in 1:rand(rng, 1:6)
+            ]
             keys = unique(sort(keys))
             key = keys[rand(rng, eachindex(keys))]
             focus = key[1:rand(rng, 0:length(key))]
-            prefix = UInt8[UInt8('a') + rand(rng, 0:(alphabet - 1)) for _ in 1:rand(rng, 1:3)]
+            prefix = UInt8[
+                UInt8('a') + rand(rng, 0:(alphabet - 1)) for _ in 1:rand(rng, 1:3)
+            ]
             ip_rewrite_ok(keys, focus, prefix) || (bad += 1)
         end
         @test bad == 0

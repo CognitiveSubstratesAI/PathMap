@@ -253,8 +253,8 @@ function descend_until_observed!(oz::OverlayZipper, obs)
         # Only a full chunk that both sources agreed on end-to-end can be continued.  Anything
         # shorter means at least one source stopped on its own, so the descent is complete.
         if overlap < OVERLAY_DESCEND_CHUNK ||
-           length(path_a) != OVERLAY_DESCEND_CHUNK ||
-           length(path_b) != OVERLAY_DESCEND_CHUNK
+            length(path_a) != OVERLAY_DESCEND_CHUNK ||
+            length(path_b) != OVERLAY_DESCEND_CHUNK
             break
         end
     end

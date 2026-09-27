@@ -91,8 +91,11 @@ Resets the zipper.  Mirrors `PrefixZipper::set_root_prefix_path`
 (prefix_zipper.rs:102-109); the Rust `Result` becomes a thrown `ArgumentError`.
 """
 function set_root_prefix_path!(pz::PrefixZipper, root_prefix_path)
-    rpp = root_prefix_path isa AbstractVector{UInt8} ? root_prefix_path :
+    rpp = if root_prefix_path isa AbstractVector{UInt8}
+        root_prefix_path
+    else
         collect(UInt8, root_prefix_path)
+    end
     slice_starts_with(pz.prefix, rpp) ||
         throw(ArgumentError("zipper's prefix must begin with root_prefix_path"))
     pz.origin_depth = length(rpp)
@@ -436,8 +439,11 @@ function descend_first_k_path_observed!(pz::PrefixZipper, k::Int, obs)
     # The prefix is a single forced path, so the bytes it contributes always exist and never
     # branch.  Descend as much of `k` as the prefix covers, then ask the source for the rest.
     prefixed_depth = _pos_prefixed_depth(pz.position)
-    prefix_rest = prefixed_depth === nothing ? 0 :
+    prefix_rest = if prefixed_depth === nothing
+        0
+    else
         length(pz.prefix) - pz.origin_depth - prefixed_depth
+    end
     if k <= prefix_rest
         taken = view(pz.prefix, (length(pz.path) + 1):(length(pz.path) + k))
         append!(pz.path, taken)

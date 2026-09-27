@@ -128,7 +128,13 @@ function _pzg_ascend_cond!(prz::ProductZipperG, allow_stop_on_val::Bool)::Int
             end
         else
             return ascended +
-                   (allow_stop_on_val ? ascend_until!(prz.primary) : ascend_until_branch!(prz.primary))
+                   (
+                if allow_stop_on_val
+                    ascend_until!(prz.primary)
+                else
+                    ascend_until_branch!(prz.primary)
+                end
+            )
         end
     end
 end

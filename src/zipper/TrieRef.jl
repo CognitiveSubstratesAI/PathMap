@@ -253,7 +253,8 @@ function make_map(t::TrieRefBorrowed{V, A}) where {V, A}
     # drops an EMPTY node (our key-empty branch of `_tr_get_focus_rc` returns it as is), and under
     # `graft_root_vals` (default) the focus VALUE becomes the map's root value. Ours kept neither
     # (docs/UPSTREAM_DELTA_2026-09-16.md #17a).
-    (focus_rc === nothing || node_is_empty(as_tagged(focus_rc))) || (m.root = copy(focus_rc))
+    (focus_rc === nothing || node_is_empty(as_tagged(focus_rc))) ||
+        (m.root = copy(focus_rc))
     m.root_val = get_val(t)
     m
 end

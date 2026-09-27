@@ -84,47 +84,88 @@ _atoms(out) =
     # regenerated from upstream HEAD the same day and agree with every expectation below.
     @testset "graft replaces the key run below the focus (upstream f0cd6b7)" begin
         # graft at `:` replaces `:aa` (below the focus) with the source
-        a = _defect_run("graft alone", "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\n")
+        a = _defect_run(
+            "graft alone", "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\n"
+        )
         @test _atoms(a) == [":ab::"]
-        b = _defect_run("graft then SETVAL", "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n")
+        b = _defect_run(
+            "graft then SETVAL",
+            "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n"
+        )
         @test _atoms(b) == [":", ":ab::"]
-        d2 = _defect_run("graft, REMOVEVAL, SETVAL", "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP REMOVEVAL 0\nOP SETVAL\n")
+        d2 = _defect_run(
+            "graft, REMOVEVAL, SETVAL",
+            "A ::aa\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP REMOVEVAL 0\nOP SETVAL\n"
+        )
         @test _atoms(d2) == [":", ":ab::"]
         # parent already dense (3 first bytes): same replacement, siblings untouched
-        d3 = _defect_run("parent dense", "A ::aa b c\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n")
+        d3 = _defect_run(
+            "parent dense",
+            "A ::aa b c\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n"
+        )
         @test _atoms(d3) == [":", ":ab::", "b", "c"]
-        d4 = _defect_run("nothing below the focus", "A :\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n")
+        d4 = _defect_run(
+            "nothing below the focus",
+            "A :\nAROOTVAL 0\nS ab::\nSROOTVAL 0\nORIGIN :\nOP GRAFTMAP\nOP SETVAL\n"
+        )
         @test _atoms(d4) == [":", ":ab::"]
     end
 
     @testset "insert_prefix moves the key run instead of copying it (upstream f0cd6b7)" begin
-        c = _defect_run("insert_prefix", "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN bb\nOP INSPREFIX a\n")
+        c = _defect_run(
+            "insert_prefix",
+            "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN bb\nOP INSPREFIX a\n"
+        )
         @test _atoms(c) == ["bba:"]
-        d = _defect_run("insert_prefix then SETVAL", "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN bb\nOP INSPREFIX a\nOP SETVAL\n")
+        d = _defect_run(
+            "insert_prefix then SETVAL",
+            "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN bb\nOP INSPREFIX a\nOP SETVAL\n"
+        )
         @test _atoms(d) == ["bb", "bba:"]
         # the same focus reached by DESCEND from the map root gives the same answer
-        h = _defect_run("focus by DESCEND", "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN -\nOP DESCEND bb\nOP INSPREFIX a\nOP SETVAL\n")
+        h = _defect_run(
+            "focus by DESCEND",
+            "A bb:\nAROOTVAL 0\nS \nSROOTVAL 0\nORIGIN -\nOP DESCEND bb\nOP INSPREFIX a\nOP SETVAL\n"
+        )
         @test _atoms(h) == _atoms(d)
     end
 
     @testset "graft_map: the source root value becomes the focus value, the run below is replaced" begin
-        out = _defect_run("source HAS a root value", "A ::b\nAROOTVAL 0\nS bb::\nSROOTVAL 1\nORIGIN ::\nOP GRAFTMAP\n")
+        out = _defect_run(
+            "source HAS a root value",
+            "A ::b\nAROOTVAL 0\nS bb::\nSROOTVAL 1\nORIGIN ::\nOP GRAFTMAP\n"
+        )
         @test _atoms(out) == ["::", "::bb::"]
-        ctl = _defect_run("source has NO root value", "A ::b\nAROOTVAL 0\nS bb::\nSROOTVAL 0\nORIGIN ::\nOP GRAFTMAP\n")
+        ctl = _defect_run(
+            "source has NO root value",
+            "A ::b\nAROOTVAL 0\nS bb::\nSROOTVAL 0\nORIGIN ::\nOP GRAFTMAP\n"
+        )
         @test _atoms(ctl) == ["::bb::"]
-        one = _defect_run("single-byte origin", "A :b\nAROOTVAL 0\nS bb::\nSROOTVAL 1\nORIGIN :\nOP GRAFTMAP\n")
+        one = _defect_run(
+            "single-byte origin",
+            "A :b\nAROOTVAL 0\nS bb::\nSROOTVAL 1\nORIGIN :\nOP GRAFTMAP\n"
+        )
         @test _atoms(one) == [":", ":bb::"]
     end
 
     @testset "join_map_into at a mid-key focus enumerates each path once (upstream f0cd6b7)" begin
-        e = _defect_run("join", "A ::\nAROOTVAL 0\nS :aa ab ba\nSROOTVAL 0\nORIGIN :\nOP JOINMAP\n")
+        e = _defect_run(
+            "join", "A ::\nAROOTVAL 0\nS :aa ab ba\nSROOTVAL 0\nORIGIN :\nOP JOINMAP\n"
+        )
         @test _atoms(e) == ["::", "::aa", ":ab", ":ba"]
-        f = _defect_run("join then SETVAL", "A ::\nAROOTVAL 0\nS :aa ab ba\nSROOTVAL 0\nORIGIN :\nOP JOINMAP\nOP SETVAL\n")
+        f = _defect_run(
+            "join then SETVAL",
+            "A ::\nAROOTVAL 0\nS :aa ab ba\nSROOTVAL 0\nORIGIN :\nOP JOINMAP\nOP SETVAL\n"
+        )
         @test _atoms(f) == [":", "::", "::aa", ":ab", ":ba"]
         # used to enumerate `bb` twice on both engines (the old "SHARED duplicate")
-        for (tag, src, want) in (("S = a:b ab ba", "a:b ab ba", ["ba:b", "bab", "bb", "bba"]),
-                                 ("S = ba", "ba", ["bb", "bba"]), ("S = a", "a", ["ba", "bb"]))
-            out = _defect_run("join — $tag", "A bb\nAROOTVAL 0\nS $src\nSROOTVAL 0\nORIGIN b\nOP JOINMAP\n")
+        for (tag, src, want) in
+            (("S = a:b ab ba", "a:b ab ba", ["ba:b", "bab", "bb", "bba"]),
+            ("S = ba", "ba", ["bb", "bba"]), ("S = a", "a", ["ba", "bb"]))
+            out = _defect_run(
+                "join — $tag",
+                "A bb\nAROOTVAL 0\nS $src\nSROOTVAL 0\nORIGIN b\nOP JOINMAP\n"
+            )
             @test _atoms(out) == want
             @test count(==("bb"), _atoms(out)) == 1
         end

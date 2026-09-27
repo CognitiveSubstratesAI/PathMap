@@ -45,11 +45,12 @@ using Test, PathMaps
     # It is correct for THIS fixture (every level is keyed by one of a,b,c,d) and the assertions
     # below would FAIL LOUDLY rather than pass wrongly if that stopped holding. Do not reuse this
     # walk as a general node counter without handling multi-byte keys.
-    ids = Set{UInt64}(); positions = Ref(0)
+    ids = Set{UInt64}()
+    positions = Ref(0)
     function walk(rc, depth)
-        depth > 12 && return
+        depth > 12 && return nothing
         n = PathMaps._rc_inner(rc)
-        n === nothing && return
+        n === nothing && return nothing
         positions[] += 1
         push!(ids, objectid(n))
         for b in PathMaps.node_branches_mask(n, UInt8[])

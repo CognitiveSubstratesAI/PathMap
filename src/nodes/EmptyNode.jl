@@ -139,9 +139,11 @@ take_node_at_key!(::Nothing, ::AbstractVector{UInt8}, ::Bool) = nothing
 new_iter_token(::EmptyNode) = zero(IterToken)
 
 # empty_node.rs:66-73 (888217e, 4917097)
-iter_token_for_path(::EmptyNode, key::AbstractVector{UInt8}) = isempty(key) ? zero(IterToken) : TOKEN_AFTER_LAST
+iter_token_for_path(::EmptyNode, key::AbstractVector{UInt8}) =
+    isempty(key) ? zero(IterToken) : TOKEN_AFTER_LAST
 
-ascend_iter_token(::EmptyNode, ::IterToken, ::Int) = error("EmptyNode::ascend_iter_token — unreachable")
+ascend_iter_token(::EmptyNode, ::IterToken, ::Int) =
+    error("EmptyNode::ascend_iter_token — unreachable")
 
 function next_items(::EmptyNode{V, A}, ::IterToken, ::Bool) where {V, A}
     # (next_token, path, child_node, value)

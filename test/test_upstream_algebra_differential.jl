@@ -61,17 +61,20 @@ function prefix_heavy_set(seed::UInt64, salt::UInt64)
         key = UInt8[]
         for position in 0:(len - 1)
             selector = next_u64!(state)
-            push!(key, if selector % 5 == 0
-                UInt8(index)
-            elseif selector % 5 == 1
-                UInt8(position & 0xff)
-            elseif selector % 5 == 2
-                UInt8((selector >> 32) & 0xff)
-            elseif selector % 5 == 3
-                UInt8(UInt8('a') + UInt8(selector % 7))
-            else
-                UInt8(0xff - UInt8(index))
-            end)
+            push!(
+                key,
+                if selector % 5 == 0
+                    UInt8(index)
+                elseif selector % 5 == 1
+                    UInt8(position & 0xff)
+                elseif selector % 5 == 2
+                    UInt8((selector >> 32) & 0xff)
+                elseif selector % 5 == 3
+                    UInt8(UInt8('a') + UInt8(selector % 7))
+                else
+                    UInt8(0xff - UInt8(index))
+                end
+            )
         end
         push!(keys, copy(key))
         if length(key) > 1 && index % 3 == 0
@@ -126,11 +129,11 @@ set_from_map(m) = Set{Vector{UInt8}}(P.pm_keys(m))
 
             # associativity, and meet distributing over join
             @test set_from_map(P.pm_join(P.pm_join(ma, mb), mc)) ==
-                  set_from_map(P.pm_join(ma, P.pm_join(mb, mc)))
+                set_from_map(P.pm_join(ma, P.pm_join(mb, mc)))
             @test set_from_map(P.pm_meet(P.pm_meet(ma, mb), mc)) ==
-                  set_from_map(P.pm_meet(ma, P.pm_meet(mb, mc)))
+                set_from_map(P.pm_meet(ma, P.pm_meet(mb, mc)))
             @test set_from_map(P.pm_meet(ma, P.pm_join(mb, mc))) ==
-                  set_from_map(P.pm_join(P.pm_meet(ma, mb), P.pm_meet(ma, mc)))
+                set_from_map(P.pm_join(P.pm_meet(ma, mb), P.pm_meet(ma, mc)))
         end
     end
 
@@ -162,7 +165,7 @@ set_from_map(m) = Set{Vector{UInt8}}(P.pm_keys(m))
         b = map_from_set(prefix_heavy_set(seed, 0x1319_8a2e_0370_7344))
         c = map_from_set(prefix_heavy_set(seed, 0xa409_3822_299f_31d0))
         @test set_from_map(P.pm_meet(P.pm_meet(a, b), c)) ==
-              set_from_map(P.pm_meet(a, P.pm_meet(b, c)))
+            set_from_map(P.pm_meet(a, P.pm_meet(b, c)))
     end
 
     @testset "seeded_prefix_heavy_dual_distributivity_matches_btreeset_oracle" begin
@@ -188,20 +191,38 @@ set_from_map(m) = Set{Vector{UInt8}}(P.pm_keys(m))
         pm_restrict(a, b) = P.result_into_map(P.prestrict(a, b), a, b, a.alloc)
         # the minimal shapes first: restrict(a, a) must be a
         for paths in (["ab", "abc"], ["ab", "abc", "abd"], ["a", "ab", "abc"],
-                      ["a", "abc", "abd"], ["a", "ab", "abc", "abd", "xy"])
+            ["a", "abc", "abd"], ["a", "ab", "abc", "abd", "xy"])
             set = Set(Vector{UInt8}.(paths))
             m = map_from_set(set)
             @test set_from_map(pm_restrict(m, m)) == set
         end
         for seed in UInt64(0):UInt64(63)
             for (name, left, right) in (
-                ("prefix_free", fixed_width_set(seed, UInt64(0xA1)), fixed_width_set(seed, UInt64(0xB2))),
-                ("prefix_heavy", prefix_heavy_set(seed, UInt64(0xC3)), prefix_heavy_set(seed, UInt64(0xD4))),
-                ("lopsided", prefix_heavy_set(seed, UInt64(0xE5)), fixed_width_set(seed, UInt64(0xF6))),
-                ("self_restrict", prefix_heavy_set(seed, UInt64(0x17)), prefix_heavy_set(seed, UInt64(0x17))))
+                (
+                    "prefix_free",
+                    fixed_width_set(seed, UInt64(0xA1)),
+                    fixed_width_set(seed, UInt64(0xB2))
+                ),
+                (
+                    "prefix_heavy",
+                    prefix_heavy_set(seed, UInt64(0xC3)),
+                    prefix_heavy_set(seed, UInt64(0xD4))
+                ),
+                (
+                    "lopsided",
+                    prefix_heavy_set(seed, UInt64(0xE5)),
+                    fixed_width_set(seed, UInt64(0xF6))
+                ),
+                (
+                    "self_restrict",
+                    prefix_heavy_set(seed, UInt64(0x17)),
+                    prefix_heavy_set(seed, UInt64(0x17))
+                ))
                 l, r = Set(left), Set(right)
-                @test (name, seed, set_from_map(pm_restrict(map_from_set(l), map_from_set(r)))) ==
-                      (name, seed, restrict_oracle(l, r))
+                @test (
+                    name, seed, set_from_map(pm_restrict(map_from_set(l), map_from_set(r)))
+                ) ==
+                    (name, seed, restrict_oracle(l, r))
             end
         end
     end

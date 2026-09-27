@@ -84,7 +84,8 @@ end
 @inline descend_to_byte!(t::ReadZipperTracked, b::UInt8) = descend_to_byte!(t.z, b)
 @inline descend_indexed_byte!(t::ReadZipperTracked, i::Int) = descend_indexed_byte!(t.z, i)
 @inline descend_first_byte!(t::ReadZipperTracked) = descend_first_byte!(t.z)
-@inline descend_until_observed!(t::ReadZipperTracked, obs) = descend_until_observed!(t.z, obs)
+@inline descend_until_observed!(t::ReadZipperTracked, obs) =
+    descend_until_observed!(t.z, obs)
 @inline ascend!(t::ReadZipperTracked, n::Int) = ascend!(t.z, n)
 @inline ascend_byte!(t::ReadZipperTracked) = ascend_byte!(t.z)
 @inline ascend_until!(t::ReadZipperTracked) = ascend_until!(t.z)
@@ -92,9 +93,12 @@ end
 @inline to_next_sibling_byte!(t::ReadZipperTracked) = to_next_sibling_byte!(t.z)
 @inline to_prev_sibling_byte!(t::ReadZipperTracked) = to_prev_sibling_byte!(t.z)
 @inline to_next_val_observed!(t::ReadZipperTracked, obs) = to_next_val_observed!(t.z, obs)
-@inline to_next_get_val_observed!(t::ReadZipperTracked, obs) = to_next_get_val_observed!(t.z, obs)
-@inline descend_first_k_path_observed!(t::ReadZipperTracked, k::Int, obs) = descend_first_k_path_observed!(t.z, k, obs)
-@inline to_next_k_path_observed!(t::ReadZipperTracked, k::Int, obs) = to_next_k_path_observed!(t.z, k, obs)
+@inline to_next_get_val_observed!(t::ReadZipperTracked, obs) =
+    to_next_get_val_observed!(t.z, obs)
+@inline descend_first_k_path_observed!(t::ReadZipperTracked, k::Int, obs) =
+    descend_first_k_path_observed!(t.z, k, obs)
+@inline to_next_k_path_observed!(t::ReadZipperTracked, k::Int, obs) =
+    to_next_k_path_observed!(t.z, k, obs)
 @inline fork_read_zipper(t::ReadZipperTracked) = fork_read_zipper(t.z)
 
 # =====================================================================

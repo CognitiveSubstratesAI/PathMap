@@ -546,7 +546,7 @@ function _descend_to_internal!(z::ReadZipperCore{V, A}, k) where {V, A}
 end
 
 # descend to the first child (for descend_until, descend_first_byte)
-function _descend_first!(z::ReadZipperCore{V, A}, obs = nothing) where {V, A}
+function _descend_first!(z::ReadZipperCore{V, A}, obs=nothing) where {V, A}
     _prepare_buffers!(z)
     prefix_opt, child_opt = first_child_from_key(_zfnode(z), _znode_key(z))
     prefix_opt === nothing && return nothing   # unreachable per upstream
@@ -639,7 +639,8 @@ at_root(z::ReadZipperCore) = length(z.prefix_buf) <= z.origin_path_len
 # zipper.rs:2049-2060 (`depth` = path length below the root; `focus_byte` = the last buffer byte, which at the
 # root may be the last byte of the root prefix)
 depth(z::ReadZipperCore) = max(length(z.prefix_buf) - z.origin_path_len, 0)
-focus_byte(z::ReadZipperCore) = isempty(z.prefix_buf) ? nothing : @inbounds(z.prefix_buf[end])
+focus_byte(z::ReadZipperCore) =
+    isempty(z.prefix_buf) ? nothing : @inbounds(z.prefix_buf[end])
 root_prefix_path(z::ReadZipperCore) = view(z.prefix_buf, 1:z.origin_path_len)
 
 function reset!(z::ReadZipperCore)
@@ -678,7 +679,11 @@ function val_count(z::ReadZipperCore{V, A}) where {V, A}
         # missing focus counts only the focus value. The old fallback counted `to_next_val` steps,
         # which do not stop at the focus subtree (docs/UPSTREAM_DELTA_2026-09-16.md #12a).
         focus = get_node_at_key(_zfnode(z), nk)
-        is_none(focus) ? root_val_cnt : val_count_below_root(as_tagged(focus)) + root_val_cnt
+        if is_none(focus)
+            root_val_cnt
+        else
+            val_count_below_root(as_tagged(focus)) + root_val_cnt
+        end
     end
 end
 
@@ -731,7 +736,9 @@ function descend_to_existing_byte!(z::ReadZipperCore{V, A}, k::UInt8) where {V, 
 end
 
 # zipper.rs:2158-2177
-function descend_indexed_byte!(z::ReadZipperCore{V, A}, child_idx::Int)::Union{Nothing, UInt8} where {V, A}
+function descend_indexed_byte!(
+    z::ReadZipperCore{V, A}, child_idx::Int
+)::Union{Nothing, UInt8} where {V, A}
     _prepare_buffers!(z)
     prefix_opt, child_opt = nth_child_from_key(_zfnode(z), _znode_key(z), child_idx)
     prefix_opt === nothing && return nothing
@@ -747,7 +754,9 @@ function descend_indexed_byte!(z::ReadZipperCore{V, A}, child_idx::Int)::Union{N
 end
 
 # upstream `ReadZipperCore::descend_first_byte` (zipper.rs:2179-2228), returning the byte (0.4.0 shape)
-function _zc_descend_first_byte!(z::ReadZipperCore{V, A})::Union{Nothing, UInt8} where {V, A}
+function _zc_descend_first_byte!(
+    z::ReadZipperCore{V, A}
+)::Union{Nothing, UInt8} where {V, A}
     _prepare_buffers!(z)
     if z.focus_iter_token == NODE_ITER_INVALID
         z.focus_iter_token = iter_token_for_path(_zfnode(z), _znode_key(z))
@@ -759,7 +768,8 @@ function _zc_descend_first_byte!(z::ReadZipperCore{V, A})::Union{Nothing, UInt8}
     byte_idx = length(node_key)
     # `iter_token_for_path` positions a lower-bound cursor, so on a non-existent focus the item may belong
     # to a sibling; only descend when it continues the path we're on (5f7fa2a).
-    (byte_idx >= length(key_bytes) || !slice_starts_with(key_bytes, node_key)) && return nothing
+    (byte_idx >= length(key_bytes) || !slice_starts_with(key_bytes, node_key)) &&
+        return nothing
     descended_byte = key_bytes[byte_idx + 1]
     push!(z.prefix_buf, descended_byte)
     if length(key_bytes) == byte_idx + 1
@@ -770,7 +780,9 @@ function _zc_descend_first_byte!(z::ReadZipperCore{V, A})::Union{Nothing, UInt8}
             z.focus_iter_token = new_iter_token(_zfnode(z))
         end
     else
-        z.focus_iter_token = ascend_iter_token(_zfnode(z), new_tok, length(key_bytes) - (byte_idx + 1))
+        z.focus_iter_token = ascend_iter_token(
+            _zfnode(z), new_tok, length(key_bytes) - (byte_idx + 1)
+        )
     end
     descended_byte
 end
@@ -874,7 +886,8 @@ function to_next_get_val_observed!(z::ReadZipperCore{V, A}, obs) where {V, A}
             if key_start < origin_len
                 unmod_len = origin_len - key_start
                 if unmod_len > length(key_bytes) ||
-                   view(z.prefix_buf, (key_start + 1):origin_len) != view(key_bytes, 1:unmod_len)
+                    view(z.prefix_buf, (key_start + 1):origin_len) !=
+                   view(key_bytes, 1:unmod_len)
                     ascend!(obs, length(z.prefix_buf) - origin_len)
                     resize!(z.prefix_buf, origin_len)
                     z.focus_iter_token = NODE_ITER_INVALID   # 4470349
@@ -887,7 +900,8 @@ function to_next_get_val_observed!(z::ReadZipperCore{V, A}, obs) where {V, A}
             ascend!(obs, length(z.prefix_buf) - key_start - obs_skip)
             resize!(z.prefix_buf, key_start)
             append!(z.prefix_buf, key_bytes)
-            obs_skip <= length(key_bytes) && descend_to!(obs, view(key_bytes, (obs_skip + 1):length(key_bytes)))
+            obs_skip <= length(key_bytes) &&
+                descend_to!(obs, view(key_bytes, (obs_skip + 1):length(key_bytes)))
             if child_rc !== nothing
                 push!(z.ancestors, (z.focus_node, new_tok, length(z.prefix_buf)))
                 z.focus_node = _rc_inner(child_rc)
@@ -912,7 +926,8 @@ function to_next_get_val_observed!(z::ReadZipperCore{V, A}, obs) where {V, A}
 end
 
 # zipper.rs:2661-2664 (the value type is never `nothing`: `PathMap{UnitVal}` stores `UNIT_VAL`)
-to_next_val_observed!(z::ReadZipperCore, obs) = to_next_get_val_observed!(z, obs) !== nothing
+to_next_val_observed!(z::ReadZipperCore, obs) =
+    to_next_get_val_observed!(z, obs) !== nothing
 
 # =====================================================================
 # ZipperMoving remaining defaults (zipper.rs trait defaults)
@@ -921,7 +936,9 @@ to_next_val_observed!(z::ReadZipperCore, obs) = to_next_get_val_observed!(z, obs
 # upstream `ReadZipperCore::to_next_sibling_byte` (zipper.rs:2359-2424), token based (4601b5a, 458602a,
 # 679a9b7, e0f32c0): the next item strictly after the focus, accepted only if it differs from the focus in
 # its last byte alone.
-function _zc_to_next_sibling_byte!(z::ReadZipperCore{V, A})::Union{Nothing, UInt8} where {V, A}
+function _zc_to_next_sibling_byte!(
+    z::ReadZipperCore{V, A}
+)::Union{Nothing, UInt8} where {V, A}
     at_root(z) && return nothing
     _prepare_buffers!(z)
     isempty(z.prefix_buf) && return nothing
@@ -939,14 +956,17 @@ function _zc_to_next_sibling_byte!(z::ReadZipperCore{V, A})::Union{Nothing, UInt
     node_key_len == 0 && return nothing     # the root has no siblings
     fixed_len = node_key_len - 1
     if fixed_len >= length(key_bytes) ||
-       view(key_bytes, 1:fixed_len) != view(node_key, 1:fixed_len) ||
-       key_bytes[fixed_len + 1] <= node_key[fixed_len + 1]
+        view(key_bytes, 1:fixed_len) != view(node_key, 1:fixed_len) ||
+        key_bytes[fixed_len + 1] <= node_key[fixed_len + 1]
         _regularize!(z)
         return nothing
     end
     byte = key_bytes[fixed_len + 1]
-    focus_iter_token = length(key_bytes) == node_key_len ? new_tok :
+    focus_iter_token = if length(key_bytes) == node_key_len
+        new_tok
+    else
         ascend_iter_token(_zfnode(z), new_tok, length(key_bytes) - node_key_len)
+    end
     z.prefix_buf[end] = byte
     z.focus_iter_token = focus_iter_token
     if length(key_bytes) == node_key_len && child_rc !== nothing
@@ -958,7 +978,9 @@ function _zc_to_next_sibling_byte!(z::ReadZipperCore{V, A})::Union{Nothing, UInt
 end
 
 # upstream `ReadZipperCore::to_sibling` (zipper.rs:3072-3129), used for `to_prev_sibling_byte`
-function _zc_to_sibling!(z::ReadZipperCore{V, A}, next::Bool)::Union{Nothing, UInt8} where {V, A}
+function _zc_to_sibling!(
+    z::ReadZipperCore{V, A}, next::Bool
+)::Union{Nothing, UInt8} where {V, A}
     at_root(z) && return nothing
     _prepare_buffers!(z)
     nk = _znode_key(z)
@@ -999,14 +1021,17 @@ to_prev_sibling_byte!(z::ReadZipperCore) = _zc_to_sibling!(z, false)       # zip
 # `move_to_path` are upstream's trait defaults for the read zipper (ZipperTraits.jl).
 
 # upstream `ReadZipperCore::descend_until_max_bytes_observed` (zipper.rs:2244-2291)
-function descend_until_max_bytes_observed!(z::ReadZipperCore{V, A}, max_bytes::Int, obs) where {V, A}
+function descend_until_max_bytes_observed!(
+    z::ReadZipperCore{V, A}, max_bytes::Int, obs
+) where {V, A}
     max_bytes == 0 && return false
     remaining = max_bytes
     moved = false
     while child_count(z) == 1 && remaining > 0
         _prepare_buffers!(z)
         prefix, child = first_child_from_key(_zfnode(z), _znode_key(z))
-        prefix === nothing && error("descend_until_max_bytes: unreachable (child_count == 1 without a child)")
+        prefix === nothing &&
+            error("descend_until_max_bytes: unreachable (child_count == 1 without a child)")
         if isempty(prefix)
             child === nothing && break
             moved = true
@@ -1044,7 +1069,9 @@ end
 # which replaced our `resume_from` filter and re-sync skip loop (Lean-harness #526).
 const MIN_EXCESS_TO_AVOID_COPY = 12   # zipper.rs:3135 (below it, copying the whole key and truncating is cheaper)
 
-function _zipper_k_path_internal!(z::ReadZipperCore, k::Int, base_idx::Int, continue_from_focus::Bool, obs)
+function _zipper_k_path_internal!(
+    z::ReadZipperCore, k::Int, base_idx::Int, continue_from_focus::Bool, obs
+)
     obs_floor = z.origin_path_len
     target_idx = base_idx + k
     while true
@@ -1053,13 +1080,16 @@ function _zipper_k_path_internal!(z::ReadZipperCore, k::Int, base_idx::Int, cont
             continue_from_focus = true
         end
         key_start = _znode_key_start(z)
-        new_tok, key_bytes, child_rc, _ = next_items(_zfnode(z), z.focus_iter_token, continue_from_focus)
+        new_tok, key_bytes, child_rc, _ = next_items(
+            _zfnode(z), z.focus_iter_token, continue_from_focus
+        )
         continue_from_focus = false
         if new_tok != NODE_ITER_FINISHED
             if key_start < base_idx
                 base_key_len = base_idx - key_start   # bytes we must not modify
                 if base_key_len > length(key_bytes) ||
-                   view(key_bytes, 1:base_key_len) != view(z.prefix_buf, (key_start + 1):base_idx)
+                    view(key_bytes, 1:base_key_len) !=
+                   view(z.prefix_buf, (key_start + 1):base_idx)
                     excess = length(z.prefix_buf) - base_idx
                     resize!(z.prefix_buf, base_idx)
                     if excess > 0
@@ -1078,7 +1108,8 @@ function _zipper_k_path_internal!(z::ReadZipperCore, k::Int, base_idx::Int, cont
                 excess = length(key_bytes) - remaining
                 if excess >= MIN_EXCESS_TO_AVOID_COPY
                     append!(z.prefix_buf, view(key_bytes, 1:remaining))
-                    obs_skip <= remaining && descend_to!(obs, view(key_bytes, (obs_skip + 1):remaining))
+                    obs_skip <= remaining &&
+                        descend_to!(obs, view(key_bytes, (obs_skip + 1):remaining))
                 else
                     append!(z.prefix_buf, key_bytes)
                     obs_skip <= length(key_bytes) &&
@@ -1090,7 +1121,8 @@ function _zipper_k_path_internal!(z::ReadZipperCore, k::Int, base_idx::Int, cont
                 return true
             end
             append!(z.prefix_buf, key_bytes)
-            obs_skip <= length(key_bytes) && descend_to!(obs, view(key_bytes, (obs_skip + 1):length(key_bytes)))
+            obs_skip <= length(key_bytes) &&
+                descend_to!(obs, view(key_bytes, (obs_skip + 1):length(key_bytes)))
             if child_rc !== nothing
                 push!(z.ancestors, (z.focus_node, new_tok, length(z.prefix_buf)))
                 z.focus_node = _rc_inner(child_rc)
@@ -1170,7 +1202,9 @@ function fork_read_zipper(z::ReadZipperCore{V, A}) where {V, A}
     # Upstream reaches the same focus differently, borrowing `focus_parent()` with
     # `new_root_key_start = path.len() - node_key().len()` (zipper.rs:1478) — O(1) where ours re-walks
     # the tail; the RESULT must match, and that is what the test asserts.
-    ReadZipperCore_at_path(z.root_node, abs_path, path_len, z.root_key_start, fork_val, z.alloc)
+    ReadZipperCore_at_path(
+        z.root_node, abs_path, path_len, z.root_key_start, fork_val, z.alloc
+    )
 end
 
 # =====================================================================
