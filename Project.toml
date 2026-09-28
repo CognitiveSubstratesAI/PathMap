@@ -11,16 +11,25 @@ Zlib_jll = "83775a58-1f1d-513f-b197-d71354ab007a"
 [compat]
 Mmap = "1.11"
 PrecompileTools = "1.3.3"
+Random = "1.11"
 Zlib_jll = "1.3.1"
 julia = "1.12"
 
-# ⚠️ DEV/ANALYSIS TOOLS COME FROM THE GLOBAL env (@v1.12), not from here — see the same note in
-# MORK/Project.toml. `tools/run_tests.sh` runs `julia --project=.`, whose LOAD_PATH includes
-# "@v#.#", and nothing in this tree uses `Pkg.test` (the only consumer of [extras]/[targets]).
-# ⚠️ `ProfileView` REMOVED 2026-08-21 — a vestige: it was in [extras] but never in [targets],
-# and the note above already states tools come from the global env.
+# ⚠️ TEST-ONLY DEPS MUST BE DECLARED HERE — `Pkg.test` DOES run in this tree now.
+# The note this replaces said dev/analysis tools come from the GLOBAL env (@v1.12) because
+# `tools/run_tests.sh` runs `julia --project=.`, whose LOAD_PATH includes "@v#.#" and "@stdlib",
+# and "nothing in this tree uses Pkg.test (the only consumer of extras/targets)".
+# 🔴 THAT PREMISE EXPIRED. CI is `julia-actions/julia-runtest@v1`, which IS `Pkg.test`, and it
+# builds an ISOLATED env resolving ONLY the [extras] named in [targets] — stdlibs included, which
+# is why a stdlib as ordinary as Random has to be listed.
+# MEASURED 2026-09-28, CI run #87: `ArgumentError: Package Random not found in current path`, while
+# the upstream differential was green locally. Same code, two different LOAD_PATHs — not a flake.
+# Random is used by test/test_node_slab.jl, test/test_upstream_insert_prefix.jl and
+# test/differential/spec/SpecHarness.jl.
+# ⚠️ `ProfileView` REMOVED 2026-08-21 — a vestige: it was in [extras] but never in [targets].
 [extras]
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["Random", "Test"]
